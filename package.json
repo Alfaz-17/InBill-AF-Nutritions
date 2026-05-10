@@ -1,0 +1,57 @@
+{
+  "name": "inbill",
+  "version": "1.0.0",
+  "author": "AF NUTRITION",
+  "private": true,
+  "main": "main/main.js",
+  "scripts": {
+    "next-dev": "next dev -p 3456",
+    "next-build": "next build",
+    "electron-dev": "wait-on http://localhost:3456 && electron .",
+    "dev": "concurrently \"npm run next-dev\" \"npm run electron-dev\"",
+    "build": "next build && electron-builder",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "@google/genai": "^1.50.1",
+    "better-sqlite3": "^12.9.0",
+    "electron-is-dev": "^3.0.1",
+    "lucide-react": "^1.8.0",
+    "next": "^15.3.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^35.2.1",
+    "electron-builder": "^26.0.12",
+    "wait-on": "^9.0.5"
+  },
+  "build": {
+    "appId": "com.afnutrition.erp",
+    "productName": "AF NUTRITION Professional ERP",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main/**/*",
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "public/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "public/icon.png"
+    },
+    "extraResources": [
+      {
+        "from": "node_modules/better-sqlite3",
+        "to": "better-sqlite3"
+      }
+    ]
+  }
+}
