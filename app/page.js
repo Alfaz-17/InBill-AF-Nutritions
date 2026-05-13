@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, ShoppingCart, Package, TruckIcon,
-  ScanLine, FileBarChart, Settings, Wallet, Users
+  ScanLine, FileBarChart, Settings, Wallet, Users, Store, RotateCcw
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Billing from './components/Billing';
@@ -25,8 +25,8 @@ const navSections = [
   {
     label: 'Manage',
     items: [
-      { key: 'products',  label: 'Products',   icon: Package },
-      { key: 'purchases', label: 'Purchases',  icon: TruckIcon },
+      { key: 'products',  label: 'Inventory',   icon: Package },
+      { key: 'purchases', label: 'Stock-In',  icon: TruckIcon },
       { key: 'parties',   label: 'Parties',    icon: Users },
       { key: 'expenses',  label: 'Expenses',   icon: Wallet },
     ],
@@ -35,10 +35,14 @@ const navSections = [
     label: 'Insights',
     items: [
       { key: 'reports',  label: 'Reports',  icon: FileBarChart },
+      { key: 'digital-store', label: 'Online Store', icon: Store },
       { key: 'settings', label: 'Settings', icon: Settings },
     ],
   },
 ];
+
+import SetupWizard from './components/SetupWizard';
+import DigitalStore from './components/DigitalStore';
 
 const pages = {
   dashboard: Dashboard,
@@ -49,14 +53,23 @@ const pages = {
   'ai-upload': AIUpload,
   reports: Reports,
   expenses: Expenses,
+  'digital-store': DigitalStore,
   settings: SettingsPage,
 };
 
 export default function Home() {
   const [activePage, setActivePage] = useState('dashboard');
   const [lowStockCount, setLowStockCount] = useState(0);
+  const [profile, setProfile] = useState(null);
+  const [showWizard, setShowWizard] = useState(false);
+
+  // Persistence Layer: Lifted Billing State
+  const [cart, setCart] = useState([]);
+  const [customerData, setCustomerData] = useState({ name: '', phone: '', address: '' });
+  const [paymentData, setPaymentData] = useState({ mode: 'Cash', paid: '' });
 
   useEffect(() => {
+    loadProfile();
     const loadAlerts = async () => {
       if (typeof window !== 'undefined' && window.electronAPI) {
         try {
@@ -70,6 +83,28 @@ export default function Home() {
     return () => clearInterval(interval);
   }, []);
 
+  const loadProfile = async () => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      try {
+        const data = await window.electronAPI.business.getProfile();
+        setProfile(data);
+        // Show wizard if business name is default "My Business"
+        if (!data || data.business_name === 'My Business') {
+          setShowWizard(true);
+        }
+      } catch (e) { console.error(e); }
+    }
+  };
+
+  const handleSetupComplete = () => {
+    setShowWizard(false);
+    loadProfile();
+  };
+
+  if (showWizard) {
+    return <SetupWizard onComplete={handleSetupComplete} />;
+  }
+
   const ActiveComponent = pages[activePage] || Dashboard;
 
   return (
@@ -77,10 +112,10 @@ export default function Home() {
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="sidebar-brand-icon">AF</div>
+          <div className="sidebar-brand-icon">{profile?.business_short || 'IB'}</div>
           <div className="sidebar-brand-text">
-            <h1>AF NUTRITION</h1>
-            <span>Professional ERP</span>
+            <h1>{profile?.business_name || 'InBill'}</h1>
+            <span>{profile?.tagline || 'Professional ERP'}</span>
           </div>
         </div>
 
@@ -96,7 +131,7 @@ export default function Home() {
                     className={`nav-item ${activePage === item.key ? 'active' : ''}`}
                     onClick={() => setActivePage(item.key)}
                   >
-                    <Icon className="nav-icon" />
+                    <Icon className="nav-icon" size={18} />
                     <span>{item.label}</span>
                     {item.key === 'products' && lowStockCount > 0 && (
                       <span className="nav-badge">{lowStockCount}</span>
@@ -107,11 +142,36 @@ export default function Home() {
             </div>
           ))}
         </nav>
+
+        <div style={{ padding: '16px', borderTop: '1px solid var(--border)', background: 'var(--bg-primary)' }}>
+          <div className="flex items-center gap-md">
+            <div style={{ 
+              width: 36, height: 36, borderRadius: '50%', 
+              background: 'hsl(var(--primary))', color: 'hsl(var(--primary-foreground))',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: 700, fontSize: 13
+            }}>
+              {profile?.business_name?.[0] || 'A'}
+            </div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>Administrator</div>
+              <div style={{ fontSize: 10, fontWeight: 500, color: 'var(--text-muted)' }}>Premium Plan</div>
+            </div>
+          </div>
+        </div>
       </aside>
 
       {/* Main Content */}
       <main className="main-content">
-        <ActiveComponent onNavigate={setActivePage} />
+        <ActiveComponent 
+          onNavigate={setActivePage} 
+          profile={profile} 
+          onProfileUpdate={loadProfile}
+          // Shared Persistence
+          cart={cart} setCart={setCart}
+          customerData={customerData} setCustomerData={setCustomerData}
+          paymentData={paymentData} setPaymentData={setPaymentData}
+        />
       </main>
     </div>
   );

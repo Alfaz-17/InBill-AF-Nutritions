@@ -1,10 +1,11 @@
 'use client';
-import { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Upload, ScanLine, Check, X, AlertTriangle, FileImage,
   Plus, Trash2, Edit3, ShieldCheck, ShieldAlert, Package,
-  IndianRupee, Hash, Calendar, Building2, ClipboardList
+  IndianRupee, Hash, Calendar, Building2, ClipboardList, Sparkles, Tag
 } from 'lucide-react';
+import { useToast } from './ToastProvider';
 
 /* ── Step indicators ── */
 const STEPS = [
@@ -13,14 +14,14 @@ const STEPS = [
   { key: 'confirm', label: '3. Confirm', icon: ShieldCheck },
 ];
 
-export default function AIUpload({ onBack }) {
+export default function AIUpload({ onBack, profile }) {
+  const { toast } = useToast();
   /* ── State ── */
   const [step, setStep] = useState('upload'); // upload | review | confirm
   const [file, setFile] = useState(null);       // { base64, mimeType, fileName } from dialog  OR  File object
   const [preview, setPreview] = useState(null);
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState('');
-  const [toast, setToast] = useState(null);
   const [dragOver, setDragOver] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -33,6 +34,8 @@ export default function AIUpload({ onBack }) {
   /* invoice-level metadata from Gemini AI */
   const [invoiceMeta, setInvoiceMeta] = useState({ vendor: '', invoice_number: '', date: '', invoice_total: 0, other_charges: 0 });
   const [items, setItems] = useState([]);
+  const [detectedFields, setDetectedFields] = useState([]);
+  const [detectedCategories, setDetectedCategories] = useState([]);
 
   /* ── Derived ── */
   const computedTotal = useMemo(
@@ -136,7 +139,12 @@ export default function AIUpload({ onBack }) {
             other_charges: result.other_charges || 0,
           });
           setItems(result.items);
+          setDetectedFields(result.detected_new_fields || []);
+          setDetectedCategories(result.detected_categories || []);
           setStep('review');
+          if ((result.detected_new_fields || []).length > 0) {
+            toast(`AI discovered ${result.detected_new_fields.length} custom fields: ${result.detected_new_fields.join(', ')}`, 'info', 5000);
+          }
         }
       } else {
         setError(result.error || 'Failed to parse invoice');
@@ -158,7 +166,33 @@ export default function AIUpload({ onBack }) {
   };
 
   const addItem = () => {
-    setItems(prev => [...prev, { description: '', quantity: 1, price: 0, amount: 0, batch_number: '', expiry_date: '', hsn_code: '', gst_rate: 0 }]);
+    setItems(prev => [...prev, { 
+      description: '', category: '', product_size: '', quantity: 1, 
+      price: 0, amount: 0, batch_number: '', expiry_date: '', 
+      hsn_code: '', gst_rate: 0, custom_fields: {} 
+    }]);
+  };
+
+  /* ── AI Discovery Management ── */
+  const removeDetectedField = (fieldName) => {
+    // 1. Remove from the global discovery list
+    setDetectedFields(prev => prev.filter(f => f !== fieldName));
+    
+    // 2. IMPORTANT: Remove this specific field from all detected items
+    setItems(prev => prev.map(item => {
+      if (item.custom_fields && item.custom_fields[fieldName]) {
+        const updated = { ...item.custom_fields };
+        delete updated[fieldName];
+        return { ...item, custom_fields: updated };
+      }
+      return item;
+    }));
+  };
+
+  const removeDetectedCategory = (catName) => {
+    setDetectedCategories(prev => prev.filter(c => c !== catName));
+    // Also clear from items that have this category assigned
+    setItems(prev => prev.map(item => item.category === catName ? { ...item, category: '' } : item));
   };
 
   /* ── Save to inventory (Electron DB) ── */
@@ -171,30 +205,36 @@ export default function AIUpload({ onBack }) {
         other_charges: parseFloat(invoiceMeta.other_charges) || 0,
         items: items.map(i => ({
           product_name: i.description,
+          category: i.category || '',
+          product_size: i.product_size || '',
           quantity: parseInt(i.quantity) || 0,
           price: parseFloat(i.price) || 0,
           batch_number: i.batch_number || '',
           expiry_date: i.expiry_date || '',
+          custom_fields: i.custom_fields || {}
         })),
       };
 
       if (typeof window !== 'undefined' && window.electronAPI) {
         const result = await window.electronAPI.purchases.create(payload);
         
-        let msg = `✅ ${items.length} items added!`;
+        let msg = `${items.length} items processed`;
         if (result.createdCount > 0) {
-          msg = `✅ Created ${result.createdCount} new products & updated ${result.updatedCount} stock!`;
+          msg = `Created ${result.createdCount} new products & updated ${result.updatedCount} stock`;
         } else if (result.updatedCount > 0) {
-          msg = `✅ Stock updated for all ${result.updatedCount} products!`;
+          msg = `Stock updated for all ${result.updatedCount} products`;
+        }
+        if (detectedFields.length > 0) {
+          msg += ` • ${detectedFields.length} fields auto-registered`;
         }
 
-        flash(msg);
+        toast(msg, 'success', 5000);
       }
 
       setSaved(true);
       setStep('confirm');
     } catch (e) {
-      flash('Error: ' + e.message, 'error');
+      toast('Error: ' + e.message, 'error');
     }
     setSaving(false);
   };
@@ -207,13 +247,19 @@ export default function AIUpload({ onBack }) {
     setSaved(false);
     setSaving(false);
     setStep('upload');
+    setDetectedFields([]);
+    setDetectedCategories([]);
     setInvoiceMeta({ vendor: '', invoice_number: '', date: '', invoice_total: 0, other_charges: 0 });
   };
 
-  const flash = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 4500);
-  };
+  /* All custom field keys across items */
+  const allCustomFieldKeys = useMemo(() => {
+    const keys = new Set();
+    items.forEach(item => {
+      Object.keys(item.custom_fields || {}).forEach(k => keys.add(k));
+    });
+    return [...keys];
+  }, [items]);
 
   /* ══════════ RENDER ══════════ */
   return (
@@ -332,10 +378,27 @@ export default function AIUpload({ onBack }) {
                   </button>
                 </div>
                 {error && (
-                  <div className="card" style={{ borderColor: 'var(--danger)', background: 'var(--danger-bg)' }}>
-                    <div className="flex items-center gap-sm">
-                      <AlertTriangle size={18} style={{ color: 'var(--danger)' }} />
-                      <span style={{ color: 'var(--danger)', fontSize: 13, fontWeight: 700 }}>{error}</span>
+                  <div className="card" style={{ 
+                    borderColor: 'var(--danger)', 
+                    background: 'rgba(239, 68, 68, 0.05)',
+                    padding: '16px 20px',
+                    borderLeft: '4px solid var(--danger)'
+                  }}>
+                    <div className="flex items-start gap-sm">
+                      <AlertTriangle size={20} style={{ color: 'var(--danger)', marginTop: 2 }} />
+                      <div>
+                        <div style={{ color: 'var(--danger)', fontSize: 13, fontWeight: 800, marginBottom: 4 }}>AI EXTRACTION ERROR</div>
+                        <div style={{ color: 'var(--text-primary)', fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}>{error}</div>
+                        {error.includes("demand") && (
+                          <div style={{ 
+                            marginTop: 12, fontSize: 11, fontWeight: 700, 
+                            color: 'var(--text-muted)', background: 'var(--bg-secondary)', 
+                            padding: '6px 10px', borderRadius: 6, display: 'inline-block' 
+                          }}>
+                            💡 Recommendation: Wait 60 seconds and try again.
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -409,6 +472,65 @@ export default function AIUpload({ onBack }) {
             </div>
           </div>
 
+          {/* AI Discovery Panel — show detected categories + custom fields */}
+          {(detectedFields.length > 0 || detectedCategories.length > 0) && (
+            <div className="card animate-in" style={{ 
+              background: 'linear-gradient(135deg, rgba(79,70,229,0.04), rgba(16,185,129,0.04))',
+              border: '1px dashed var(--accent)', 
+              padding: '16px 20px', marginBottom: 24 
+            }}>
+              <div className="flex items-center gap-sm mb-md">
+                <Sparkles size={18} style={{ color: 'var(--accent)' }} />
+                <span style={{ fontWeight: 800, fontSize: 14, color: 'var(--accent)' }}>AI Auto-Discovery</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
+                  — These will be auto-registered when you finalize
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                {detectedCategories.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>New Categories</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {detectedCategories.map(c => (
+                        <span key={c} style={{ 
+                          padding: '4px 12px', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700,
+                          background: 'var(--success-bg)', color: 'var(--success)', border: '1px solid rgba(16,185,129,0.2)',
+                          display: 'flex', alignItems: 'center', gap: 6
+                        }}>
+                          <Tag size={10} style={{ color: 'var(--success)' }} />
+                          {c}
+                          <button onClick={() => removeDetectedCategory(c)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', color: 'var(--success)', opacity: 0.6, display: 'flex' }} className="hover:opacity-100">
+                            <X size={12} strokeWidth={3} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {detectedFields.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>New Product Fields</div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {detectedFields.map(f => (
+                        <span key={f} style={{ 
+                          padding: '4px 12px', borderRadius: 'var(--radius-full)', fontSize: 12, fontWeight: 700,
+                          background: 'var(--accent-glow)', color: 'var(--accent)', border: '1px solid rgba(79,70,229,0.2)',
+                          display: 'flex', alignItems: 'center', gap: 6
+                        }}>
+                          <Hash size={10} style={{ color: 'var(--accent)' }} />
+                          {f}
+                          <button onClick={() => removeDetectedField(f)} style={{ border: 'none', background: 'none', padding: 0, cursor: 'pointer', color: 'var(--accent)', opacity: 0.6, display: 'flex' }} className="hover:opacity-100">
+                            <X size={12} strokeWidth={3} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Items Table Modernization */}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -425,6 +547,8 @@ export default function AIUpload({ onBack }) {
                   <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                     <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)' }}>#</th>
                     <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)' }}>PRODUCT NAME</th>
+                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', width: 140 }}>CATEGORY</th>
+                    <th style={{ padding: '12px 20px', textAlign: 'left', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', width: 100 }}>SIZE</th>
                     <th style={{ padding: '12px 20px', textAlign: 'center', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', width: 80 }}>QTY</th>
                     <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', width: 120 }}>UNIT PRICE</th>
                     <th style={{ padding: '12px 20px', textAlign: 'right', fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', width: 140 }}>TOTAL</th>
@@ -434,37 +558,89 @@ export default function AIUpload({ onBack }) {
                 </thead>
                 <tbody>
                   {items.map((item, idx) => (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
+                    <React.Fragment key={idx}>
+                    <tr style={{ borderBottom: '1px solid var(--border)', transition: 'background 0.2s' }}>
                       <td style={{ padding: '14px 20px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>{idx + 1}</td>
-                      <td style={{ padding: '14px 20px' }}>
-                        <input className="form-input" style={{ background: 'none', border: 'none', padding: 0, fontWeight: 700, fontSize: 14 }} 
+                      <td style={{ padding: '8px 10px' }}>
+                        <input style={{ width: '100%', background: 'none', border: 'none', padding: '0 4px', fontWeight: 700, fontSize: 14, height: 44, color: 'var(--text-primary)', outline: 'none' }} 
                           value={item.description} onChange={(e) => updateItem(idx, 'description', e.target.value)} />
-                        {/* Smart Suggestion Logic (Future placeholder) */}
                       </td>
-                      <td style={{ padding: '14px 20px' }}>
-                        <input className="form-input" type="number" style={{ background: 'var(--bg-primary)', height: 32, textAlign: 'center', fontWeight: 800 }} 
+                      <td style={{ padding: '8px 10px' }}>
+                        <input style={{ width: '100%', background: 'var(--bg-secondary)', height: 36, fontSize: 12, border: '1px solid var(--border)', borderRadius: 4, padding: '0 8px' }} 
+                          placeholder="Category..."
+                          value={item.category || ''} onChange={(e) => updateItem(idx, 'category', e.target.value)} />
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <input style={{ width: '100%', background: 'var(--bg-primary)', height: 40, fontWeight: 700, border: '1px dashed var(--accent)', color: 'var(--accent)', padding: '0 10px', borderRadius: 6, outline: 'none' }} 
+                          placeholder="e.g. 1kg"
+                          value={item.product_size || ''} onChange={(e) => updateItem(idx, 'product_size', e.target.value)} />
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        <input type="number" style={{ width: '100%', background: 'var(--bg-primary)', height: 40, textAlign: 'center', fontWeight: 800, padding: '0 4px', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', outline: 'none' }} 
                           value={item.quantity} onChange={(e) => updateItem(idx, 'quantity', e.target.value)} />
                       </td>
                       <td style={{ padding: '14px 20px', textAlign: 'right' }}>
                         <div className="flex items-center justify-end gap-xs">
                           <span style={{ fontSize: 12, fontWeight: 800 }}>₹</span>
-                          <input className="form-input" style={{ width: 80, height: 32, background: 'var(--bg-primary)', textAlign: 'right', fontWeight: 800 }} 
+                          <input style={{ width: 80, height: 40, background: 'var(--bg-primary)', textAlign: 'right', fontWeight: 800, padding: '0 10px', border: '1px solid var(--border)', borderRadius: 6, color: 'var(--text-primary)', outline: 'none' }} 
                             value={item.price} onChange={(e) => updateItem(idx, 'price', e.target.value)} />
                         </div>
                       </td>
                       <td style={{ padding: '14px 20px', textAlign: 'right', fontWeight: 900, color: 'var(--accent)', fontSize: 15 }}>
                         ₹{(item.quantity * item.price).toLocaleString()}
                       </td>
-                      <td style={{ padding: '14px 20px' }}>
+                      <td style={{ padding: '8px 10px' }}>
                         <div className="flex gap-sm">
-                          <input className="form-input" style={{ height: 32, fontSize: 11 }} placeholder="Batch" value={item.batch_number} onChange={(e) => updateItem(idx, 'batch_number', e.target.value)} />
-                          <input className="form-input" type="date" style={{ height: 32, fontSize: 11 }} value={item.expiry_date} onChange={(e) => updateItem(idx, 'expiry_date', e.target.value)} />
+                          <input style={{ width: 80, height: 40, fontSize: 12, padding: '0 8px', border: '1px solid var(--border)', borderRadius: 6, background: 'white', color: 'var(--text-primary)', outline: 'none' }} placeholder="Batch" value={item.batch_number} onChange={(e) => updateItem(idx, 'batch_number', e.target.value)} />
+                          <input type="date" style={{ width: 110, height: 40, fontSize: 12, padding: '0 8px', border: '1px solid var(--border)', borderRadius: 6, background: 'white', color: 'var(--text-primary)', outline: 'none' }} value={item.expiry_date} onChange={(e) => updateItem(idx, 'expiry_date', e.target.value)} />
                         </div>
                       </td>
                       <td style={{ padding: '14px 20px', textAlign: 'center' }}>
                         <button className="btn btn-ghost btn-icon" style={{ color: 'var(--danger)', opacity: 0.4 }} onClick={() => removeItem(idx)}><Trash2 size={16} /></button>
                       </td>
                     </tr>
+                    {/* Custom Fields Sub-Row */}
+                    {Object.keys(item.custom_fields || {}).length > 0 && (
+                      <tr style={{ background: 'rgba(79,70,229,0.03)' }}>
+                        <td></td>
+                        <td colSpan={8} style={{ padding: '6px 10px 10px' }}>
+                          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                            <Sparkles size={12} style={{ color: 'var(--accent)', flexShrink: 0 }} />
+                            {Object.entries(item.custom_fields).map(([key, val]) => (
+                              <div key={key} className="group/field" style={{ display: 'flex', alignItems: 'center', gap: 4, position: 'relative' }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase' }}>{key}:</span>
+                                <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                  <input
+                                    style={{ width: Math.max(80, String(val).length * 8 + 20), height: 26, fontSize: 12, fontWeight: 600, padding: '0 24px 0 6px', border: '1px solid rgba(79,70,229,0.2)', borderRadius: 4, background: 'white', color: 'var(--text-primary)', outline: 'none' }}
+                                    value={val}
+                                    onChange={(e) => {
+                                      const updated = { ...item.custom_fields, [key]: e.target.value };
+                                      updateItem(idx, 'custom_fields', updated);
+                                    }}
+                                  />
+                                  <button 
+                                    onClick={() => {
+                                      const updated = { ...item.custom_fields };
+                                      delete updated[key];
+                                      updateItem(idx, 'custom_fields', updated);
+                                    }}
+                                    style={{ 
+                                      position: 'absolute', right: 4, background: 'none', border: 'none', 
+                                      color: 'var(--danger)', padding: 0, cursor: 'pointer', opacity: 0.5,
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                    }}
+                                    className="hover:opacity-100"
+                                  >
+                                    <X size={12} strokeWidth={3} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
@@ -486,9 +662,16 @@ export default function AIUpload({ onBack }) {
             </div>
           </div>
           <h2 style={{ fontSize: 28, fontWeight: 900, marginBottom: 12 }}>Extraction Successful!</h2>
-          <p style={{ color: 'var(--text-secondary)', fontSize: 16, lineHeight: 1.6, marginBottom: 32 }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: 16, lineHeight: 1.6, marginBottom: 16 }}>
             <strong>{items.length} products</strong> have been successfully updated or added to your inventory from <strong>{invoiceMeta.vendor}</strong>.
           </p>
+          {(detectedFields.length > 0 || detectedCategories.length > 0) && (
+            <div style={{ marginBottom: 24, padding: '12px 20px', background: 'var(--accent-glow)', borderRadius: 12, textAlign: 'left' }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)', marginBottom: 8 }}>🧠 AI Auto-Registered</div>
+              {detectedCategories.length > 0 && <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>Categories: <strong>{detectedCategories.join(', ')}</strong></div>}
+              {detectedFields.length > 0 && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Product Fields: <strong>{detectedFields.join(', ')}</strong></div>}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
             <button className="btn btn-primary btn-lg" onClick={reset}><Plus size={18} /> New Upload</button>
             <button className="btn btn-secondary btn-lg" onClick={onBack}>View Purchases</button>
@@ -507,13 +690,7 @@ export default function AIUpload({ onBack }) {
         }
       `}</style>
 
-      {/* Toast */}
-      {toast && (
-        <div className={`toast ${toast.type === 'success' ? 'toast-success' : 'toast-error'}`} style={{ zIndex: 1000 }}>
-          {toast.type === 'success' ? <Check size={16} style={{ color: 'var(--success)' }} /> : <X size={16} style={{ color: 'var(--danger)' }} />}
-          {toast.message}
-        </div>
-      )}
+
     </div>
   );
 }

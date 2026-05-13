@@ -2,35 +2,79 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, Package,
-  IndianRupee, User, CreditCard, Printer, X, Check, FileText, Share2, Copy, ExternalLink
+  User, CreditCard, Printer, X, Check, FileText, ExternalLink, Wallet, ScanLine, Settings2, IndianRupee
 } from 'lucide-react';
+import { toast } from "sonner";
+import { getInvoiceHTML as generateInvoiceHTML } from './InvoiceTemplates';
 
-export default function Billing() {
+// shadcn/ui components
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
+export default function Billing({ 
+  profile, 
+  cart, setCart, 
+  customerData, setCustomerData, 
+  paymentData, setPaymentData 
+}) {
   const [products, setProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [cart, setCart] = useState([]);
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [paymentMode, setPaymentMode] = useState('Cash');
-  const [paidAmount, setPaidAmount] = useState('');
+  
+  // Destructure for internal use
+  const { name: customerName, phone: customerPhone, address: customerAddress } = customerData;
+  const { mode: paymentMode, paid: paidAmount } = paymentData;
+
+  // Setters for internal use
+  const setCustomerName = (val) => setCustomerData(prev => ({ ...prev, name: val }));
+  const setCustomerPhone = (val) => setCustomerData(prev => ({ ...prev, phone: val }));
+  const setCustomerAddress = (val) => setCustomerData(prev => ({ ...prev, address: val }));
+  const setPaymentMode = (val) => setPaymentData(prev => ({ ...prev, mode: val }));
+  const setPaidAmount = (val) => setPaymentData(prev => ({ ...prev, paid: val }));
   const [saleResult, setSaleResult] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
-  const [toast, setToast] = useState(null);
+  const [taxMode, setTaxMode] = useState('exclusive'); // 'exclusive' or 'inclusive'
   const [saving, setSaving] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
-  const [shareLoading, setShareLoading] = useState(false);
-  const [shareLink, setShareLink] = useState('');
   const [parties, setParties] = useState([]);
   const [selectedParty, setSelectedParty] = useState(null);
   const [partySearch, setPartySearch] = useState('');
   const [showPartyDropdown, setShowPartyDropdown] = useState(false);
+  const masterData = typeof profile?.master_data === 'string' 
+    ? (JSON.parse(profile.master_data || '{}')) 
+    : (profile?.master_data || {});
+  
+  const TAX_LABEL = masterData.tax_label || 'GST';
+  const CURRENCY = profile?.currency_symbol || '₹';
   const searchRef = useRef(null);
+  const [viewMode, setViewMode] = useState('browse'); // 'browse' or 'invoice'
 
   useEffect(() => {
     loadProducts();
     loadParties();
+    loadAttributeDefs();
     if (searchRef.current) searchRef.current.focus();
   }, []);
+
+  const loadAttributeDefs = async () => {
+    if (profile?.invoice_settings) {
+      try {
+        const saved = typeof profile.invoice_settings === 'string' 
+          ? JSON.parse(profile.invoice_settings) 
+          : profile.invoice_settings;
+        
+        if (saved && saved.fields) {
+          setInvoiceFields(saved.fields);
+          setVisibleAttributes(saved.visibleAttributes || {});
+          setSelectedTemplate(saved.template || 'modern');
+        }
+      } catch (e) { console.error(e); }
+    }
+  };
 
   const loadParties = async () => {
     if (typeof window !== 'undefined' && window.electronAPI) {
@@ -50,11 +94,6 @@ export default function Billing() {
     }
   };
 
-  const flash = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
   const filtered = products.filter((p) => {
     if (!searchTerm) return true;
     const q = searchTerm.toLowerCase();
@@ -66,26 +105,41 @@ export default function Billing() {
   });
 
   const addToCart = (product) => {
-    if (product.quantity <= 0) return;
+    if (product.quantity <= 0) {
+      toast.error("Item out of stock");
+      return;
+    }
     setCart((prev) => {
       const exists = prev.find((c) => c.product_id === product.id);
       if (exists) {
-        if (exists.quantity >= product.quantity) return prev;
+        if (exists.quantity >= product.quantity) {
+          toast.warning("Cannot add more than available stock");
+          return prev;
+        }
+        toast.success(`Added another ${product.product_name}`);
         return prev.map((c) =>
           c.product_id === product.id ? { ...c, quantity: c.quantity + 1 } : c
         );
       }
+      toast.success(`Added ${product.product_name} to cart`);
       return [
         ...prev,
         {
           product_id: product.id,
           product_name: product.product_name,
+          brand: product.brand || '',
+          category: product.category || '',
+          product_size: product.product_size || '',
+          unit: product.unit || 'pcs',
+          barcode: product.barcode || '',
+          batch_number: product.batch_number || '',
+          expiry_date: product.expiry_date || '',
           price: product.selling_price,
           original_price: product.selling_price,
-          mrp: product.mrp || product.selling_price || 0,
           gst_rate: product.gst_rate || 0,
           quantity: 1,
           maxQty: product.quantity,
+          custom_fields: product.custom_fields || '{}'
         },
       ];
     });
@@ -105,28 +159,28 @@ export default function Billing() {
     );
   };
 
-  const updateCartPrice = (productId, newPrice) => {
-    setCart((prev) =>
-      prev.map((c) =>
-        c.product_id === productId ? { ...c, price: parseFloat(newPrice) || 0 } : c
-      )
-    );
-  };
+  const subtotal = cart.reduce((sum, c) => {
+    const itemLineTotal = c.price * c.quantity;
+    if (taxMode === 'inclusive') {
+      return sum + (itemLineTotal / (1 + (c.gst_rate / 100)));
+    }
+    return sum + itemLineTotal;
+  }, 0);
 
-  const removeFromCart = (productId) => {
-    setCart((prev) => prev.filter((c) => c.product_id !== productId));
-  };
+  const totalGst = cart.reduce((sum, c) => {
+    const itemLineTotal = c.price * c.quantity;
+    if (taxMode === 'inclusive') {
+      const basePrice = itemLineTotal / (1 + (c.gst_rate / 100));
+      return sum + (itemLineTotal - basePrice);
+    }
+    return sum + (itemLineTotal * c.gst_rate / 100);
+  }, 0);
 
-  const subtotal = cart.reduce((sum, c) => sum + c.price * c.quantity, 0);
-  const totalGst = cart.reduce(
-    (sum, c) => sum + (c.price * c.quantity * c.gst_rate) / 100,
-    0
-  );
-  const totalDiscount = cart.reduce(
-    (sum, c) => sum + (c.original_price > c.price ? (c.original_price - c.price) * c.quantity : 0),
-    0
-  );
-  const grandTotal = subtotal + totalGst;
+  const totalDiscount = cart.reduce((sum, c) => sum + (c.original_price > c.price ? (c.original_price - c.price) * c.quantity : 0), 0);
+  
+  const grandTotal = taxMode === 'inclusive' 
+    ? cart.reduce((sum, c) => sum + (c.price * c.quantity), 0)
+    : subtotal + totalGst;
 
   const handleSave = async () => {
     if (cart.length === 0) return;
@@ -137,7 +191,6 @@ export default function Billing() {
         items: cart.map((c) => ({
           product_id: c.product_id,
           product_name: c.product_name,
-          mrp: c.mrp,
           price: c.price,
           quantity: c.quantity,
           gst_rate: c.gst_rate,
@@ -145,6 +198,7 @@ export default function Billing() {
         party_id: selectedParty?.id,
         customer_name: customerName,
         customer_phone: customerPhone,
+        customer_address: customerAddress,
         payment_mode: paymentMode,
         paid_amount: paidAmount ? parseFloat(paidAmount) : grandTotal,
       });
@@ -153,6 +207,7 @@ export default function Billing() {
         ...result, 
         customer_name: customerName, 
         customer_phone: customerPhone, 
+        customer_address: customerAddress,
         date: new Date().toLocaleDateString('en-IN'),
         cart: [...cart],
         subtotal,
@@ -161,448 +216,388 @@ export default function Billing() {
         totalDiscount 
       });
       setCart([]);
-      setCustomerName('');
-      setCustomerPhone('');
+      setCustomerData({ name: '', phone: '', address: '' });
+      setPaymentData({ mode: 'Cash', paid: '' });
       setPartySearch('');
       setSelectedParty(null);
-      setPaidAmount('');
-      setPaymentMode('Cash');
       setShowSuccessModal(true);
-      setShareLink('');
       loadProducts();
+      toast.success("Invoice generated successfully!");
     } catch (e) {
       console.error(e);
-      flash('Failed to save sale', 'error');
+      toast.error("Failed to save transaction");
     }
     setSaving(false);
   };
 
   const getInvoiceHTML = (data) => {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <style>
-          @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap');
-          body { font-family: 'Outfit', sans-serif; color: #1e293b; padding: 40px; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; }
-          .store-name { font-size: 28px; font-weight: 700; color: #0f172a; margin: 0; }
-          .store-addr { font-size: 13px; color: #64748b; margin: 4px 0; max-width: 300px; line-height: 1.5; }
-          .inv-title { font-size: 22px; font-weight: 700; color: #2563eb; text-align: right; margin: 0; }
-          .inv-meta { text-align: right; font-size: 14px; margin-top: 8px; color: #475569; }
-          .meta-row { margin: 2px 0; }
-          .meta-val { font-weight: 600; color: #1e293b; }
-          .bill-to { margin-bottom: 30px; }
-          .bill-to-label { font-size: 12px; font-weight: 700; color: #94a3b8; text-transform: uppercase; margin-bottom: 6px; }
-          .bill-to-name { font-size: 18px; font-weight: 700; margin: 0; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-          th { background: #f8fafc; text-align: left; padding: 12px; font-size: 13px; font-weight: 700; color: #64748b; border-bottom: 1px solid #e2e8f0; }
-          td { padding: 12px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
-          .row-total { text-align: right; font-weight: 600; }
-          .summary { display: flex; justify-content: flex-end; }
-          .summary-box { width: 250px; }
-          .summary-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; }
-          .grand-total { margin-top: 16px; padding-top: 16px; border-top: 2px solid #0f172a; font-size: 20px; font-weight: 700; }
-          .footer { margin-top: 60px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; paddingTop: 20px; }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <div>
-            <h1 class="store-name">AF NUTRITION</h1>
-            <p class="store-addr">1st floor, Yogeshwar Complex F/103,<br/>Ghogha Circle, Bhavnagar, 364001, Gujarat</p>
-          </div>
-          <div>
-            <h2 class="inv-title">TAX INVOICE</h2>
-            <div class="inv-meta">
-              <div class="meta-row">Invoice: <span class="meta-val">#${data.invoiceNumber}</span></div>
-              <div class="meta-row">Date: <span class="meta-val">${data.date}</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="bill-to">
-          <div class="bill-to-label">Bill To</div>
-          <h3 class="bill-to-name">${data.customer_name || 'Counter Sale'}</h3>
-          ${data.customer_phone ? `<div style="font-size: 14px; color: #475569;">+91 ${data.customer_phone}</div>` : ''}
-        </div>
-
-        <table>
-          <thead>
-            <tr>
-              <th>Item Description</th>
-              <th style="text-align: center;">Qty</th>
-              <th style="text-align: right;">Price</th>
-              <th style="text-align: right;">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.cart.map(item => `
-              <tr>
-                <td>${item.product_name}</td>
-                <td style="text-align: center;">${item.quantity}</td>
-                <td style="text-align: right;">₹${item.price}</td>
-                <td class="row-total">₹${(item.price * item.quantity).toFixed(2)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-
-        <div class="summary">
-          <div class="summary-box">
-            <div class="summary-row"><span>Subtotal</span><span>₹${data.subtotal.toFixed(2)}</span></div>
-            <div class="summary-row"><span>Tax (GST)</span><span>₹${data.totalGst.toFixed(2)}</span></div>
-            ${data.totalDiscount > 0 ? `<div class="summary-row" style="color: #059669;"><span>Savings</span><span>-₹${data.totalDiscount.toFixed(2)}</span></div>` : ''}
-            <div class="summary-row grand-total"><span>Total</span><span>₹${data.grandTotal.toFixed(2)}</span></div>
-          </div>
-        </div>
-
-        <div class="footer">
-          <p>Thank you for shopping at AF NUTRITION!</p>
-          <p style="font-size: 10px;">Generated via Alfaz's Solutions</p>
-        </div>
-      </body>
-      </html>
-    `;
+    return generateInvoiceHTML(data, profile);
   };
+
 
   const handleDownloadPDF = async () => {
     if (!saleResult || pdfGenerating) return;
     setPdfGenerating(true);
     try {
-      const html = getInvoiceHTML(saleResult);
+      const html = generateInvoiceHTML(saleResult, profile);
       const res = await window.electronAPI.pdf.generate(html);
       if (res.success) {
         await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${saleResult.invoiceNumber}.pdf`);
-        flash('PDF Saved Successfully!');
-      } else { flash('Failed to generate PDF', 'error'); }
-    } catch (e) { console.error(e); flash('Error generating PDF', 'error'); }
+        toast.success("PDF Saved Successfully!");
+      } else { toast.error("Failed to generate PDF"); }
+    } catch (e) { console.error(e); toast.error("Error generating PDF"); }
     setPdfGenerating(false);
   };
 
-  const handleShareLink = async () => {
-    if (!saleResult || shareLoading) return;
-    if (shareLink) {
-      navigator.clipboard.writeText(shareLink);
-      flash('Link copied to clipboard!');
-      return;
-    }
-    setShareLoading(true);
-    try {
-      const html = getInvoiceHTML(saleResult);
-      const gen = await window.electronAPI.pdf.generate(html);
-      if (gen.success) {
-        const share = await window.electronAPI.pdf.share(gen.buffer);
-        if (share.success) {
-          setShareLink(share.link);
-          navigator.clipboard.writeText(share.link);
-          flash('Sharing link generated and copied!');
-        } else { flash(`Sharing Failed: ${share.error || 'Check Internet'}`, 'error'); }
-      }
-    } catch (e) { console.error(e); flash('Sharing Error', 'error'); }
-    setShareLoading(false);
-  };
-
   return (
-    <div className="animate-in">
-      <div className="page-header" style={{ marginBottom: 20 }}>
+    <div className="flex flex-col gap-8 md:p-2 lg:p-4">
+      <header className="page-header">
         <div>
-          <h2>Generate Invoice</h2>
-          <p>Create sales records and manage customer billing</p>
+          <h2>Billing Center</h2>
+          <p>Create invoices and manage customer transactions</p>
         </div>
-        <div className="flex gap-md">
-          <div className="metric-card" style={{ padding: '8px 20px', minWidth: 180, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <div className="metric-icon teal" style={{ width: 32, height: 32 }}><IndianRupee size={16} /></div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Daily Sales</div>
-              <div style={{ fontSize: 18, fontWeight: 800 }}>₹{subtotal.toLocaleString('en-IN')}</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 20, height: 'calc(100vh - 160px)' }}>
         
-        {/* Product Explorer */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: 20, overflow: 'hidden' }}>
-          <div className="search-box" style={{ maxWidth: '100%' }}>
-            <Search className="search-icon" />
-            <input
-              ref={searchRef}
-              style={{ height: 48, fontSize: 16 }}
-              placeholder="Search by product name, brand or category..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', paddingRight: 4 }}>
-            {filtered.length > 0 ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16 }}>
-                {filtered.map((p) => (
-                  <div
-                    key={p.id}
-                    onClick={() => addToCart(p)}
-                    className="card"
-                    style={{ 
-                      padding: 16, 
-                      cursor: 'pointer',
-                      border: '1px solid var(--border)',
-                      transition: 'all 0.2s ease',
-                      opacity: p.quantity <= 0 ? 0.5 : 1,
-                      position: 'relative',
-                      overflow: 'hidden'
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.borderColor = 'var(--accent)'}
-                    onMouseLeave={(e) => e.currentTarget.style.borderColor = 'var(--border)'}
-                  >
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4, height: 40, overflow: 'hidden' }}>{p.product_name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12 }}>{p.brand || p.category || 'Supplement'}</div>
-                    
-                    <div className="flex justify-between items-end">
-                      <div>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>MRP: ₹{p.mrp || 0}</div>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>₹{p.selling_price}</div>
-                      </div>
-                      <div style={{ 
-                        padding: '4px 8px', 
-                        borderRadius: 6, 
-                        fontSize: 10, 
-                        fontWeight: 800,
-                        background: p.quantity <= 0 ? 'var(--danger-glow)' : p.quantity <= 10 ? 'var(--warning-glow)' : 'var(--accent-glow)',
-                        color: p.quantity <= 0 ? 'var(--danger)' : p.quantity <= 10 ? 'var(--warning)' : 'var(--accent)'
-                      }}>
-                        {p.quantity <= 0 ? 'OUT' : `${p.quantity} IN STOCK`}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state" style={{ height: '300px' }}>
-                <div className="empty-state-icon"><Package size={32} /></div>
-                <h3>No items matched</h3>
-                <p>Try searching for brand name or verify stock</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Checkout Sidebar */}
-        <div className="card" style={{ display: 'flex', flexDirection: 'column', padding: 0, overflow: 'hidden', background: 'var(--bg-secondary)' }}>
-          <div style={{ padding: 20, borderBottom: '1px solid var(--border)', background: 'var(--bg-primary)' }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ShoppingCart size={18} /> Current Invoice
-            </h3>
-          </div>
-
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', background: 'var(--bg-secondary)' }}>
-            {/* Integrated Customer Identity */}
-            <div style={{ padding: '24px 20px', background: 'var(--bg-primary)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ position: 'relative' }}>
-                <User size={14} style={{ position: 'absolute', left: 14, top: 13, color: 'var(--accent)' }} />
-                <input
-                  className="form-input"
-                  style={{ paddingLeft: 40, height: 40, background: 'var(--bg-secondary)', border: 'none', borderRadius: 'var(--radius-md)', fontSize: 13, fontWeight: 700 }}
-                  placeholder="Customer Name / Search..."
-                  value={partySearch}
-                  onChange={(e) => {
-                    setPartySearch(e.target.value);
-                    setCustomerName(e.target.value);
-                    setShowPartyDropdown(true);
-                  }}
-                  onFocus={() => setShowPartyDropdown(true)}
-                />
-                {showPartyDropdown && parties.length > 0 && (
-                  <div className="suggestions-dropdown" style={{ top: '100%', width: '100%', zIndex: 101 }}>
-                    {parties.filter(p => !partySearch || p.name.toLowerCase().includes(partySearch.toLowerCase())).slice(0, 5).map(p => (
-                      <div key={p.id} className="suggestion-item" onMouseDown={() => {
-                        setSelectedParty(p);
-                        setPartySearch(p.name);
-                        setCustomerName(p.name);
-                        setCustomerPhone(p.phone || '');
-                      }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>{p.name}</div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.phone || 'No phone'}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div style={{ position: 'relative' }}>
-                <ExternalLink size={14} style={{ position: 'absolute', left: 14, top: 13, color: 'var(--text-muted)' }} />
-                <input
-                  className="form-input"
-                  style={{ paddingLeft: 40, height: 40, background: 'var(--bg-secondary)', border: 'none', borderRadius: 'var(--radius-md)', fontSize: 13 }}
-                  placeholder="WhatsApp link (Mobile)..."
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                />
-              </div>
+        <div className="flex flex-wrap items-center gap-4">
+          <Card className="flex items-center gap-6 px-6 py-4 border-slate-100 shadow-xl shadow-slate-200/50 rounded-3xl bg-white">
+            <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center shadow-inner">
+              <Wallet size={24} />
             </div>
+            <div>
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Session Total</p>
+              <p className="text-2xl font-black text-slate-900">{CURRENCY}{subtotal.toLocaleString()}</p>
+            </div>
+          </Card>
+        </div>
+      </header>
 
-            {/* Structured Cart List */}
-            <div style={{ paddingBottom: 20 }}>
-              {cart.map((item) => (
-                <div key={item.product_id} style={{ 
-                  display: 'grid', 
-                  gridTemplateColumns: '1fr auto auto', 
-                  alignItems: 'center',
-                  gap: 12,
-                  padding: '16px 20px',
-                  borderBottom: '1px solid var(--border)',
-                  background: 'var(--bg-secondary)'
-                }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginBottom: 6 }}>
-                      {item.product_name}
-                    </div>
-                    <div className="flex items-center gap-md">
-                      <div className="flex items-center gap-xs">
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 700 }}>₹</span>
-                        <input 
-                          type="number" 
-                          style={{ width: 60, background: 'none', border: 'none', fontSize: 12, fontWeight: 800, color: 'var(--text-secondary)', padding: 0 }}
-                          value={item.price}
-                          onChange={(e) => updateCartPrice(item.product_id, e.target.value)}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', background: 'var(--bg-primary)', borderRadius: 20, padding: '2px 4px' }}>
-                        <button onClick={() => updateCartQty(item.product_id, -1)} style={{ border: 'none', background: 'none', padding: '0 6px', cursor: 'pointer' }}><Minus size={10} /></button>
-                        <span style={{ fontSize: 12, fontWeight: 900, minWidth: 16, textAlign: 'center' }}>{item.quantity}</span>
-                        <button onClick={() => updateCartQty(item.product_id, 1)} style={{ border: 'none', background: 'none', padding: '0 6px', cursor: 'pointer' }}><Plus size={10} /></button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ textAlign: 'right', minWidth: 70 }}>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: 'var(--accent)' }}>₹{(item.price * item.quantity).toLocaleString()}</div>
-                    {item.original_price > item.price && (
-                      <div style={{ fontSize: 9, color: 'var(--success)', fontWeight: 800 }}>Save ₹{((item.original_price - item.price) * item.quantity).toLocaleString()}</div>
-                    )}
-                  </div>
-
-                  <button 
-                    className="btn btn-ghost btn-icon" 
-                    style={{ 
-                      color: '#ef4444', 
-                      opacity: 1, 
-                      width: 28, 
-                      height: 28,
-                      minWidth: 28,
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                    onClick={() => removeFromCart(item.product_id)}
-                  >
-                    <X size={18} strokeWidth={3} />
-                  </button>
-                </div>
-              ))}
-              
-              {cart.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '80px 20px', opacity: 0.2 }}>
-                  <ShoppingCart size={42} style={{ marginBottom: 12 }} />
-                  <div style={{ fontSize: 13, fontWeight: 800 }}>Cart is empty</div>
-                </div>
+      <Tabs value={viewMode} onValueChange={setViewMode} className="w-full">
+        <TabsList className="flex w-fit p-1.5 bg-slate-100 rounded-2xl mb-8 border border-slate-200/50">
+          <TabsTrigger value="browse" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
+            <Package size={18} /> 1. Products
+          </TabsTrigger>
+          <TabsTrigger value="invoice" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
+            <div className="relative">
+              <ShoppingCart size={18} />
+              {cart.length > 0 && (
+                <span className="absolute -top-3 -right-4 bg-red-500 text-white flex items-center justify-center font-black text-[10px] w-5 h-5 rounded-full border-2 border-white shadow-sm">
+                  {cart.length}
+                </span>
               )}
             </div>
-          </div>
+            2. Checkout
+          </TabsTrigger>
+        </TabsList>
 
-          <div style={{ padding: 24, background: 'var(--bg-primary)', borderTop: '1px solid var(--border)' }}>
-            <div style={{ marginBottom: 20 }}>
-              <div className="flex justify-between items-center mb-xs">
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Items Subtotal</span>
-                <span style={{ fontWeight: 700 }}>₹{subtotal.toLocaleString('en-IN')}</span>
+        <div className="mt-6">
+          <TabsContent value="browse" className="m-0 focus-visible:ring-0">
+            <Card className="border-slate-200 shadow-sm">
+              <CardHeader className="pb-0">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                  <Input 
+                    placeholder="Search products by name, brand or category..." 
+                    className="pl-10 h-12 bg-slate-50 border-transparent focus-visible:bg-white focus-visible:border-blue-500 transition-all font-medium text-base"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                  />
+                </div>
+              </CardHeader>
+              <CardContent className="p-6">
+                {filtered.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {filtered.map((p) => (
+                      <Card 
+                        key={p.id} 
+                        className={`group cursor-pointer hover:border-blue-500 hover:shadow-md transition-all ${p.quantity <= 0 ? 'opacity-60 grayscale' : ''}`}
+                        onClick={() => addToCart(p)}
+                      >
+                        <CardContent className="p-4 flex flex-col gap-3">
+                          <div className="flex justify-between items-start gap-2">
+                            <div className="min-w-0">
+                              <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">{p.brand || 'Standard'}</p>
+                              <h4 className="font-bold text-slate-900 leading-tight line-clamp-2 mt-0.5">{p.product_name}</h4>
+                            </div>
+                            {p.product_size && (
+                              <Badge variant="secondary" className="text-[10px] font-black uppercase py-0 px-1.5">{p.product_size}</Badge>
+                            )}
+                          </div>
+                          
+                          <div className="flex items-end justify-between pt-3 border-t border-slate-100">
+                            <div>
+                              <p className="text-xl font-black text-slate-900">{CURRENCY}{p.selling_price}</p>
+                            </div>
+                            <Badge className={`${p.quantity <= 0 ? 'bg-red-500' : 'bg-green-500'} hover:bg-opacity-100 text-[9px] font-black`}>
+                              {p.quantity <= 0 ? 'OUT' : `${p.quantity} IN STOCK`}
+                            </Badge>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 text-slate-400">
+                    <Package size={48} strokeWidth={1.5} />
+                    <p className="mt-4 font-bold text-lg">No products found</p>
+                    <p className="text-sm">Try searching for something else</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="invoice" className="m-0 focus-visible:ring-0">
+            <div className="grid lg:grid-cols-[1fr,380px] gap-6 items-start">
+              <Card className="border-slate-200 shadow-sm">
+                <CardHeader className="border-b bg-slate-50/50">
+                  <CardTitle className="flex items-center gap-2 text-lg">
+                    <User className="text-blue-600" size={18} />
+                    Customer Details
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="grid sm:grid-cols-3 gap-4">
+                    <div className="relative">
+                      <Input 
+                        placeholder="Customer Name" 
+                        value={partySearch}
+                        onChange={(e) => {
+                          setPartySearch(e.target.value);
+                          setCustomerName(e.target.value);
+                          setShowPartyDropdown(true);
+                        }}
+                        className="font-semibold"
+                      />
+                      {showPartyDropdown && parties.length > 0 && (
+                        <Card className="absolute top-[calc(100%+4px)] left-0 w-full z-50 shadow-xl border-slate-200 overflow-hidden">
+                          {parties.filter(p => !partySearch || p.name.toLowerCase().includes(partySearch.toLowerCase())).slice(0, 5).map(p => (
+                            <div key={p.id} className="p-3 hover:bg-slate-50 cursor-pointer border-b last:border-0" onMouseDown={() => {
+                              setSelectedParty(p);
+                              setPartySearch(p.name);
+                              setCustomerName(p.name);
+                              setCustomerPhone(p.phone || '');
+                              setCustomerAddress(p.address || '');
+                              setShowPartyDropdown(false);
+                            }}>
+                              <p className="text-sm font-bold">{p.name}</p>
+                              <p className="text-xs text-slate-500 font-medium">{p.phone || 'No phone'}</p>
+                            </div>
+                          ))}
+                        </Card>
+                      )}
+                    </div>
+                    <Input placeholder="Mobile Number" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
+                    <Input placeholder="Address / City" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+                  </div>
+
+                  <div className="mt-8">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="font-bold flex items-center gap-2">
+                        <ShoppingCart className="text-blue-600" size={18} />
+                        Invoice Items
+                      </h4>
+                      <Badge variant="outline" className="text-[10px] font-black">{cart.length} ITEMS</Badge>
+                    </div>
+
+                    {cart.length > 0 ? (
+                      <div className="border rounded-lg overflow-hidden">
+                        <table className="w-full text-sm">
+                          <thead className="bg-slate-50 border-b">
+                            <tr>
+                              <th className="text-left p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Product</th>
+                              <th className="text-center p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Quantity</th>
+                              <th className="text-right p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Total</th>
+                              <th className="w-10"></th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y">
+                            {cart.map((item) => (
+                              <tr key={item.product_id} className="hover:bg-slate-50/50">
+                                <td className="p-4">
+                                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter leading-none mb-1">{item.brand}</p>
+                                  <p className="font-bold text-slate-900">{item.product_name}</p>
+                                  <p className="text-xs font-medium text-slate-500">{CURRENCY}{item.price}</p>
+                                </td>
+                                <td className="p-4">
+                                  <div className="flex items-center justify-center gap-2">
+                                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQty(item.product_id, -1)}><Minus size={12} /></Button>
+                                    <span className="w-8 text-center font-bold">{item.quantity}</span>
+                                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQty(item.product_id, 1)}><Plus size={12} /></Button>
+                                  </div>
+                                </td>
+                                <td className="p-4 text-right font-black text-slate-900">
+                                  {CURRENCY}{(item.price * item.quantity).toLocaleString()}
+                                </td>
+                                <td className="p-4">
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50" onClick={() => setCart(cart.filter(c => c.product_id !== item.product_id))}>
+                                    <Trash2 size={16} />
+                                  </Button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 border-2 border-dashed rounded-lg bg-slate-50/50">
+                        <ShoppingCart size={40} className="mx-auto text-slate-300" />
+                        <p className="mt-2 font-bold text-slate-400">Cart is empty</p>
+                        <Button variant="link" className="text-blue-600 font-bold" onClick={() => setViewMode('browse')}>Add products first</Button>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <div className="flex flex-col gap-6">
+                <Card className="border-slate-200 shadow-sm overflow-hidden">
+                  <CardHeader className="bg-slate-900 text-white flex flex-row items-center justify-between py-4">
+                    <CardTitle className="text-sm font-bold uppercase tracking-widest opacity-70">Payment Summary</CardTitle>
+                    <div className="flex bg-white/10 p-1 rounded-xl border border-white/10">
+                      <button 
+                        onClick={() => setTaxMode('exclusive')}
+                        className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${taxMode === 'exclusive' ? 'bg-white text-slate-900 shadow-lg' : 'text-white hover:bg-white/10'}`}
+                      >
+                        GST +
+                      </button>
+                      <button 
+                        onClick={() => setTaxMode('inclusive')}
+                        className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${taxMode === 'inclusive' ? 'bg-white text-slate-900 shadow-lg' : 'text-white hover:bg-white/10'}`}
+                      >
+                        GST -
+                      </button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm font-medium text-slate-500">
+                        <span>Subtotal</span>
+                        <span>{CURRENCY}{subtotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-sm font-medium text-slate-500">
+                        <div className="flex items-center gap-2">
+                          <span>{TAX_LABEL}</span>
+                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-black border-slate-200 text-slate-400">
+                            {taxMode === 'inclusive' ? 'INCLUDED' : 'ADDED'}
+                          </Badge>
+                        </div>
+                        <span>{CURRENCY}{totalGst.toLocaleString()}</span>
+                      </div>
+                      <div className="pt-4 border-t border-slate-100 flex justify-between items-end">
+                        <span className="text-sm font-bold text-slate-900">Grand Total</span>
+                        <span className="text-3xl font-black text-blue-600 leading-none">{CURRENCY}{grandTotal.toLocaleString()}</span>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-4">
+                      <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Payment Mode</label>
+                      <Select value={paymentMode} onValueChange={setPaymentMode}>
+                        <SelectTrigger className="h-12 font-bold border-slate-200">
+                          <SelectValue placeholder="Select Mode" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Cash" className="font-bold">Cash</SelectItem>
+                          <SelectItem value="UPI" className="font-bold">UPI / GPay</SelectItem>
+                          <SelectItem value="Card" className="font-bold">Card Payment</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </CardContent>
+                  <CardFooter className="p-6 bg-slate-50 border-t">
+                    <Button 
+                      className="w-full h-14 text-lg font-black gap-2 shadow-lg shadow-blue-200" 
+                      disabled={cart.length === 0 || saving}
+                      onClick={handleSave}
+                    >
+                      {saving ? 'Processing...' : <><Printer size={20} /> Complete & Print</>}
+                    </Button>
+                  </CardFooter>
+                </Card>
+
+                <Button variant="ghost" className="text-red-500 font-bold hover:bg-red-50" onClick={() => setCart([])}>
+                  Discard All Items
+                </Button>
               </div>
-              <div className="flex justify-between items-center mb-xs">
-                <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Total Savings</span>
-                <span style={{ fontWeight: 700, color: 'var(--success)' }}>-₹{totalDiscount.toLocaleString('en-IN')}</span>
-              </div>
-              <div className="flex justify-between items-center mt-md" style={{ paddingTop: 16, borderTop: '2px solid var(--bg-secondary)' }}>
-                <span style={{ fontSize: 16, fontWeight: 800 }}>Total Payable</span>
-                <span style={{ fontSize: 24, fontWeight: 900, color: 'var(--accent)' }}>₹{grandTotal.toLocaleString('en-IN')}</span>
-              </div>
+            </div>
+          </TabsContent>
+        </div>
+      </Tabs>
+
+      <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
+        <DialogContent className="max-w-[90vw] sm:max-w-2xl max-h-[90vh] p-0 overflow-hidden border-none shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)] rounded-[2.5rem] bg-white transition-all overflow-y-auto">
+          <div className="relative bg-slate-900 p-8 sm:p-12 flex flex-col items-center text-white text-center overflow-hidden">
+            {/* Proper Cross Button */}
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="absolute top-4 right-4 z-50 h-10 w-10 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 backdrop-blur-md transition-all active:scale-95"
+              onClick={() => setShowSuccessModal(false)}
+            >
+              <X size={20} strokeWidth={2.5} />
+            </Button>
+            
+            <div className="relative w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mb-6 shadow-2xl border border-white/10 animate-in zoom-in-50 duration-500">
+              <Check size={40} strokeWidth={4} className="text-emerald-400 drop-shadow-lg sm:w-12 sm:h-12" />
             </div>
             
-            <div className="flex gap-sm">
-              <select className="form-select" style={{ width: 100 }} value={paymentMode} onChange={(e) => setPaymentMode(e.target.value)}>
-                <option>Cash</option>
-                <option>UPI</option>
-                <option>Card</option>
-              </select>
-              <button 
-                className="btn btn-primary btn-lg" 
-                style={{ flex: 1, height: 50, fontSize: 16 }}
-                onClick={handleSave} 
-                disabled={cart.length === 0 || saving}
+            <h2 className="relative text-3xl sm:text-4xl font-black tracking-tight mb-2">Sale Completed!</h2>
+            <p className="relative opacity-70 font-bold text-base sm:text-lg">Your invoice is ready and saved</p>
+          </div>
+          
+          <div className="p-6 sm:p-10 space-y-6 sm:space-y-8 bg-white">
+            <div className="bg-slate-50 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 text-center border border-slate-100 shadow-inner relative">
+              <p className="text-[10px] sm:text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Invoice Reference</p>
+              <p className="text-5xl sm:text-7xl font-black text-slate-900 tracking-tighter">#{saleResult?.invoiceNumber}</p>
+              
+              <div className="flex flex-wrap items-center justify-center gap-3 mt-6 sm:mt-8">
+                <Badge className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2 hover:bg-emerald-100 transition-colors">
+                  <Check size={14} strokeWidth={3} /> PAID
+                </Badge>
+                <Badge className="bg-white text-slate-500 border border-slate-200 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
+                  <CreditCard size={14} /> {paymentMode}
+                </Badge>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Button 
+                size="lg" 
+                className="h-14 sm:h-16 text-base sm:text-lg gap-3 rounded-2xl shadow-xl shadow-emerald-500/20 bg-indigo-600 hover:bg-indigo-700 font-black transition-all active:scale-[0.98]" 
+                onClick={handleDownloadPDF} 
+                disabled={pdfGenerating}
               >
-                {saving ? 'Processing...' : 'Generate Bill'}
-              </button>
+                <Printer size={20} />
+                {pdfGenerating ? 'Preparing...' : 'Print Invoice'}
+              </Button>
+              <Button 
+                variant="outline" 
+                size="lg" 
+                className="h-14 sm:h-16 text-base sm:text-lg gap-3 rounded-2xl border-slate-200 font-black text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98]" 
+                onClick={() => {
+                  const msg = `Hello ${saleResult?.customer_name || 'Customer'},\nYour invoice #${saleResult?.invoiceNumber} for ${CURRENCY}${saleResult?.grandTotal} from ${profile?.business_name || 'us'} is ready.`;
+                  window.open(`https://wa.me/91${customerPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                }}
+              >
+                <ExternalLink size={20} className="text-emerald-500" />
+                WhatsApp
+              </Button>
             </div>
+
+            <Button 
+              variant="ghost" 
+              className="w-full text-slate-400 font-black hover:text-slate-900 hover:bg-slate-50 h-12 rounded-xl transition-all" 
+              onClick={() => { 
+                setShowSuccessModal(false); 
+                setViewMode('browse'); 
+                setCart([]);
+                setCustomerData({ name: '', phone: '', address: '' });
+                setPaymentData({ mode: 'Cash', paid: '' });
+              }}
+            >
+              Back to Billing Center
+            </Button>
           </div>
-        </div>
-      </div>
-
-      {/* Modern Success Modal */}
-      {showSuccessModal && saleResult && (
-        <div className="modal-overlay">
-          <div className="modal modal-md">
-            <div className="modal-header">
-              <h3 className="flex items-center gap-sm">
-                <div className="metric-icon teal" style={{ width: 32, height: 32 }}><Check size={18} /></div>
-                Sale Processed Successfully
-              </h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowSuccessModal(false)}><X size={18} /></button>
-            </div>
-            <div className="modal-body" style={{ background: 'var(--bg-primary)', padding: 32, textAlign: 'center' }}>
-              <div style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 14, color: 'var(--text-muted)', marginBottom: 8 }}>Invoice Reference</div>
-                <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: 1 }}>#{saleResult.invoiceNumber}</div>
-                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent)', marginTop: 8 }}>₹{saleResult.grandTotal.toLocaleString('en-IN')}</div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                <button className="btn btn-secondary btn-lg" onClick={handleDownloadPDF} disabled={pdfGenerating}>
-                  {pdfGenerating ? 'Generating...' : <><Printer size={18} /> Print Invoice</>}
-                </button>
-                <button className="btn btn-secondary btn-lg" style={{ background: '#25D366', color: 'white', border: 'none' }} 
-                  onClick={() => {
-                    const msg = `*AF NUTRITION*\nHello ${saleResult.customer_name || 'Customer'},\nYour invoice #${saleResult.invoiceNumber} for ₹${saleResult.grandTotal} is ready. Thank you!`;
-                    window.open(`https://wa.me/91${customerPhone}?text=${encodeURIComponent(msg)}`, '_blank');
-                  }}>
-                  <ExternalLink size={18} /> WhatsApp
-                </button>
-              </div>
-
-              <div style={{ marginTop: 24, padding: 16, background: 'var(--bg-secondary)', borderRadius: 'var(--radius-lg)', textAlign: 'left' }}>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)' }}>CLOUD SHARING LINK</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4 }}>{shareLink || 'Link not yet generated'}</div>
-                  </div>
-                  <button className="btn btn-ghost btn-icon" onClick={handleShareLink} disabled={shareLoading}>
-                    {shareLoading ? '...' : <Copy size={16} />}
-                  </button>
-                </div>
-              </div>
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-ghost" onClick={() => setShowSuccessModal(false)}>Close Window</button>
-              <button className="btn btn-primary" onClick={() => setShowSuccessModal(false)}>New Sale</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Premium Toast */}
-      {toast && (
-        <div className={`toast ${toast.type === 'success' ? 'success' : 'danger'}`}>
-          {toast.type === 'success' ? <Check size={18} /> : <X size={18} />}
-          <span style={{ fontWeight: 600 }}>{toast.message}</span>
-        </div>
-      )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

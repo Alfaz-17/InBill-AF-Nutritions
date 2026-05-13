@@ -3,7 +3,7 @@ const { GoogleGenAI } = require('@google/genai');
 const path = require('path');
 const fs = require('fs');
 const isDev = require('electron-is-dev');
-const { initDB, seedDB, productOps, saleOps, purchaseOps, returnOps, statsOps, reportOps, expenseOps, partyOps } = require('./db');
+const { initDB, resetDB, productOps, saleOps, purchaseOps, returnOps, purchaseReturnOps, statsOps, reportOps, expenseOps, partyOps, businessProfileOps, categoryOps, expenseCategoryOps, attributeOps, storageOps } = require('./db');
 
 let mainWindow;
 
@@ -18,7 +18,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
     },
-    title: 'Supplement Store Manager',
+    title: 'InBill — Professional Billing',
     backgroundColor: '#0f172a',
     show: false,
   });
@@ -83,6 +83,11 @@ ipcMain.handle('purchases:getById', (_, id) => purchaseOps.getById(id));
 ipcMain.handle('returns:create', (_, data) => returnOps.create(data));
 ipcMain.handle('returns:getAll', () => returnOps.getAll());
 
+/* ───────── Purchase Returns IPC ───────── */
+ipcMain.handle('purchaseReturns:create', (_, data) => purchaseReturnOps.create(data));
+ipcMain.handle('purchaseReturns:getAll', () => purchaseReturnOps.getAll());
+ipcMain.handle('purchaseReturns:getById', (_, id) => purchaseReturnOps.getById(id));
+
 /* ───────── Expenses IPC ───────── */
 ipcMain.handle('expenses:getAll', () => expenseOps.getAll());
 ipcMain.handle('expenses:add', (_, data) => expenseOps.add(data));
@@ -104,6 +109,33 @@ ipcMain.handle('parties:add', (_, data) => partyOps.add(data));
 ipcMain.handle('parties:update', (_, id, data) => partyOps.update(id, data));
 ipcMain.handle('parties:delete', (_, id) => partyOps.delete(id));
 ipcMain.handle('parties:updateBalance', (_, id, amount) => partyOps.updateBalance(id, amount));
+
+/* ───────── Business Profile IPC ───────── */
+ipcMain.handle('business:getProfile', () => businessProfileOps.get());
+ipcMain.handle('business:updateProfile', (_, data) => businessProfileOps.update(data));
+ipcMain.handle('business:pickLogo', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
+  });
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return result.filePaths[0];
+});
+
+/* ───────── Categories IPC ───────── */
+ipcMain.handle('categories:getAll', () => categoryOps.getAll());
+ipcMain.handle('categories:add', (_, name) => categoryOps.add(name));
+ipcMain.handle('categories:delete', (_, id) => categoryOps.delete(id));
+
+/* ───────── Product Attributes (Dynamic Fields) IPC ───────── */
+ipcMain.handle('attributes:getAll', () => attributeOps.getAll());
+ipcMain.handle('attributes:add', (_, attr) => attributeOps.add(attr));
+ipcMain.handle('attributes:delete', (_, id) => attributeOps.delete(id));
+
+/* ───────── Expense Categories IPC ───────── */
+ipcMain.handle('expenseCategories:getAll', () => expenseCategoryOps.getAll());
+ipcMain.handle('expenseCategories:add', (_, name) => expenseCategoryOps.add(name));
+ipcMain.handle('expenseCategories:delete', (_, id) => expenseCategoryOps.delete(id));
 
 /* ───────── AI Invoice Upload IPC ───────── */
 ipcMain.handle('ai:selectFile', async () => {
@@ -138,8 +170,23 @@ ipcMain.handle('ai:parseInvoice', async (_, { base64, mimeType }) => {
     const modelName = "gemini-2.5-flash";
 
     const prompt = `
-      Extract structured inventory data from this invoice image.
-      Return ONLY a JSON object with the following structure:
+      You are an expert invoice parser. Extract EVERY piece of structured data from this invoice image.
+      
+      CRITICAL RULES:
+      1. Extract ALL items with their standard fields (name, qty, price, etc.)
+      2. DETECT INDUSTRY-SPECIFIC FIELDS: Look for ANY columns, labels, or data that go beyond standard invoice fields.
+         Examples of custom fields to detect:
+         - Serial numbers, IMEI numbers, Motor Numbers, Controller Numbers, Chassis Numbers
+         - Warranty periods, Model numbers, Part numbers, OEM codes
+         - Color, Size, Weight, Material, Grade, Purity, Carat
+         - Batch codes, Lot numbers, Manufacturing dates
+         - Any identifier, specification, or tracking number unique to the product
+      3. Put ALL such detected fields into the "custom_fields" object with descriptive key names.
+      4. DETECT CATEGORIES: Classify each product into a sensible business category based on its description.
+         Examples: "EV Bikes", "Spare Parts", "Electronics", "Medicines", "Groceries", etc.
+      5. Extract product_size from weight/volume/variant info (e.g. "500g", "1L", "XL", "128GB").
+      
+      Return ONLY a JSON object with this structure:
       {
         "vendor": "Supplier Name",
         "invoice_number": "Bill ID",
@@ -149,17 +196,37 @@ ipcMain.handle('ai:parseInvoice', async (_, { base64, mimeType }) => {
         "items": [
           {
             "description": "Product Name",
+            "category": "Detected Category (e.g. EV Bikes, Spare Parts, Electronics)",
+            "product_size": "Weight/Size/Variant if applicable",
             "quantity": 1,
             "price": 0.00,
             "amount": 0.00,
             "batch_number": "BN123",
             "expiry_date": "YYYY-MM-DD",
             "hsn_code": "optional",
-            "gst_rate": 18
+            "gst_rate": 18,
+            "cgst_rate": 9,
+            "sgst_rate": 9,
+            "custom_fields": {
+              "Motor Number": "MTR-12345",
+              "Controller Number": "CTRL-6789",
+              "IMEI": "35-209900-176148-1",
+              "Serial Number": "SN-001",
+              "Warranty (Months)": "24",
+              "Color": "Red",
+              "Model": "X100"
+            }
           }
-        ]
+        ],
+        "detected_new_fields": ["Motor Number", "Controller Number"]
       }
-      Extract "other_charges" for shipping, freight, delivery, or round-off fees.
+      
+      IMPORTANT: 
+      - The "custom_fields" object should capture ALL non-standard data visible in the invoice.
+      - "detected_new_fields" should list the names of ALL custom field keys you extracted.
+      - If a column in the invoice has serial numbers, part numbers, or any unique identifiers per item, those MUST go into custom_fields.
+      - Extract "other_charges" for shipping, freight, delivery, or round-off fees.
+      - Try to categorize products based on their description into industry-relevant categories.
     `;
 
     const response = await ai.models.generateContent({
@@ -176,6 +243,8 @@ ipcMain.handle('ai:parseInvoice', async (_, { base64, mimeType }) => {
 
     const lineItems = (parsedData.items || []).map((item, idx) => ({
       description: item.description || `Item ${idx + 1}`,
+      category: item.category || "",
+      product_size: item.product_size || "",
       quantity: parseFloat(item.quantity) || 1,
       price: parseFloat(item.price) || 0,
       amount: parseFloat(item.amount) || (parseFloat(item.quantity) || 1) * (parseFloat(item.price) || 0),
@@ -183,7 +252,18 @@ ipcMain.handle('ai:parseInvoice', async (_, { base64, mimeType }) => {
       expiry_date: item.expiry_date || "",
       hsn_code: item.hsn_code || "",
       gst_rate: parseFloat(item.gst_rate) || 0,
+      cgst: parseFloat(item.cgst_rate) || (parseFloat(item.gst_rate) || 0) / 2,
+      sgst: parseFloat(item.sgst_rate) || (parseFloat(item.gst_rate) || 0) / 2,
+      custom_fields: item.custom_fields || {},
     }));
+
+    // Collect all unique custom field names and categories detected
+    const detectedFields = new Set(parsedData.detected_new_fields || []);
+    const detectedCategories = new Set();
+    lineItems.forEach(item => {
+      if (item.category) detectedCategories.add(item.category);
+      Object.keys(item.custom_fields).forEach(k => detectedFields.add(k));
+    });
 
     return {
       success: true,
@@ -193,6 +273,8 @@ ipcMain.handle('ai:parseInvoice', async (_, { base64, mimeType }) => {
       invoice_total: parseFloat(parsedData.invoice_total) || lineItems.reduce((s, i) => s + i.amount, 0),
       other_charges: parseFloat(parsedData.other_charges) || 0,
       items: lineItems,
+      detected_new_fields: [...detectedFields],
+      detected_categories: [...detectedCategories],
     };
   } catch (err) {
     console.error("AI Parse error:", err);
@@ -230,13 +312,44 @@ ipcMain.handle('settings:setGeminiKey', (_, newKey) => {
   }
 });
 
-ipcMain.handle('settings:seedData', () => {
+ipcMain.handle('settings:resetData', () => {
   try {
-    seedDB();
+    resetDB();
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+ipcMain.handle('storage:export', async () => {
+  const { filePath } = await dialog.showSaveDialog({
+    title: 'Export Business Data',
+    defaultPath: `InBill_Backup_${new Date().toISOString().split('T')[0]}.json`,
+    filters: [{ name: 'JSON', extensions: ['json'] }]
+  });
+  
+  if (filePath) {
+    const data = storageOps.exportAll();
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+    return { success: true };
+  }
+  return { success: false };
+});
+
+ipcMain.handle('storage:import', async () => {
+  const { filePaths } = await dialog.showOpenDialog({
+    title: 'Import Business Data',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    properties: ['openFile']
+  });
+
+  if (filePaths && filePaths[0]) {
+    const content = fs.readFileSync(filePaths[0], 'utf8');
+    const data = JSON.parse(content);
+    storageOps.importAll(data);
+    return { success: true };
+  }
+  return { success: false };
 });
 
 /* ───────── PDF Generation & Sharing IPC ───────── */
@@ -258,6 +371,7 @@ ipcMain.handle('pdf:generate', async (_, html) => {
     const options = {
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
       pageSize: 'A4',
+      preferCSSPageSize: true,
       printBackground: true,
       color: true
     };
@@ -289,53 +403,41 @@ ipcMain.handle('pdf:saveAs', async (_, base64Data, fileName) => {
   return { success: false };
 });
 
-ipcMain.handle('pdf:share', async (_, base64Data) => {
+/* ───────── Native Printing IPC ───────── */
+ipcMain.handle('ai:printInvoice', async (_, html) => {
+  let printWindow = new BrowserWindow({
+    show: false,
+    webPreferences: {
+      nodeIntegration: false
+    }
+  });
+
   try {
-    const buffer = Buffer.from(base64Data, 'base64');
-    const tempPath = path.join(app.getPath('temp'), `AF_Nutrition_Invoice_${Date.now()}.pdf`);
-    fs.writeFileSync(tempPath, buffer);
-
-    // Use file.io for anonymous sharing
-    // Since we don't have form-data installed, we can use a simpler approach or Electron's net
-    const { net } = require('electron');
-    return new Promise((resolve) => {
-      const boundary = 'AF Nutrition' + Date.now();
-      const postData = Buffer.concat([
-        Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="invoice.pdf"\r\nContent-Type: application/pdf\r\n\r\n`),
-        buffer,
-        Buffer.from(`\r\n--${boundary}--\r\n`)
-      ]);
-
-      const request = net.request({
-        method: 'POST',
-        url: 'https://file.io/?expires=1d',
-      });
-
-      request.setHeader('Content-Type', `multipart/form-data; boundary=${boundary}`);
-      request.setHeader('Content-Length', postData.length.toString());
-
-      request.on('response', (response) => {
-        let body = '';
-        response.on('data', (chunk) => { body += chunk; });
-        response.on('end', () => {
-          if (response.statusCode >= 400) {
-            resolve({ success: false, error: `Upload Failed (${response.statusCode})` });
-            return;
+    // Load HTML content
+    printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    
+    printWindow.webContents.on('did-finish-load', () => {
+      // Small extra buffer for heavy images/gradients
+      setTimeout(() => {
+        printWindow.webContents.print({
+          silent: false,
+          printBackground: true,
+          margins: { marginType: 'default' },
+          pageSize: 'A4'
+        }, (success, errorType) => {
+          if (!success && errorType !== 'cancelled') {
+            console.error('Print Error:', errorType);
           }
-          try {
-            const result = JSON.parse(body);
-            if (result.success) resolve({ success: true, link: result.link });
-            else resolve({ success: false, error: result.message || 'Upload failed' });
-          } catch (e) {
-            resolve({ success: false, error: 'Malformed cloud response' });
-          }
+          printWindow.destroy();
         });
-      });
-
-      request.on('error', (err) => resolve({ success: false, error: err.message }));
-      request.end(postData);
+      }, 300);
     });
+
+    return { success: true };
   } catch (err) {
+    console.error('Print Handler Error:', err);
+    if (printWindow) printWindow.destroy();
     return { success: false, error: err.message };
   }
 });
+

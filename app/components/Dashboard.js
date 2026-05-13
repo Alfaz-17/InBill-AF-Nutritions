@@ -2,11 +2,17 @@
 import { useState, useEffect } from 'react';
 import {
   Clock, TrendingUp, Plus, ArrowRight, Wallet,
-  IndianRupee, ShoppingCart, Package, AlertTriangle,
-  ArrowDownLeft, ArrowUpRight, Users, ScanLine
+  IndianRupee, ShoppingCart, Package, AlertTriangle, Check,
+  ArrowDownLeft, ArrowUpRight, Users, ScanLine, TruckIcon,
+  ChevronRight, ArrowUpCircle, Target
 } from 'lucide-react';
 
-export default function Dashboard({ onNavigate }) {
+// shadcn/ui components
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+export default function Dashboard({ onNavigate, profile }) {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -19,18 +25,20 @@ export default function Dashboard({ onNavigate }) {
       try {
         const data = await window.electronAPI.stats.dashboard();
         setStats(data);
-      } catch (e) {
-        console.error('Dashboard load error:', e);
-      }
+      } catch (e) { console.error('Dashboard load error:', e); }
     }
     setLoading(false);
   };
 
+  const CURRENCY = profile?.currency_symbol || '₹';
+
   if (loading) {
     return (
-      <div className="empty-state">
-        <div className="spinner" style={{ width: 32, height: 32 }}></div>
-        <p style={{ marginTop: 16 }}>Loading dashboard...</p>
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <p className="text-slate-400 font-black uppercase tracking-widest text-xs">Synchronizing Data...</p>
+        </div>
       </div>
     );
   }
@@ -42,173 +50,164 @@ export default function Dashboard({ onNavigate }) {
   };
 
   return (
-    <div className="animate-in">
-      <div className="page-header">
-        <h2>Dashboard</h2>
-        <p>Overview of your supplement store operations</p>
-      </div>
+    <div className="flex flex-col gap-10 md:p-2 lg:p-4 animate-in">
+      <header className="page-header">
+        <div>
+          <h2>Executive Overview</h2>
+          <p>Real-time analytics for {profile?.business_name || 'your business'}</p>
+        </div>
+        <div className="flex gap-3">
+          <Button onClick={() => onNavigate('billing')} className="btn-primary h-14 px-8 rounded-2xl gap-3 shadow-blue-500/20">
+            <Plus size={20} strokeWidth={3} /> New Transaction
+          </Button>
+        </div>
+      </header>
 
-      {/* Metric Cards */}
-      <div className="metric-grid">
-        <div className="metric-card">
-          <div className="metric-icon teal">
-            <TrendingUp size={24} />
+      {/* Primary Metrics */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="metric-card group">
+          <div className="metric-icon blue group-hover:scale-110 transition-transform duration-500">
+            <Target size={28} />
           </div>
-          <div className="metric-info">
-            <h3>Today&apos;s Sales</h3>
-            <div className="metric-value">₹{s.todaySalesTotal.toLocaleString('en-IN')}</div>
-            <div className="metric-sub">{s.todaySalesCount} transaction{s.todaySalesCount !== 1 ? 's' : ''}</div>
+          <div>
+            <p className="metric-sub">Total Revenue</p>
+            <h3 className="metric-value">{CURRENCY}{(s.totalRevenue || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Full invoice values</div>
           </div>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-icon green">
-            <IndianRupee size={24} />
+        <div className="metric-card group">
+          <div className="metric-icon green group-hover:scale-110 transition-transform duration-500">
+            <TrendingUp size={28} />
           </div>
-          <div className="metric-info">
-            <h3>Total Revenue</h3>
-            <div className="metric-value">₹{(s.totalRevenue || 0).toLocaleString('en-IN')}</div>
-            <div className="metric-sub">all-time earnings</div>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-icon red">
-            <Wallet size={24} />
-          </div>
-          <div className="metric-info">
-            <h3>Total Expenses</h3>
-            <div className="metric-value">₹{(s.totalExpenses || 0).toLocaleString('en-IN')}</div>
-            <div className="metric-sub">shop overheads</div>
+          <div>
+            <p className="metric-sub">Net Profit</p>
+            <h3 className="metric-value text-emerald-600">{CURRENCY}{(s.totalProfit || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Margin - Expenses</div>
           </div>
         </div>
 
-        <div className="metric-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('parties')}>
-          <div className="metric-icon green">
-            <ArrowDownLeft size={24} />
+        <div className="metric-card group">
+          <div className="metric-icon teal group-hover:scale-110 transition-transform duration-500">
+            <Wallet size={28} />
           </div>
-          <div className="metric-info">
-            <h3>To Receive</h3>
-            <div className="metric-value">₹{(s.receivable || 0).toLocaleString('en-IN')}</div>
-            <div className="metric-sub">from customers</div>
-          </div>
-        </div>
-        <div className="metric-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('parties')}>
-          <div className="metric-icon yellow">
-            <ArrowUpRight size={24} />
-          </div>
-          <div className="metric-info">
-            <h3>To Pay</h3>
-            <div className="metric-value">₹{(s.payable || 0).toLocaleString('en-IN')}</div>
-            <div className="metric-sub">to suppliers</div>
+          <div>
+            <p className="metric-sub">Cash Received</p>
+            <h3 className="metric-value text-blue-600">{CURRENCY}{(s.totalCashReceived || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actual money in hand</div>
           </div>
         </div>
 
-        <div className="metric-card">
-          <div className="metric-icon blue">
-            <Package size={24} />
+        <div className="metric-card group">
+          <div className="metric-icon red group-hover:scale-110 transition-transform duration-500">
+            <ArrowDownLeft size={28} />
           </div>
-          <div className="metric-info">
-            <h3>Total Products</h3>
-            <div className="metric-value">{s.totalProducts}</div>
-            <div className="metric-sub">in inventory</div>
-          </div>
-        </div>
-
-        <div className="metric-card" style={{ cursor: 'pointer' }} onClick={() => onNavigate('products')}>
-          <div className="metric-icon red">
-            <AlertTriangle size={24} />
-          </div>
-          <div className="metric-info">
-            <h3>Low Stock</h3>
-            <div className="metric-value" style={{ color: 'var(--danger)' }}>{s.lowStockCount}</div>
-            <div className="metric-sub">items needing attention</div>
-          </div>
-        </div>
-
-        <div className="metric-card">
-          <div className="metric-icon yellow">
-            <Clock size={24} />
-          </div>
-          <div className="metric-info">
-            <h3>Expiring Soon</h3>
-            <div className="metric-value" style={{ color: s.expiringCount > 0 ? 'var(--warning)' : 'inherit' }}>{s.expiringCount}</div>
-            <div className="metric-sub">within 30 days</div>
+          <div>
+            <p className="metric-sub">Pending Due</p>
+            <h3 className="metric-value text-rose-600">{CURRENCY}{(s.receivable || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer outstandings</div>
           </div>
         </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="flex gap-md wrap mb-md">
-        <button className="btn btn-primary btn-lg" onClick={() => onNavigate('billing')}>
-          <ShoppingCart size={20} />
-          New Sale
-        </button>
-        <button className="btn btn-secondary btn-lg" onClick={() => onNavigate('products')}>
-          <Plus size={20} />
-          Add Product
-        </button>
-        <button className="btn btn-secondary btn-lg" onClick={() => onNavigate('parties')}>
-          <Users size={20} />
-          Add Party
-        </button>
-        <button className="btn btn-secondary btn-lg" onClick={() => onNavigate('ai-upload')}>
-          <ScanLine size={20} />
-          AI Stock-in
-        </button>
-      </div>
-
-      {/* Recent Sales */}
-      <div className="card">
-        <div className="flex items-center justify-between" style={{ marginBottom: 16 }}>
-          <h3 style={{ fontSize: 16, fontWeight: 600 }}>Recent Sales</h3>
-          <button className="btn btn-ghost btn-sm" onClick={() => onNavigate('reports')}>
-            View All <ArrowRight size={14} />
-          </button>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+        {/* Quick Insights */}
+        <div className="lg:col-span-2 space-y-10">
+          <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40">
+            <CardHeader className="p-10 pb-4 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl font-black">Recent Transactions</CardTitle>
+                <CardDescription className="text-base font-medium">Last 5 sales activities</CardDescription>
+              </div>
+              <Button variant="ghost" className="font-black gap-2 hover:bg-slate-50" onClick={() => onNavigate('reports')}>
+                Full Report <ChevronRight size={16} />
+              </Button>
+            </CardHeader>
+            <CardContent className="p-10 pt-0">
+              {s.recentSales?.length > 0 ? (
+                <div className="table-wrap border-none shadow-none">
+                  <table className="w-full">
+                    <thead>
+                      <tr>
+                        <th className="px-0">Invoice</th>
+                        <th>Customer</th>
+                        <th className="text-right">Amount</th>
+                        <th className="text-right">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {s.recentSales.map((sale) => (
+                        <tr key={sale.id} className="group hover:bg-slate-50/50 transition-colors">
+                          <td className="px-0 py-6">
+                            <Badge className="bg-slate-900 text-white font-black rounded-xl">#{sale.invoice_number}</Badge>
+                          </td>
+                          <td className="font-bold text-slate-900">{sale.customer_name || 'Counter Sale'}</td>
+                          <td className="text-right font-black text-slate-900">{CURRENCY}{sale.total_amount.toLocaleString('en-IN')}</td>
+                          <td className="text-right text-slate-400 font-bold text-xs">
+                            {new Date(sale.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-20 text-slate-300">
+                  <ShoppingCart size={48} strokeWidth={1} />
+                  <p className="mt-4 font-bold">No recent sales data</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
 
-        {s.recentSales && s.recentSales.length > 0 ? (
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Invoice</th>
-                  <th>Customer</th>
-                  <th>Amount</th>
-                  <th>Payment</th>
-                  <th>Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {s.recentSales.map((sale) => (
-                  <tr key={sale.id}>
-                    <td>
-                      <span className="badge badge-teal">{sale.invoice_number}</span>
-                    </td>
-                    <td>{sale.customer_name || '—'}</td>
-                    <td style={{ fontWeight: 600 }}>₹{sale.total_amount.toLocaleString('en-IN')}</td>
-                    <td>
-                      <span className={`badge ${sale.payment_mode === 'Cash' ? 'badge-success' : sale.payment_mode === 'UPI' ? 'badge-info' : 'badge-warning'}`}>
-                        {sale.payment_mode}
-                      </span>
-                    </td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                      {new Date(sale.date).toLocaleDateString('en-IN')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="empty-state" style={{ padding: 40 }}>
-            <div className="empty-state-icon">
-              <ShoppingCart size={28} />
-            </div>
-            <h3>No sales yet</h3>
-            <p>Create your first sale to see activity here</p>
-          </div>
-        )}
+        {/* Action Sidebar */}
+        <div className="space-y-10">
+          <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 bg-gradient-to-br from-slate-900 to-slate-800 text-white border-none overflow-hidden relative">
+             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl" />
+             <CardHeader className="p-10 pb-4">
+               <CardTitle className="text-xl font-black">Quick Actions</CardTitle>
+               <CardDescription className="text-slate-400 font-bold">Most used features</CardDescription>
+             </CardHeader>
+             <CardContent className="p-10 pt-0 space-y-4">
+                <Button onClick={() => onNavigate('purchases')} variant="secondary" className="w-full h-14 justify-start gap-4 rounded-2xl bg-white/10 hover:bg-white/20 border-none text-white font-black text-base">
+                  <TruckIcon size={22} className="text-blue-400" /> Stock Inflow
+                </Button>
+                <Button onClick={() => onNavigate('parties')} variant="secondary" className="w-full h-14 justify-start gap-4 rounded-2xl bg-white/10 hover:bg-white/20 border-none text-white font-black text-base">
+                  <Users size={22} className="text-emerald-400" /> Add Party
+                </Button>
+                <Button onClick={() => onNavigate('ai-upload')} variant="secondary" className="w-full h-14 justify-start gap-4 rounded-2xl bg-white/10 hover:bg-white/20 border-none text-white font-black text-base">
+                  <ScanLine size={22} className="text-purple-400" /> AI Stock-in
+                </Button>
+             </CardContent>
+          </Card>
+
+          <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40">
+             <CardHeader className="p-8 pb-2">
+               <CardTitle className="text-lg font-black flex items-center gap-2">
+                 <AlertTriangle size={18} className="text-amber-500" /> Restock Radar
+               </CardTitle>
+             </CardHeader>
+             <CardContent className="p-8 pt-0 space-y-4">
+                {stats?.lowStock?.length > 0 ? stats.lowStock.slice(0, 3).map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="min-w-0">
+                      <p className="font-black text-sm text-slate-900 truncate">{item.product_name}</p>
+                      <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest">{item.quantity} LEFT</p>
+                    </div>
+                    <Button onClick={() => onNavigate('purchases')} size="sm" variant="ghost" className="text-primary font-black hover:bg-blue-50">Add</Button>
+                  </div>
+                )) : (
+                  <div className="py-10 text-center">
+                    <div className="w-12 h-12 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <Check size={24} strokeWidth={3} />
+                    </div>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Inventory Clean</p>
+                  </div>
+                )}
+             </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

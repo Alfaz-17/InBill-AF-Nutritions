@@ -37,6 +37,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getAll: () => ipcRenderer.invoke('returns:getAll'),
   },
 
+  /* ── Purchase Returns ── */
+  purchaseReturns: {
+    create: (data) => ipcRenderer.invoke('purchaseReturns:create', data),
+    getAll: () => ipcRenderer.invoke('purchaseReturns:getAll'),
+    getById: (id) => ipcRenderer.invoke('purchaseReturns:getById', id),
+  },
+
   /* ── Expenses ── */
   expenses: {
     getAll: () => ipcRenderer.invoke('expenses:getAll'),
@@ -71,13 +78,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ai: {
     selectFile: () => ipcRenderer.invoke('ai:selectFile'),
     parseInvoice: (data) => ipcRenderer.invoke('ai:parseInvoice', data),
+    printInvoice: (html) => ipcRenderer.invoke('ai:printInvoice', html),
   },
 
   /* ── Settings ── */
   settings: {
     getGeminiKey: () => ipcRenderer.invoke('settings:getGeminiKey'),
     setGeminiKey: (key) => ipcRenderer.invoke('settings:setGeminiKey', key),
-    seedData: () => ipcRenderer.invoke('settings:seedData'),
+    resetData: () => ipcRenderer.invoke('settings:resetData'),
+  },
+
+  /* ── Business Profile ── */
+  business: {
+    getProfile: () => ipcRenderer.invoke('business:getProfile'),
+    updateProfile: (data) => ipcRenderer.invoke('business:updateProfile', data),
+    pickLogo: () => ipcRenderer.invoke('business:pickLogo'),
+  },
+
+  /* ── Categories ── */
+  categories: {
+    getAll: () => ipcRenderer.invoke('categories:getAll'),
+    add: (name) => ipcRenderer.invoke('categories:add', name),
+    delete: (id) => ipcRenderer.invoke('categories:delete', id),
+  },
+
+  /* ── Expense Categories ── */
+  expenseCategories: {
+    getAll: () => ipcRenderer.invoke('expenseCategories:getAll'),
+    add: (name) => ipcRenderer.invoke('expenseCategories:add', name),
+    delete: (id) => ipcRenderer.invoke('expenseCategories:delete', id),
+  },
+
+  /* ── Product Attributes ── */
+  attributes: {
+    getAll: () => ipcRenderer.invoke('attributes:getAll'),
+    add: (attr) => ipcRenderer.invoke('attributes:add', attr),
+    delete: (id) => ipcRenderer.invoke('attributes:delete', id),
   },
   
   /* ── PDF ── */
@@ -85,5 +121,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     generate: (html) => ipcRenderer.invoke('pdf:generate', html),
     saveAs: (base64, name) => ipcRenderer.invoke('pdf:saveAs', base64, name),
     share: (base64) => ipcRenderer.invoke('pdf:share', base64),
+  },
+
+  /* ── Data Management ── */
+  storage: {
+    exportData: () => ipcRenderer.invoke('storage:export'),
+    importData: () => ipcRenderer.invoke('storage:import'),
   },
 });

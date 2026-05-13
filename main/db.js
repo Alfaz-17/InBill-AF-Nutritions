@@ -25,12 +25,25 @@ const initDB = () => {
       cost_price    REAL    DEFAULT 0,
       barcode       TEXT    DEFAULT '',
       gst_rate      REAL    DEFAULT 0,
+      cgst          REAL    DEFAULT 0,
+      sgst          REAL    DEFAULT 0,
       quantity      INTEGER DEFAULT 0,
       batch_number  TEXT    DEFAULT '',
       expiry_date   TEXT    DEFAULT '',
+      product_size  TEXT    DEFAULT '',
+      is_deleted    INTEGER DEFAULT 0,
+      custom_fields TEXT    DEFAULT '{}',
       created_at    TEXT    DEFAULT (datetime('now','localtime'))
     );
+  `);
 
+  // Ensure existing tables have new columns - Run individually outside db.exec
+  try { db.exec("ALTER TABLE products ADD COLUMN cgst REAL DEFAULT 0"); } catch(e){}
+  try { db.exec("ALTER TABLE products ADD COLUMN sgst REAL DEFAULT 0"); } catch(e){}
+  try { db.exec("ALTER TABLE products ADD COLUMN is_deleted INTEGER DEFAULT 0"); } catch(e){}
+  try { db.exec("ALTER TABLE products ADD COLUMN custom_fields TEXT DEFAULT '{}'"); } catch(e){}
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS expenses (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       date        TEXT    DEFAULT (datetime('now','localtime')),
@@ -44,6 +57,8 @@ const initDB = () => {
       invoice_number TEXT    NOT NULL UNIQUE,
       date           TEXT    DEFAULT (datetime('now','localtime')),
       customer_name  TEXT    DEFAULT '',
+      customer_phone TEXT    DEFAULT '',
+      customer_address TEXT  DEFAULT '',
       subtotal       REAL    DEFAULT 0,
       total_gst      REAL    DEFAULT 0,
       total_amount   REAL    DEFAULT 0,
@@ -59,6 +74,7 @@ const initDB = () => {
       product_name TEXT   NOT NULL,
       quantity    INTEGER NOT NULL,
       price       REAL    NOT NULL,
+      cost_price  REAL    DEFAULT 0,
       gst_rate    REAL    DEFAULT 0,
       gst_amount  REAL    DEFAULT 0,
       total_price REAL    DEFAULT 0,
@@ -116,7 +132,90 @@ const initDB = () => {
       current_balance REAL DEFAULT 0,
       created_at   TEXT    DEFAULT (datetime('now','localtime'))
     );
+
+    CREATE TABLE IF NOT EXISTS purchase_returns (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      purchase_id    INTEGER,
+      party_id       INTEGER,
+      supplier_name  TEXT    DEFAULT '',
+      date           TEXT    DEFAULT (datetime('now','localtime')),
+      total_amount   REAL    DEFAULT 0,
+      reason         TEXT    DEFAULT '',
+      FOREIGN KEY (purchase_id) REFERENCES purchases(id),
+      FOREIGN KEY (party_id) REFERENCES parties(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_return_items (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id     INTEGER NOT NULL,
+      product_name  TEXT    NOT NULL,
+      quantity      INTEGER DEFAULT 0,
+      price         REAL    DEFAULT 0,
+      FOREIGN KEY (return_id) REFERENCES purchase_returns(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS business_profile (
+      id              INTEGER PRIMARY KEY DEFAULT 1,
+      business_name   TEXT    DEFAULT 'My Business',
+      business_short  TEXT    DEFAULT 'MB',
+      tagline         TEXT    DEFAULT 'Billing & Inventory',
+      address_line1   TEXT    DEFAULT '',
+      address_line2   TEXT    DEFAULT '',
+      city            TEXT    DEFAULT '',
+      state           TEXT    DEFAULT '',
+      pincode         TEXT    DEFAULT '',
+      phone           TEXT    DEFAULT '',
+      email           TEXT    DEFAULT '',
+      gstin           TEXT    DEFAULT '',
+      logo_path       TEXT    DEFAULT '',
+      invoice_prefix  TEXT    DEFAULT 'INV',
+      invoice_footer  TEXT    DEFAULT 'Thank you for your business!',
+      currency_symbol TEXT    DEFAULT '₹',
+      business_type   TEXT    DEFAULT 'General',
+      invoice_settings TEXT    DEFAULT '{}',
+      master_data      TEXT    DEFAULT '{}',
+      created_at      TEXT    DEFAULT (datetime('now','localtime'))
+    );
   `);
+
+  try { db.exec("ALTER TABLE business_profile ADD COLUMN invoice_settings TEXT DEFAULT '{}'"); } catch(e){}
+  try { db.exec("ALTER TABLE business_profile ADD COLUMN master_data TEXT DEFAULT '{}'"); } catch(e){}
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS product_attribute_defs (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      name        TEXT    NOT NULL,
+      type        TEXT    NOT NULL, -- text, number, date, select
+      required    INTEGER DEFAULT 0,
+      options     TEXT, -- JSON array for select type
+      business_id INTEGER DEFAULT 1
+    );
+
+    CREATE TABLE IF NOT EXISTS custom_categories (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT    NOT NULL,
+      sort_order    INTEGER DEFAULT 0,
+      is_active     INTEGER DEFAULT 1,
+      created_at    TEXT    DEFAULT (datetime('now','localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS expense_categories (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT    NOT NULL,
+      is_default    INTEGER DEFAULT 0
+    );
+
+    CREATE TABLE IF NOT EXISTS product_attribute_defs (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      name          TEXT    NOT NULL,
+      type          TEXT    DEFAULT 'text',
+      required      INTEGER DEFAULT 0,
+      options       TEXT    DEFAULT '[]'
+    );
+  `);
+
+  // Ensure business profile exists
+  db.prepare('INSERT OR IGNORE INTO business_profile (id) VALUES (1)').run();
 
   // Simple migration: Check for missing columns in products table
   const tableInfo = db.prepare("PRAGMA table_info(products)").all();
@@ -131,11 +230,19 @@ const initDB = () => {
   if (!columns.includes('barcode')) {
     db.exec("ALTER TABLE products ADD COLUMN barcode TEXT DEFAULT ''");
   }
+  if (!columns.includes('product_size')) {
+    db.exec("ALTER TABLE products ADD COLUMN product_size TEXT DEFAULT ''");
+  }
+
   if (!columns.includes('is_deleted')) {
     db.exec("ALTER TABLE products ADD COLUMN is_deleted INTEGER DEFAULT 0");
   } else {
     // Ensure any legacy NULL values are fixed
     db.exec("UPDATE products SET is_deleted = 0 WHERE is_deleted IS NULL");
+  }
+
+  if (!columns.includes('custom_fields')) {
+    db.exec("ALTER TABLE products ADD COLUMN custom_fields TEXT DEFAULT '{}'");
   }
 
   // Sales & Sale Items migration
@@ -159,6 +266,9 @@ const initDB = () => {
   if (!itemColumns.includes('discount')) {
     db.exec("ALTER TABLE sale_items ADD COLUMN discount REAL DEFAULT 0");
   }
+  if (!itemColumns.includes('cost_price')) {
+    db.exec("ALTER TABLE sale_items ADD COLUMN cost_price REAL DEFAULT 0");
+  }
 
   // Purchases migration
   const purchaseInfo = db.prepare("PRAGMA table_info(purchases)").all();
@@ -175,60 +285,40 @@ const initDB = () => {
     db.exec("ALTER TABLE sales ADD COLUMN party_id INTEGER DEFAULT NULL");
   }
 
-  // Seed if empty
-  const productCount = db.prepare('SELECT COUNT(*) as count FROM products').get().count;
-  if (productCount === 0) {
-    seedDB();
-  }
+  // NOTE: Automatic seeding removed. The Setup Wizard handles first-time configuration.
+  // resetDB() remains available from Settings for fresh start.
 };
 
-const seedDB = () => {
-  const productSeeds = [
-    ['ON Gold Standard Whey 2kg', 'Optimum Nutrition', 'Whey Protein', 'pcs', 6500, 5800, 4800, 'ONW-001', 18, 15, 'BN-101', '2025-12-31'],
-    ['MuscleTech Nitrotech 2kg', 'MuscleTech', 'Whey Protein', 'pcs', 7200, 6400, 5200, 'MTN-001', 18, 8, 'BN-102', '2025-10-15'],
-    ['GNC Creatine Monohydrate 250g', 'GNC', 'Creatine', 'pcs', 1800, 1500, 950, 'GNC-001', 12, 25, 'BN-103', '2026-06-20'],
-    ['HealthKart Multivitamin 60 tabs', 'HealthKart', 'Vitamins', 'pcs', 900, 750, 450, 'HKV-001', 12, 40, 'BN-104', '2025-08-10'],
-    ['MuscleBlaze Biozyme Whey 1kg', 'MuscleBlaze', 'Whey Protein', 'pcs', 3200, 2800, 2100, 'MBW-001', 18, 12, 'BN-105', '2026-01-05'],
-    ['BPI Sports BCAA 30 Servings', 'BPI Sports', 'Amino Acids', 'pcs', 2400, 2100, 1400, 'BPI-001', 12, 20, 'BN-106', '2025-11-20'],
-  ];
-
-  const insertProduct = db.prepare(`
-    INSERT INTO products (product_name, brand, category, unit, mrp, selling_price, cost_price, barcode, gst_rate, quantity, batch_number, expiry_date)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  for (const p of productSeeds) {
-    insertProduct.run(...p);
-  }
-
-  const expenseSeeds = [
-    ['Rent', 'Monthly Shop Rent', 15000],
-    ['Bills', 'Electricity & Water', 2500],
-    ['Salary', 'Part-time staff salary', 5000],
-    ['Marketing', 'Google Maps Ads', 1200],
-    ['Misc', 'Water bottle supply', 450],
-  ];
-
-  const insertExpense = db.prepare(`INSERT INTO expenses (category, description, amount) VALUES (?, ?, ?)`);
-  for (const e of expenseSeeds) {
-    insertExpense.run(...e);
-  }
-
-  // Add some mock sales
-  const salesCount = 10;
-  for (let i = 0; i < salesCount; i++) {
-    const date = new Date();
-    date.setDate(date.getDate() - (salesCount - i));
-    const dateStr = date.toISOString().split('T')[0] + ' 12:00:00';
+const resetDB = () => {
+  const txn = db.transaction(() => {
+    // Disable foreign keys temporarily for clean wipe
+    db.exec('PRAGMA foreign_keys = OFF');
     
-    const invoice = `INV-${String(i + 1).padStart(3, '0')}`;
-    const amount = 2000 + (Math.random() * 5000);
+    db.prepare('DELETE FROM sale_items').run();
+    db.prepare('DELETE FROM sales').run();
+    db.prepare('DELETE FROM purchase_items').run();
+    db.prepare('DELETE FROM purchases').run();
+    db.prepare('DELETE FROM purchase_return_items').run();
+    db.prepare('DELETE FROM purchase_returns').run();
+    db.prepare('DELETE FROM return_items').run();
+    db.prepare('DELETE FROM returns').run();
+    db.prepare('DELETE FROM expenses').run();
+    db.prepare('DELETE FROM products').run();
+    db.prepare('DELETE FROM parties').run();
+    db.prepare('DELETE FROM custom_categories').run();
+    db.prepare('DELETE FROM product_attribute_defs').run();
+    db.prepare('DELETE FROM expense_categories').run();
     
-    db.prepare(`
-      INSERT INTO sales (invoice_number, date, customer_name, subtotal, total_gst, total_amount, payment_mode, paid_amount)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(invoice, dateStr, `Demo Customer ${i + 1}`, amount * 0.85, amount * 0.15, amount, i % 2 === 0 ? 'Cash' : 'UPI', amount);
-  }
+    // Reset auto-increment counters
+    db.prepare("DELETE FROM sqlite_sequence").run();
+
+    // Reset business profile
+    db.prepare('UPDATE business_profile SET business_type=NULL, business_name=NULL WHERE id=1').run();
+    
+    db.exec('PRAGMA foreign_keys = ON');
+  });
+  
+  return txn();
 };
 
 /* ───────── Helpers ───────── */
@@ -265,11 +355,15 @@ const productOps = {
   getById: (id) => db.prepare('SELECT * FROM products WHERE id = ?').get(id),
 
   search: (term) => db.prepare(
-    `SELECT * FROM products WHERE COALESCE(is_deleted, 0) = 0 AND (product_name LIKE ? OR brand LIKE ? OR category LIKE ? ) ORDER BY product_name ASC`
-  ).all(`%${term}%`, `%${term}%`, `%${term}%`),
+    `SELECT * FROM products WHERE COALESCE(is_deleted, 0) = 0 AND (product_name LIKE ? OR brand LIKE ? OR category LIKE ? OR product_size LIKE ?) ORDER BY product_name ASC`
+  ).all(`%${term}%`, `%${term}%`, `%${term}%`, `%${term}%`),
 
   add: (p) => {
     const trimmedName = (p.product_name || '').trim();
+    const gst = p.gst_rate || 0;
+    const cgst = p.cgst ?? (gst / 2);
+    const sgst = p.sgst ?? (gst / 2);
+
     const existing = db.prepare(`
       SELECT id FROM products 
       WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', '')) 
@@ -281,31 +375,37 @@ const productOps = {
       console.log(`[DB] Manually re-activating product: ${trimmedName}`);
       return db.prepare(`
         UPDATE products SET 
-          brand=?, category=?, unit=?, mrp=?, selling_price=?, cost_price=?, 
-          barcode=?, gst_rate=?, quantity=?, batch_number=?, expiry_date=?,
-          is_deleted=0
+          brand=?, category=?, product_size=?, unit=?, mrp=?, selling_price=?, cost_price=?, 
+          barcode=?, gst_rate=?, cgst=?, sgst=?, quantity=?, batch_number=?, expiry_date=?,
+          is_deleted=0, custom_fields=?
         WHERE id=?
-      `).run(p.brand || '', p.category || '', p.unit || 'pcs',
+      `).run(p.brand || '', p.category || '', p.product_size || '', p.unit || 'pcs',
              p.mrp || 0, p.selling_price || 0, p.cost_price || 0, p.barcode || '',
-             p.gst_rate || 0, p.quantity || 0, p.batch_number || '', p.expiry_date || '', 
+             gst, cgst, sgst, p.quantity || 0, p.batch_number || '', p.expiry_date || '', 
+             p.custom_fields || '{}',
              existing.id);
     }
 
     return db.prepare(`
-      INSERT INTO products (product_name, brand, category, unit, mrp, selling_price, cost_price, barcode, gst_rate, quantity, batch_number, expiry_date, is_deleted)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
-    `).run(trimmedName, p.brand || '', p.category || '', p.unit || 'pcs',
+      INSERT INTO products (product_name, brand, category, product_size, unit, mrp, selling_price, cost_price, barcode, gst_rate, cgst, sgst, quantity, batch_number, expiry_date, is_deleted, custom_fields)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+    `).run(trimmedName, p.brand || '', p.category || '', p.product_size || '', p.unit || 'pcs',
            p.mrp || 0, p.selling_price || 0, p.cost_price || 0, p.barcode || '',
-           p.gst_rate || 0, p.quantity || 0, p.batch_number || '', p.expiry_date || '');
+           gst, cgst, sgst, p.quantity || 0, p.batch_number || '', p.expiry_date || '',
+           p.custom_fields || '{}');
   },
 
   update: (id, p) => {
+    const gst = p.gst_rate || 0;
+    const cgst = p.cgst ?? (gst / 2);
+    const sgst = p.sgst ?? (gst / 2);
     return db.prepare(`
-      UPDATE products SET product_name=?, brand=?, category=?, unit=?, mrp=?, selling_price=?, cost_price=?, barcode=?, gst_rate=?, quantity=?, batch_number=?, expiry_date=?
+      UPDATE products SET product_name=?, brand=?, category=?, product_size=?, unit=?, mrp=?, selling_price=?, cost_price=?, barcode=?, gst_rate=?, cgst=?, sgst=?, quantity=?, batch_number=?, expiry_date=?, custom_fields=?
       WHERE id=?
-    `).run(p.product_name, p.brand || '', p.category || '', p.unit || 'pcs',
+    `).run(p.product_name, p.brand || '', p.category || '', p.product_size || '', p.unit || 'pcs',
            p.mrp || 0, p.selling_price || 0, p.cost_price || 0, p.barcode || '',
-           p.gst_rate || 0, p.quantity || 0, p.batch_number || '', p.expiry_date || '', id);
+           gst, cgst, sgst, p.quantity || 0, p.batch_number || '', p.expiry_date || '', 
+           p.custom_fields || '{}', id);
   },
 
   getLastPurchasePrice: (productName) => {
@@ -381,15 +481,19 @@ const saleOps = {
       const saleId = saleInfo.lastInsertRowid;
 
       const insertItem = db.prepare(`
-        INSERT INTO sale_items (sale_id, product_id, product_name, quantity, mrp, price, discount, gst_rate, gst_amount, total_price)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sale_items (sale_id, product_id, product_name, quantity, mrp, price, cost_price, discount, gst_rate, gst_amount, total_price)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
+      const getCost = db.prepare('SELECT cost_price FROM products WHERE id = ?');
       const reduceStock = db.prepare('UPDATE products SET quantity = quantity - ? WHERE id = ?');
 
       for (const item of saleData.items) {
+        const product = getCost.get(item.product_id);
+        const costPrice = product ? product.cost_price : 0;
+
         insertItem.run(saleId, item.product_id, item.product_name, item.quantity,
-                       item.mrp || item.price, item.price, item.discount || 0, 
+                       item.mrp || item.price, item.price, costPrice, item.discount || 0, 
                        item.gst_rate, item.gst_amount, item.total_price);
         reduceStock.run(item.quantity, item.product_id);
       }
@@ -405,14 +509,42 @@ const saleOps = {
   getById: (id) => {
     const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
     if (!sale) return null;
-    sale.items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(id);
+    sale.items = db.prepare(`
+      SELECT 
+        si.*,
+        p.brand,
+        p.category,
+        p.unit,
+        p.barcode,
+        p.product_size,
+        p.batch_number,
+        p.expiry_date,
+        p.custom_fields
+      FROM sale_items si
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE si.sale_id = ?
+    `).all(id);
     return sale;
   },
 
   getByInvoice: (invoiceNumber) => {
     const sale = db.prepare('SELECT * FROM sales WHERE invoice_number = ?').get(invoiceNumber);
     if (!sale) return null;
-    sale.items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(sale.id);
+    sale.items = db.prepare(`
+      SELECT 
+        si.*,
+        p.brand,
+        p.category,
+        p.unit,
+        p.barcode,
+        p.product_size,
+        p.batch_number,
+        p.expiry_date,
+        p.custom_fields
+      FROM sale_items si
+      LEFT JOIN products p ON p.id = si.product_id
+      WHERE si.sale_id = ?
+    `).all(sale.id);
     return sale;
   },
 
@@ -485,8 +617,37 @@ const purchaseOps = {
           `).get(`%${trimmedName.toLowerCase()}%`, trimmedName.toLowerCase());
         }
 
+        // Auto-register category and custom field definitions for ALL items
+        if (item.category) {
+          const catExists = db.prepare('SELECT id FROM custom_categories WHERE name = ?').get(item.category);
+          if (!catExists) {
+            db.prepare('INSERT INTO custom_categories (name) VALUES (?)').run(item.category);
+            console.log(`[DB] Auto-registered new category: ${item.category}`);
+          }
+        }
+        if (item.custom_fields) {
+          for (const [key, val] of Object.entries(item.custom_fields)) {
+            const attrExists = db.prepare('SELECT id FROM product_attribute_defs WHERE name = ?').get(key);
+            if (!attrExists) {
+              db.prepare('INSERT INTO product_attribute_defs (name, type) VALUES (?, ?)').run(key, isNaN(val) ? 'text' : 'number');
+              console.log(`[DB] Auto-registered new product field: ${key} (${isNaN(val) ? 'text' : 'number'})`);
+            }
+          }
+        }
+
         if (existing) {
           console.log(`[DB] Matching product found (ID: ${existing.id}). Updating stock for: ${trimmedName}`);
+          
+          // Merge custom_fields: keep existing fields, add/update new ones
+          let mergedFields = {};
+          try {
+            const existingProduct = db.prepare('SELECT custom_fields FROM products WHERE id = ?').get(existing.id);
+            mergedFields = JSON.parse(existingProduct?.custom_fields || '{}');
+          } catch (e) { /* silent */ }
+          Object.assign(mergedFields, item.custom_fields || {});
+
+          const gstRate = parseFloat(item.gst_rate) || 0;
+
           db.prepare(`
             UPDATE products 
             SET quantity = quantity + ?, 
@@ -495,19 +656,30 @@ const purchaseOps = {
                 cost_price = ?,
                 mrp = ?,
                 selling_price = ?,
+                product_size = ?,
+                gst_rate = ?,
+                cgst = ?,
+                sgst = ?,
+                category = CASE WHEN category = '' THEN ? ELSE category END,
+                custom_fields = ?,
                 is_deleted = 0
             WHERE id = ?
           `).run(item.quantity || 0, item.batch_number || '', item.expiry_date || '', 
                  purchasePrice, item.mrp || purchasePrice, item.selling_price || purchasePrice, 
-                 existing.id);
+                 item.product_size || '', gstRate, gstRate / 2, gstRate / 2,
+                 item.category || '', 
+                 JSON.stringify(mergedFields), existing.id);
           updatedCount++;
         } else {
           console.log(`[DB] No matching product for: ${trimmedName}. Creating NEW product record.`);
+          const gstRate = parseFloat(item.gst_rate) || 0;
+
           db.prepare(`
-            INSERT INTO products (product_name, brand, category, unit, cost_price, mrp, selling_price, gst_rate, quantity, batch_number, expiry_date)
-            VALUES (?, '', '', 'pcs', ?, ?, ?, 0, ?, ?, ?)
-          `).run(trimmedName, purchasePrice, item.mrp || purchasePrice, item.selling_price || purchasePrice * 1.2, 
-                 item.quantity || 0, item.batch_number || '', item.expiry_date || '');
+            INSERT INTO products (product_name, brand, category, product_size, unit, cost_price, mrp, selling_price, gst_rate, cgst, sgst, quantity, batch_number, expiry_date, custom_fields)
+            VALUES (?, '', ?, ?, 'pcs', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(trimmedName, item.category || '', item.product_size || '', purchasePrice, item.mrp || purchasePrice, item.selling_price || purchasePrice * 1.2, 
+                 gstRate, gstRate / 2, gstRate / 2,
+                 item.quantity || 0, item.batch_number || '', item.expiry_date || '', JSON.stringify(item.custom_fields || {}));
           createdCount++;
         }
       }
@@ -532,7 +704,7 @@ const purchaseOps = {
   ).all(from, to),
 };
 
-/* ───────── Return Ops ───────── */
+/* ───────── Return Ops (Sales Returns) ───────── */
 const returnOps = {
   create: (returnData) => {
     const txn = db.transaction(() => {
@@ -548,6 +720,14 @@ const returnOps = {
       `).run(returnData.sale_id, returnData.invoice_number, totalRefund, returnData.reason || '');
 
       const returnId = info.lastInsertRowid;
+
+      // Update party balance if sale is linked to a party
+      const sale = db.prepare('SELECT party_id, due_amount FROM sales WHERE id = ?').get(returnData.sale_id);
+      if (sale && sale.party_id) {
+        // Decrease their debt (receivable)
+        db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
+          .run(totalRefund, sale.party_id);
+      }
 
       const insertItem = db.prepare(`
         INSERT INTO return_items (return_id, product_id, product_name, quantity, refund_amount)
@@ -567,6 +747,60 @@ const returnOps = {
   },
 
   getAll: () => db.prepare('SELECT * FROM returns ORDER BY date DESC').all(),
+};
+
+/* ───────── Purchase Return Ops ───────── */
+const purchaseReturnOps = {
+  create: (data) => {
+    const txn = db.transaction(() => {
+      let totalAmount = 0;
+      for (const item of data.items) {
+        totalAmount += (item.price || 0) * (item.quantity || 0);
+      }
+
+      const info = db.prepare(`
+        INSERT INTO purchase_returns (purchase_id, party_id, supplier_name, total_amount, reason)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(data.purchase_id || null, data.party_id || null, data.supplier_name || '', totalAmount, data.reason || '');
+
+      const returnId = info.lastInsertRowid;
+
+      // Update party balance (payable decreases)
+      if (data.party_id) {
+        // Increase balance because we owe less (balance is negative for payables)
+        db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
+          .run(totalAmount, data.party_id);
+      }
+
+      const insertItem = db.prepare(`
+        INSERT INTO purchase_return_items (return_id, product_name, quantity, price)
+        VALUES (?, ?, ?, ?)
+      `);
+
+      const reduceStock = db.prepare(`
+        UPDATE products 
+        SET quantity = quantity - ? 
+        WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', ''))
+      `);
+
+      for (const item of data.items) {
+        insertItem.run(returnId, item.product_name, item.quantity, item.price);
+        reduceStock.run(item.quantity, item.product_name);
+      }
+
+      return { returnId, totalAmount };
+    });
+    return txn();
+  },
+
+  getAll: () => db.prepare('SELECT * FROM purchase_returns ORDER BY date DESC').all(),
+  
+  getById: (id) => {
+    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id);
+    if (!ret) return null;
+    ret.items = db.prepare('SELECT * FROM purchase_return_items WHERE return_id = ?').all(id);
+    return ret;
+  }
 };
 
 /* ───────── Dashboard / Stats ───────── */
@@ -590,6 +824,12 @@ const statsOps = {
     const payable = Math.abs(db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance < 0').get().total);
 
     const totalRevenue = db.prepare('SELECT COALESCE(SUM(total_amount), 0) as total FROM sales').get().total;
+    const totalCashReceived = db.prepare('SELECT COALESCE(SUM(paid_amount), 0) as total FROM sales').get().total;
+    const totalProfit = db.prepare(`
+      SELECT COALESCE(SUM((price - cost_price) * quantity), 0) as profit 
+      FROM sale_items
+    `).get().profit;
+
     const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM expenses').get().total;
     const recentSales = db.prepare('SELECT * FROM sales ORDER BY date DESC LIMIT 5').all();
 
@@ -601,6 +841,8 @@ const statsOps = {
       expiringCount: expiring,
       recentSales,
       totalRevenue,
+      totalCashReceived,
+      totalProfit: totalProfit - totalExpenses,
       totalExpenses,
       receivable,
       payable
@@ -629,6 +871,16 @@ const statsOps = {
         SUM(total_amount) as total_purchases
       FROM purchases 
       WHERE strftime('%Y', date) = ?
+      ORDER BY month ASC
+    `).all(currentYear);
+
+    // Monthly Expenses
+    const expenses = db.prepare(`
+      SELECT 
+        strftime('%m', date) as month,
+        SUM(amount) as total_expenses
+      FROM expenses 
+      WHERE strftime('%Y', date) = ?
       GROUP BY month
       ORDER BY month ASC
     `).all(currentYear);
@@ -640,13 +892,27 @@ const statsOps = {
     return months.map((m, idx) => {
       const s = sales.find(x => x.month === m);
       const p = purchases.find(x => x.month === m);
+      const e = expenses.find(x => x.month === m);
+      const totalSales = s ? s.total_sales : 0;
+      const totalPurchases = p ? p.total_purchases : 0;
+      const totalExpenses = e ? e.total_expenses : 0;
+
+      // Accrual Profit: Margin from sales minus expenses
+      const monthlyProfit = db.prepare(`
+        SELECT COALESCE(SUM((si.price - si.cost_price) * si.quantity), 0) as margin
+        FROM sale_items si
+        JOIN sales s ON si.sale_id = s.id
+        WHERE strftime('%m', s.date) = ? AND strftime('%Y', s.date) = ?
+      `).get(m, currentYear).margin;
+
       return {
         month: monthNames[idx],
         monthNum: m,
-        sales: s ? s.total_sales : 0,
+        sales: totalSales,
         salesCount: s ? s.count : 0,
-        purchases: p ? p.total_purchases : 0,
-        profit: (s ? s.total_sales : 0) - (p ? p.total_purchases : 0)
+        purchases: totalPurchases,
+        expenses: totalExpenses,
+        profit: monthlyProfit - totalExpenses
       };
     });
   },
@@ -665,11 +931,32 @@ const reportOps = {
     const sales = db.prepare(
       `SELECT * FROM sales WHERE date(date) BETWEEN ? AND ? ORDER BY date DESC`
     ).all(from, to);
+    const expensesSummary = db.prepare(
+      `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE date(date) BETWEEN ? AND ?`
+    ).get(from, to);
+
     const summary = db.prepare(
-      `SELECT COALESCE(SUM(total_amount), 0) as total, COALESCE(SUM(total_gst), 0) as gst, COUNT(*) as count
+      `SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count,
+              COALESCE(SUM(total_gst), 0) as gst, COALESCE(SUM(total_discount), 0) as discount,
+              COALESCE(SUM(paid_amount), 0) as cash_received
        FROM sales WHERE date(date) BETWEEN ? AND ?`
     ).get(from, to);
-    return { sales, summary };
+
+    const margin = db.prepare(`
+      SELECT COALESCE(SUM((si.price - si.cost_price) * si.quantity), 0) as margin
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      WHERE date(s.date) BETWEEN ? AND ?
+    `).get(from, to).margin;
+
+    return { 
+      sales, 
+      summary: { 
+        ...summary, 
+        profit: margin - (expensesSummary.total || 0),
+        expenses: expensesSummary.total 
+      } 
+    };
   },
 
   purchaseReport: (from, to) => {
@@ -692,4 +979,93 @@ const reportOps = {
 };
 
 
-module.exports = { initDB, seedDB, productOps, saleOps, purchaseOps, returnOps, statsOps, reportOps, expenseOps, partyOps };
+/* ───────── Configuration Ops ───────── */
+const businessProfileOps = {
+  get: () => db.prepare('SELECT * FROM business_profile WHERE id = 1').get(),
+  update: (p) => {
+    return db.prepare(`
+      UPDATE business_profile SET 
+        business_name=?, business_short=?, tagline=?, address_line1=?, address_line2=?, 
+        city=?, state=?, pincode=?, phone=?, email=?, gstin=?, 
+        logo_path=?, invoice_prefix=?, invoice_footer=?, currency_symbol=?, business_type=?,
+        invoice_settings=?
+      WHERE id=1
+    `).run(
+      p.business_name, p.business_short, p.tagline, p.address_line1, p.address_line2,
+      p.city, p.state, p.pincode, p.phone, p.email, p.gstin,
+      p.logo_path, p.invoice_prefix, p.invoice_footer, p.currency_symbol, p.business_type,
+      typeof p.invoice_settings === 'object' ? JSON.stringify(p.invoice_settings) : (p.invoice_settings || '{}')
+    );
+  },
+};
+
+const categoryOps = {
+  getAll: () => db.prepare('SELECT * FROM custom_categories WHERE is_active = 1 ORDER BY sort_order, name ASC').all(),
+  add: (name) => db.prepare('INSERT INTO custom_categories (name) VALUES (?)').run(name),
+  delete: (id) => db.prepare('UPDATE custom_categories SET is_active = 0 WHERE id = ?').run(id),
+};
+
+const expenseCategoryOps = {
+  getAll: () => db.prepare('SELECT * FROM expense_categories ORDER BY name ASC').all(),
+  add: (name) => db.prepare('INSERT INTO expense_categories (name) VALUES (?)').run(name),
+  delete: (id) => db.prepare('DELETE FROM expense_categories WHERE id = ?').run(id),
+};
+
+/* ---------- Attribute Defs Ops ---------- */
+const attributeOps = {
+  getAll: () => db.prepare('SELECT * FROM product_attribute_defs').all(),
+  add: (attr) => db.prepare('INSERT INTO product_attribute_defs (name, type, required, options) VALUES (?, ?, ?, ?)').run(attr.name, attr.type, attr.required || 0, attr.options || '[]'),
+  delete: (id) => db.prepare('DELETE FROM product_attribute_defs WHERE id = ?').run(id)
+};
+
+/* ---------- Global Storage Ops ---------- */
+const storageOps = {
+  exportAll: () => {
+    return {
+      products: db.prepare('SELECT * FROM products').all(),
+      sales: db.prepare('SELECT * FROM sales').all(),
+      sale_items: db.prepare('SELECT * FROM sale_items').all(),
+      purchases: db.prepare('SELECT * FROM purchases').all(),
+      purchase_items: db.prepare('SELECT * FROM purchase_items').all(),
+      expenses: db.prepare('SELECT * FROM expenses').all(),
+      parties: db.prepare('SELECT * FROM parties').all(),
+      categories: db.prepare('SELECT * FROM categories').all(),
+      expense_categories: db.prepare('SELECT * FROM expense_categories').all(),
+      attribute_defs: db.prepare('SELECT * FROM product_attribute_defs').all(),
+      profile: db.prepare('SELECT * FROM business_profile LIMIT 1').get(),
+    };
+  },
+  importAll: (data) => {
+    const trx = db.transaction((d) => {
+      // Clear existing
+      db.prepare('DELETE FROM products').run();
+      db.prepare('DELETE FROM sales').run();
+      db.prepare('DELETE FROM sale_items').run();
+      db.prepare('DELETE FROM purchases').run();
+      db.prepare('DELETE FROM purchase_items').run();
+      db.prepare('DELETE FROM expenses').run();
+      db.prepare('DELETE FROM parties').run();
+      db.prepare('DELETE FROM categories').run();
+      db.prepare('DELETE FROM expense_categories').run();
+      db.prepare('DELETE FROM product_attribute_defs').run();
+      
+      // Import
+      if (d.products) d.products.forEach(p => db.prepare('INSERT INTO products (id, product_name, product_size, barcode, brand, category, unit, cost_price, selling_price, mrp, gst_rate, quantity, min_stock_alert, batch_number, expiry_date, custom_fields) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(p.id, p.product_name, p.product_size, p.barcode, p.brand, p.category, p.unit, p.cost_price, p.selling_price, p.mrp, p.gst_rate, p.quantity, p.min_stock_alert, p.batch_number, p.expiry_date, p.custom_fields));
+      if (d.categories) d.categories.forEach(c => db.prepare('INSERT INTO categories (id, name) VALUES (?, ?)').run(c.id, c.name));
+      if (d.parties) d.parties.forEach(p => db.prepare('INSERT INTO parties (id, name, phone, address, gstin, type, opening_balance, current_balance) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(p.id, p.name, p.phone, p.address, p.gstin, p.type, p.opening_balance, p.current_balance));
+      if (d.sales) d.sales.forEach(s => db.prepare('INSERT INTO sales (id, invoice_number, date, customer_name, customer_phone, subtotal, tax_amount, discount_amount, grand_total, payment_mode, status, party_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(s.id, s.invoice_number, s.date, s.customer_name, s.customer_phone, s.subtotal, s.tax_amount, s.discount_amount, s.grand_total, s.payment_mode, s.status, s.party_id));
+      if (d.sale_items) d.sale_items.forEach(i => db.prepare('INSERT INTO sale_items (id, sale_id, product_id, product_name, quantity, price, gst_rate, subtotal, custom_fields) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(i.id, i.sale_id, i.product_id, i.product_name, i.quantity, i.price, i.gst_rate, i.subtotal, i.custom_fields));
+      if (d.attribute_defs) d.attribute_defs.forEach(a => db.prepare('INSERT INTO product_attribute_defs (id, name, type, required, options) VALUES (?, ?, ?, ?, ?)').run(a.id, a.name, a.type, a.required, a.options));
+      // ... (Rest can be added as needed, focusing on core for now)
+    });
+    trx(data);
+    return true;
+  }
+};
+
+module.exports = { 
+  initDB, resetDB, productOps, saleOps, purchaseOps, returnOps, purchaseReturnOps,
+  statsOps, reportOps, expenseOps, partyOps, 
+  businessProfileOps, categoryOps, expenseCategoryOps,
+  attributeOps, storageOps
+};

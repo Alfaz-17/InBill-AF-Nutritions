@@ -1,22 +1,48 @@
 'use client';
 import { useState, useEffect, Fragment } from 'react';
 import {
-  Plus, Trash2, X, Check, TruckIcon, Search, ScanLine
+  Plus, Trash2, X, Check, TruckIcon, Search, ScanLine, 
+  Calendar, CreditCard, ChevronDown, Package, IndianRupee,
+  ChevronRight, Building2, User, ExternalLink, Settings2
 } from 'lucide-react';
+import { useToast } from './ToastProvider';
+
+// shadcn/ui components
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+
 import AIUpload from './AIUpload';
 
-export default function Purchases() {
+const emptyItem = { 
+  product_name: '', 
+  product_size: '', 
+  quantity: '', 
+  price: '', 
+  last_price: null, 
+  selling_price: '', 
+  batch_number: '', 
+  expiry_date: '',
+  custom_fields: {} 
+};
+
+export default function Purchases({ profile }) {
+  const { toast, confirm } = useToast();
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [supplierName, setSupplierName] = useState('');
-  const [items, setItems] = useState([{ product_name: '', quantity: '', price: '', last_price: null, mrp: '', selling_price: '', batch_number: '', expiry_date: '' }]);
+  const [items, setItems] = useState([{ ...emptyItem }]);
+  const [attributeDefs, setAttributeDefs] = useState([]);
+  const [showAttrPopover, setShowAttrPopover] = useState(null); // {index}
   const [otherCharges, setOtherCharges] = useState('');
-  const [toast, setToast] = useState(null);
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [details, setDetails] = useState({});
-  const [viewMode, setViewMode] = useState('list'); // list | ai
+  const [viewMode, setViewMode] = useState('list');
   const [allProducts, setAllProducts] = useState([]);
   const [activeSuggestion, setActiveSuggestion] = useState({ row: null, query: '' });
   const [suppliers, setSuppliers] = useState([]);
@@ -25,11 +51,23 @@ export default function Purchases() {
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [productSearch, setProductSearch] = useState('');
 
+  const CURRENCY = profile?.currency_symbol || '₹';
+
   useEffect(() => { 
     loadPurchases();
     loadAllProducts();
     loadSuppliers();
+    loadAttributeDefs();
   }, []);
+
+  const loadAttributeDefs = async () => {
+    if (typeof window !== 'undefined' && window.electronAPI?.attributes) {
+      try {
+        const data = await window.electronAPI.attributes.getAll();
+        setAttributeDefs(data || []);
+      } catch (e) { console.error(e); }
+    }
+  };
 
   const loadSuppliers = async () => {
     if (typeof window !== 'undefined' && window.electronAPI) {
@@ -60,7 +98,7 @@ export default function Purchases() {
   };
 
   const addRow = () => {
-    setItems([...items, { product_name: '', quantity: '', price: '', last_price: null, mrp: '', selling_price: '', batch_number: '', expiry_date: '' }]);
+    setItems([...items, { ...emptyItem }]);
   };
 
   const removeRow = (index) => {
@@ -80,57 +118,21 @@ export default function Purchases() {
     setItems(items.map((item, i) => i === index ? { 
       ...item, 
       product_name: product.product_name,
+      product_size: product.product_size || '',
       price: product.cost_price || item.price,
       last_price: product.cost_price || null,
-      mrp: product.mrp || '',
-      selling_price: product.selling_price || '',
-      batch_number: product.batch_number || '',
-      expiry_date: product.expiry_date || ''
-    } : item));
-    setActiveSuggestion({ row: null, query: '' });
-  };
-
-  const handleQuickAdd = (product) => {
-    const emptyRowIndex = items.findIndex(i => !i.product_name.trim());
-    const newItem = {
-      product_name: product.product_name,
-      price: product.cost_price || '',
-      last_price: product.cost_price || null,
-      mrp: product.mrp || '',
       selling_price: product.selling_price || '',
       batch_number: product.batch_number || '',
       expiry_date: product.expiry_date || '',
-      quantity: ''
-    };
-
-    if (emptyRowIndex !== -1) {
-      const newItems = [...items];
-      newItems[emptyRowIndex] = newItem;
-      setItems(newItems);
-    } else {
-      setItems([...items, newItem]);
-    }
-    flash(`${product.product_name} added to list`);
-  };
-
-  const checkLastPrice = async (index, name) => {
-    if (!name || typeof window === 'undefined' || !window.electronAPI) return;
-    try {
-      const lastPrice = await window.electronAPI.products.getLastPrice(name);
-      if (lastPrice) {
-        setItems(items.map((item, i) => i === index ? { ...item, last_price: lastPrice } : item));
-      }
-    } catch (e) { console.error(e); }
+      custom_fields: typeof product.custom_fields === 'string' ? JSON.parse(product.custom_fields) : (product.custom_fields || {})
+    } : item));
+    setActiveSuggestion({ row: null, query: '' });
   };
 
   const handleSave = async () => {
     const validItems = items.filter(i => i.product_name.trim());
     if (validItems.length === 0) {
-      flash('Please add at least one product with a name', 'error');
-      return;
-    }
-    if (typeof window === 'undefined' || !window.electronAPI) {
-      flash('Error: System not ready', 'error');
+      toast('Please add at least one product with a name', 'error');
       return;
     }
     setSaving(true);
@@ -141,32 +143,36 @@ export default function Purchases() {
         other_charges: parseFloat(otherCharges) || 0,
         items: validItems.map(i => ({
           product_name: i.product_name,
+          product_size: i.product_size,
           quantity: parseInt(i.quantity) || 0,
           price: parseFloat(i.price) || 0,
-          mrp: parseFloat(i.mrp) || 0,
           selling_price: parseFloat(i.selling_price) || 0,
           batch_number: i.batch_number,
           expiry_date: i.expiry_date,
+          custom_fields: JSON.stringify(i.custom_fields || {})
         })),
       };
       const result = await window.electronAPI.purchases.create(payload);
       
       let msg = 'Purchase recorded!';
-      if (result.createdCount > 0) msg += ` ${result.createdCount} new products added.`;
-      if (result.updatedCount > 0) msg += ` Stock updated for ${result.updatedCount} items.`;
+      if (result.createdCount > 0) msg += ` ${result.createdCount} new products.`;
       
-      flash(msg);
+      toast(msg, 'success');
       setShowModal(false);
-      setSupplierName('');
-      setSupplierSearch('');
-      setSelectedSupplier(null);
-      setOtherCharges('');
-      setItems([{ product_name: '', quantity: '', price: '', last_price: null, mrp: '', selling_price: '', batch_number: '', expiry_date: '' }]);
+      resetForm();
       loadPurchases();
     } catch (e) {
-      flash('Error: ' + e.message, 'error');
+      toast('Error: ' + e.message, 'error');
     }
     setSaving(false);
+  };
+
+  const resetForm = () => {
+    setSupplierName('');
+    setSupplierSearch('');
+    setSelectedSupplier(null);
+    setOtherCharges('');
+    setItems([{ ...emptyItem }]);
   };
 
   const toggleExpand = async (id) => {
@@ -182,18 +188,18 @@ export default function Purchases() {
     setExpandedId(id);
   };
 
-  const flash = (message, type = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
   if (loading) {
-    return <div className="empty-state"><div className="spinner" style={{ width: 32, height: 32 }}></div></div>;
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
   }
 
   if (viewMode === 'ai') {
     return (
       <AIUpload 
+        profile={profile}
         onBack={() => {
           setViewMode('list');
           loadPurchases();
@@ -203,121 +209,141 @@ export default function Purchases() {
   }
 
   return (
-    <div className="animate-in">
-      <div className="page-header">
-        <h2>Purchases</h2>
-        <p>Record stock-in and supplier purchases</p>
-      </div>
+    <div className="flex flex-col gap-8 md:p-2 lg:p-4 animate-in">
+      <header className="page-header">
+        <div>
+          <h2>Stock Inflow</h2>
+          <p>Record inventory replenishment and supplier purchase bills</p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          <Button variant="outline" className="h-14 px-6 rounded-2xl gap-3 font-black border-slate-200" onClick={() => setViewMode('ai')}>
+            <ScanLine size={18} /> Scan with AI
+          </Button>
+          <Button onClick={() => setShowModal(true)} className="btn-primary h-14 px-8 rounded-2xl gap-3 shadow-blue-500/20">
+            <Plus size={20} strokeWidth={3} /> New Stock Entry
+          </Button>
+        </div>
+      </header>
 
-      {/* Metrics Bar */}
+      {/* Metrics */}
       <div className="metric-grid">
         <div className="metric-card">
-          <div className="metric-icon teal"><TruckIcon size={24} /></div>
-          <div className="metric-info">
-            <h3>Total Orders</h3>
-            <div className="metric-value">{purchases.length}</div>
-            <div className="metric-sub">Lifetime records</div>
+          <div className="metric-icon blue"><TruckIcon size={24} /></div>
+          <div>
+            <p className="metric-sub">Total Bills</p>
+            <h3 className="metric-value">{purchases.length} Orders</h3>
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-icon green"><Plus size={24} /></div>
-          <div className="metric-info">
-            <h3>Last Month</h3>
-            <div className="metric-value">
-              {purchases.filter(p => new Date(p.date) > new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)).length}
-            </div>
-            <div className="metric-sub">New purchases</div>
+          <div className="metric-icon green"><IndianRupee size={24} /></div>
+          <div>
+            <p className="metric-sub">Stock Value</p>
+            <h3 className="metric-value">{CURRENCY}{purchases.reduce((acc, p) => acc + p.total_amount, 0).toLocaleString('en-IN')}</h3>
           </div>
         </div>
         <div className="metric-card">
-          <div className="metric-icon blue"><Check size={24} /></div>
-          <div className="metric-info">
-            <h3>Total Value</h3>
-            <div className="metric-value" style={{ fontSize: 24 }}>
-              ₹{purchases.reduce((acc, p) => acc + p.total_amount, 0).toLocaleString('en-IN')}
-            </div>
-            <div className="metric-sub">Inventory worth</div>
+          <div className="metric-icon teal"><Calendar size={24} /></div>
+          <div>
+            <p className="metric-sub">Recent Activity</p>
+            <h3 className="metric-value">{purchases.filter(p => new Date(p.date) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length} New Bills</h3>
           </div>
         </div>
       </div>
 
-      <div className="action-bar">
-        <div className="action-bar-left">
-          <div className="search-box">
-            <Search className="search-icon" />
-            <input placeholder="Search purchases..." />
-          </div>
-        </div>
-        <div className="action-bar-right">
-          <button className="btn btn-secondary" onClick={() => setViewMode('ai')}>
-            <ScanLine size={16} /> Scan Bill (AI)
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            <Plus size={16} /> New Purchase
-          </button>
-        </div>
+      {/* Search & Actions */}
+      <div className="relative w-full">
+        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+        <Input 
+          placeholder="Search by supplier or bill ID..." 
+          className="form-input h-14 pl-12 rounded-2xl shadow-sm border-slate-200"
+        />
       </div>
 
-      {/* Purchase List Card */}
-      <div className="card" style={{ padding: 0 }}>
-        {purchases.length > 0 ? (
-          <div className="table-wrap" style={{ border: 'none', boxShadow: 'none' }}>
-            <table>
+      {/* Purchase List */}
+      <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+        <div className="table-wrap border-none shadow-none rounded-none">
+          {purchases.length > 0 ? (
+            <table className="w-full">
               <thead>
                 <tr>
-                  <th>Date</th>
-                  <th>Supplier</th>
-                  <th>Total Amount</th>
-                  <th style={{ textAlign: 'right' }}>Actions</th>
+                  <th>Purchase Date</th>
+                  <th>Supplier / Vendor</th>
+                  <th className="text-right">Investment</th>
+                  <th className="text-right">Details</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-50">
                 {purchases.map((p) => (
                   <Fragment key={p.id}>
-                    <tr onClick={() => toggleExpand(p.id)} style={{ cursor: 'pointer' }}>
+                    <tr onClick={() => toggleExpand(p.id)} className="group hover:bg-slate-50/50 transition-all cursor-pointer">
                       <td>
-                        <div style={{ fontWeight: 600 }}>{new Date(p.date).toLocaleDateString('en-IN')}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>ID: #{p.id}</div>
+                        <div className="font-black text-slate-900">{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ref: #BILL-{p.id}</div>
                       </td>
-                      <td style={{ fontWeight: 500 }}>{p.supplier_name || '—'}</td>
-                      <td style={{ fontWeight: 700, color: 'var(--accent)' }}>₹{p.total_amount.toLocaleString('en-IN')}</td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button className="btn btn-ghost btn-sm">
-                          {expandedId === p.id ? 'Hide Details' : 'View Details'}
-                        </button>
+                      <td>
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center font-black">
+                            {p.supplier_name?.[0] || 'V'}
+                          </div>
+                          <div className="font-bold text-slate-700">{p.supplier_name || 'Generic Vendor'}</div>
+                        </div>
+                      </td>
+                      <td className="text-right">
+                        <div className="font-black text-slate-900 text-lg">{CURRENCY}{p.total_amount.toLocaleString('en-IN')}</div>
+                      </td>
+                      <td className="text-right">
+                        <Button variant="ghost" className="h-10 px-4 rounded-xl font-black gap-2 group-hover:bg-white group-hover:shadow-sm transition-all">
+                          {expandedId === p.id ? 'Hide' : 'View'} <ChevronDown size={16} className={`transition-transform duration-300 ${expandedId === p.id ? 'rotate-180' : ''}`} />
+                        </Button>
                       </td>
                     </tr>
                     {expandedId === p.id && details[p.id] && (
-                      <tr key={`${p.id}-detail`}>
-                        <td colSpan={4} style={{ padding: '0 24px 24px' }}>
-                          <div className="animate-in" style={{ 
-                            padding: '24px', 
-                            background: 'var(--bg-primary)', 
-                            borderRadius: 'var(--radius-lg)',
-                            border: '1px solid var(--border)'
-                          }}>
-                            <table style={{ background: 'transparent' }}>
-                              <thead>
-                                <tr style={{ background: 'transparent' }}>
-                                  <th style={{ background: 'transparent' }}>Product</th>
-                                  <th style={{ background: 'transparent' }}>Qty</th>
-                                  <th style={{ background: 'transparent' }}>Price</th>
-                                  <th style={{ background: 'transparent' }}>Batch</th>
-                                  <th style={{ background: 'transparent' }}>Expiry</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(details[p.id].items || []).map((item, idx) => (
-                                  <tr key={idx} style={{ background: 'transparent' }}>
-                                    <td>{item.product_name}</td>
-                                    <td>{item.quantity}</td>
-                                    <td>₹{item.price}</td>
-                                    <td>{item.batch_number || '—'}</td>
-                                    <td>{item.expiry_date || '—'}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
+                      <tr key={`${p.id}-detail`} className="bg-slate-50/30">
+                        <td colSpan={4} className="p-8">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in">
+                            <div className="space-y-4">
+                              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Bill Line Items</h4>
+                              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                                <table className="w-full text-xs">
+                                  <thead className="bg-slate-50 border-b">
+                                    <tr>
+                                      <th className="p-3 text-left font-black">Product</th>
+                                      <th className="p-3 text-center font-black">Qty</th>
+                                      <th className="p-3 text-right font-black">Price</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y">
+                                    {(details[p.id].items || []).map((item, idx) => (
+                                      <tr key={idx}>
+                                        <td className="p-3">
+                                          <p className="font-bold text-slate-800">{item.product_name}</p>
+                                          {item.batch_number && <p className="text-[10px] text-slate-400">Batch: {item.batch_number}</p>}
+                                        </td>
+                                        <td className="p-3 text-center font-black text-slate-500">{item.quantity}</td>
+                                        <td className="p-3 text-right font-black text-slate-900">{CURRENCY}{item.price.toLocaleString()}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                            <div className="space-y-4">
+                              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Order Summary</h4>
+                              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                                <div className="flex justify-between text-sm">
+                                  <span className="font-bold text-slate-500">Subtotal</span>
+                                  <span className="font-black text-slate-900">{CURRENCY}{(p.total_amount - (p.other_charges || 0)).toLocaleString()}</span>
+                                </div>
+                                <div className="flex justify-between text-sm">
+                                  <span className="font-bold text-slate-500">Other Charges</span>
+                                  <span className="font-black text-slate-900">+{CURRENCY}{(p.other_charges || 0).toLocaleString()}</span>
+                                </div>
+                                <div className="pt-3 border-t flex justify-between items-center">
+                                  <span className="font-black text-slate-900">Paid In Full</span>
+                                  <span className="text-xl font-black text-primary">{CURRENCY}{p.total_amount.toLocaleString()}</span>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         </td>
                       </tr>
@@ -326,227 +352,283 @@ export default function Purchases() {
                 ))}
               </tbody>
             </table>
-          </div>
-        ) : (
-          <div className="empty-state">
-            <div className="empty-state-icon"><TruckIcon size={28} /></div>
-            <h3>No purchases yet</h3>
-            <p>Record your first stock purchase to see it here</p>
-          </div>
-        )}
-      </div>
-
-      {/* Modern Modal */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal modal-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>New Purchase Records</h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowModal(false)}>
-                <X size={18} />
-              </button>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-32 text-slate-300">
+              <TruckIcon size={64} strokeWidth={1} />
+              <p className="mt-4 font-black text-lg">No stock entries found</p>
+              <Button variant="link" className="text-primary font-black mt-2" onClick={() => setShowModal(true)}>Record First Bill</Button>
             </div>
+          )}
+        </div>
+      </Card>
 
-            <div className="modal-body" style={{ background: 'var(--bg-primary)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '24px' }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                  
-                  {/* Supplier Info Card */}
-                  <div className="card">
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px' }}>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Supplier Information</label>
-                        <div style={{ position: 'relative' }}>
-                          <input className="form-input" style={{ height: 50, fontSize: 16 }}
-                            placeholder="Search supplier or enter new name..."
-                            value={supplierSearch}
-                            onChange={(e) => {
-                              setSupplierSearch(e.target.value);
-                              if (selectedSupplier && e.target.value !== selectedSupplier.name) setSelectedSupplier(null);
-                              setSupplierName(e.target.value);
-                              setShowSupplierDropdown(true);
-                            }}
-                            onFocus={() => setShowSupplierDropdown(true)}
-                            onBlur={() => setTimeout(() => setShowSupplierDropdown(false), 200)} />
+      {/* New Purchase Modal */}
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="max-w-[94vw] sm:max-w-6xl max-h-[94vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all">
+          <DialogHeader className="p-10 bg-slate-900 text-white">
+            <DialogTitle className="text-2xl font-black flex items-center gap-4">
+              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/20">
+                <TruckIcon size={24} />
+              </div>
+              Record Stock Inflow
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 font-bold text-base mt-2">
+              Update your inventory by recording supplier purchase bills
+            </DialogDescription>
+          </DialogHeader>
 
-                          {showSupplierDropdown && (
-                            <div className="suggestions-dropdown">
-                              {suppliers
-                                .filter(s => !supplierSearch || s.name.toLowerCase().includes(supplierSearch.toLowerCase()))
-                                .slice(0, 5)
-                                .map(s => (
-                                  <div key={s.id} className="suggestion-item" onMouseDown={(e) => {
-                                    e.preventDefault();
-                                    setSelectedSupplier(s);
-                                    setSupplierSearch(s.name);
-                                    setSupplierName(s.name);
-                                    setShowSupplierDropdown(false);
-                                  }}>
-                                    <div style={{ fontWeight: 600 }}>{s.name}</div>
-                                    <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
-                                      {s.phone || 'No phone'} | Balance: ₹{Math.abs(s.current_balance)}
-                                    </div>
-                                  </div>
-                                ))}
-                              {supplierSearch && !suppliers.some(s => s.name.toLowerCase() === supplierSearch.toLowerCase()) && (
-                                <div className="suggestion-item" style={{ color: 'var(--accent)', fontWeight: 600 }}
-                                  onMouseDown={() => setShowSupplierDropdown(false)}>
-                                  + Add "{supplierSearch}" as new contact
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
+          <div className="p-10 space-y-10 max-h-[70vh] overflow-y-auto bg-slate-50/30">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+              <div className="lg:col-span-2 space-y-10">
+                {/* Supplier Info */}
+                <Card className="rounded-[2rem] border-slate-100 shadow-sm">
+                  <CardContent className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="form-group mb-0">
+                      <label className="form-label">Supplier / Vendor Name</label>
+                      <div className="relative">
+                        <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <Input 
+                          placeholder="Search or enter supplier..." 
+                          className="form-input h-14 pl-12"
+                          value={supplierSearch}
+                          onChange={(e) => {
+                            setSupplierSearch(e.target.value);
+                            setSupplierName(e.target.value);
+                            setShowSupplierDropdown(true);
+                          }}
+                        />
+                        {showSupplierDropdown && supplierSearch && (
+                          <Card className="absolute top-full left-0 right-0 mt-2 z-50 rounded-2xl shadow-xl overflow-hidden border-slate-100">
+                             <ScrollArea className="h-48">
+                               {suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase())).map(s => (
+                                 <div key={s.id} className="p-4 hover:bg-slate-50 cursor-pointer flex justify-between items-center border-b last:border-0" onClick={() => {
+                                   setSelectedSupplier(s);
+                                   setSupplierSearch(s.name);
+                                   setSupplierName(s.name);
+                                   setShowSupplierDropdown(false);
+                                 }}>
+                                    <div className="font-bold text-slate-900">{s.name}</div>
+                                    <div className="text-[10px] font-black text-slate-400 uppercase">Balance: {CURRENCY}{s.current_balance}</div>
+                                 </div>
+                               ))}
+                             </ScrollArea>
+                          </Card>
+                        )}
                       </div>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Additional Charges (₹)</label>
-                        <input className="form-input" style={{ height: 50, fontSize: 16 }} 
-                          type="number" placeholder="0.00"
+                    </div>
+                    <div className="form-group mb-0">
+                      <label className="form-label">Bill / Misc Charges ({CURRENCY})</label>
+                      <div className="relative">
+                        <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                        <Input 
+                          type="number" 
+                          placeholder="0.00" 
+                          className="form-input h-14 pl-12 font-black"
                           value={otherCharges}
-                          onChange={(e) => setOtherCharges(e.target.value)} />
+                          onChange={(e) => setOtherCharges(e.target.value)}
+                        />
                       </div>
                     </div>
+                  </CardContent>
+                </Card>
+
+                {/* Items Table */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Line Items</h4>
+                    <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl gap-2 font-black border-slate-200" onClick={addRow}>
+                      <Plus size={14} strokeWidth={3} /> Add Row
+                    </Button>
                   </div>
-
-                  {/* Items List Card */}
-                  <div className="card">
-                    <div className="flex items-center justify-between mb-md">
-                      <label className="form-label" style={{ margin: 0 }}>Line Items</label>
-                      <button className="btn btn-secondary btn-sm" onClick={addRow}>
-                        <Plus size={14} /> Add Product Row
-                      </button>
-                    </div>
-
-                    <div className="table-wrap" style={{ border: 'none', boxShadow: 'none' }}>
-                      <table style={{ overflow: 'visible' }}>
-                        <thead>
-                          <tr>
-                            <th style={{ padding: '8px 12px' }}>Product</th>
-                            <th style={{ width: 80 }}>Qty</th>
-                            <th style={{ width: 100 }}>Cost</th>
-                            <th style={{ width: 100 }}>MRP</th>
-                            <th style={{ width: 100 }}>Selling</th>
-                            <th style={{ width: 100 }}>Batch</th>
-                            <th style={{ width: 50 }}></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {items.map((item, idx) => (
-                           <tr key={idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                            <td style={{ position: 'relative', overflow: 'visible', padding: '12px 10px' }}>
-                              <input className="form-input" style={{ height: 44, fontSize: 14, fontWeight: 700 }}
-                                placeholder="Product Name..."
+                  <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                    <table className="w-full text-xs">
+                      <thead className="bg-slate-50 border-b">
+                        <tr>
+                          <th className="p-4 text-left font-black w-1/3">Product Name</th>
+                          <th className="p-4 text-center font-black w-20">Qty</th>
+                          <th className="p-4 text-center font-black w-24">Cost</th>
+                          <th className="p-4 text-center font-black w-24">Selling</th>
+                          <th className="p-4 w-10"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {items.map((item, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="p-4 relative">
+                              <Input 
+                                placeholder="Enter product name..." 
+                                className="h-10 font-bold border-none bg-transparent shadow-none focus:bg-white focus:shadow-sm"
                                 value={item.product_name}
                                 onChange={(e) => updateRow(idx, 'product_name', e.target.value)}
-                                onFocus={() => setActiveSuggestion({ row: idx, query: item.product_name })}
-                                onBlur={() => {
-                                  setTimeout(() => setActiveSuggestion({ row: null, query: '' }), 250);
-                                  checkLastPrice(idx, item.product_name);
-                                }} />
-                              
-                              {activeSuggestion.row === idx && (
-                                <div className="suggestions-dropdown" style={{ width: '100%', zIndex: 100 }}>
-                                  {allProducts
-                                    .filter(p => !activeSuggestion.query || p.product_name.toLowerCase().includes(activeSuggestion.query.toLowerCase()))
-                                    .slice(0, 5)
-                                    .map(p => (
-                                      <div key={p.id} className="suggestion-item" 
-                                        onMouseDown={(e) => { e.preventDefault(); selectSuggestion(idx, p); }}>
-                                        <div style={{ fontWeight: 700, fontSize: 13 }}>{p.product_name}</div>
-                                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Stock: {p.quantity}</div>
+                              />
+                              {activeSuggestion.row === idx && activeSuggestion.query.length > 0 && (
+                                <Card className="absolute top-full left-0 w-full z-[100] shadow-2xl border-slate-200 overflow-hidden bg-white mt-1">
+                                  <ScrollArea className="h-48">
+                                    {allProducts.filter(p => p.product_name.toLowerCase().includes(activeSuggestion.query.toLowerCase())).map(p => (
+                                      <div key={p.id} className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-0 flex justify-between items-center" onMouseDown={() => selectSuggestion(idx, p)}>
+                                        <div>
+                                          <p className="text-sm font-bold text-slate-900">{p.product_name}</p>
+                                          <p className="text-[10px] text-slate-400 font-bold uppercase">{p.brand || 'No Brand'}</p>
+                                        </div>
+                                        <Badge variant="outline" className="text-[9px] font-black">{CURRENCY}{p.cost_price}</Badge>
                                       </div>
                                     ))}
-                                </div>
-                              )}
-                              {item.last_price > 0 && (
-                                <div style={{ fontSize: 10, color: 'var(--accent)', marginTop: 4, fontWeight: 800 }}>
-                                  Last Cost: ₹{item.last_price}
-                                </div>
+                                  </ScrollArea>
+                                </Card>
                               )}
                             </td>
-                            <td style={{ padding: '12px 6px' }}>
-                              <input className="form-input" style={{ height: 44, textAlign: 'center', fontWeight: 800 }} type="number" placeholder="0" value={item.quantity} onChange={(e) => updateRow(idx, 'quantity', e.target.value)} />
+                            <td className="p-4">
+                              <Input 
+                                type="number" 
+                                className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white"
+                                value={item.quantity}
+                                onChange={(e) => updateRow(idx, 'quantity', e.target.value)}
+                              />
                             </td>
-                            <td style={{ padding: '12px 6px' }}>
-                              <input className="form-input" style={{ height: 44, fontWeight: 800 }} type="number" placeholder="Cost" value={item.price} onChange={(e) => updateRow(idx, 'price', e.target.value)} />
+                            <td className="p-4">
+                              <div className="relative">
+                                <Input 
+                                  type="number" 
+                                  className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white pr-6"
+                                  value={item.price}
+                                  onChange={(e) => updateRow(idx, 'price', e.target.value)}
+                                />
+                                {item.last_price && (
+                                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-400 whitespace-nowrap">
+                                    Last: {CURRENCY}{item.last_price}
+                                  </div>
+                                )}
+                              </div>
                             </td>
-                            <td style={{ padding: '12px 6px' }}>
-                              <input className="form-input" style={{ height: 44, fontWeight: 800 }} type="number" placeholder="MRP" value={item.mrp} onChange={(e) => updateRow(idx, 'mrp', e.target.value)} />
+                            <td className="p-4">
+                              <Input 
+                                type="number" 
+                                className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white text-blue-600"
+                                value={item.selling_price}
+                                onChange={(e) => updateRow(idx, 'selling_price', e.target.value)}
+                              />
                             </td>
-                            <td style={{ padding: '12px 6px' }}>
-                              <input className="form-input" style={{ height: 44, fontWeight: 800 }} type="number" placeholder="Sell" value={item.selling_price} onChange={(e) => updateRow(idx, 'selling_price', e.target.value)} />
-                            </td>
-                            <td style={{ padding: '12px 6px' }}>
-                              <input className="form-input" style={{ height: 44, fontSize: 13 }} placeholder="Batch" value={item.batch_number} onChange={(e) => updateRow(idx, 'batch_number', e.target.value)} />
-                            </td>
-                            <td style={{ padding: '12px 10px', textAlign: 'center' }}>
-                              <button className="btn btn-ghost btn-icon" style={{ color: 'var(--danger)', opacity: 0.6 }} onClick={() => removeRow(idx)}><X size={18} strokeWidth={3} /></button>
+                            <td className="p-4">
+                              <div className="flex items-center gap-2">
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button variant="ghost" size="icon" className={`h-9 w-9 rounded-xl ${Object.keys(item.custom_fields || {}).length > 0 || item.batch_number ? 'text-blue-600 bg-blue-50 border border-blue-100' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}>
+                                      <Settings2 size={16} />
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+                                    <DialogHeader className="p-8 bg-slate-900 text-white">
+                                      <DialogTitle className="font-black text-xl flex items-center gap-3">
+                                        <Settings2 size={20} className="text-blue-400" /> Item Attributes
+                                      </DialogTitle>
+                                      <DialogDescription className="text-slate-400 font-bold">Set specific details for this stock entry</DialogDescription>
+                                    </DialogHeader>
+                                    <div className="p-8 space-y-6 bg-white">
+                                      <div className="grid grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Batch Number</label>
+                                          <Input value={item.batch_number} onChange={(e) => updateRow(idx, 'batch_number', e.target.value)} className="h-12 font-bold rounded-xl" />
+                                        </div>
+                                        <div className="space-y-2">
+                                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expiry Date</label>
+                                          <Input type="date" value={item.expiry_date} onChange={(e) => updateRow(idx, 'expiry_date', e.target.value)} className="h-12 font-bold rounded-xl" />
+                                        </div>
+                                      </div>
+                                      {attributeDefs.length > 0 && (
+                                        <div className="space-y-4 pt-4 border-t border-slate-100">
+                                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Custom Attributes</p>
+                                          <div className="grid grid-cols-1 gap-4">
+                                            {attributeDefs.map(def => (
+                                              <div key={def.id} className="space-y-1.5">
+                                                <label className="text-xs font-bold text-slate-600">{def.name}</label>
+                                                <Input 
+                                                  value={item.custom_fields[def.name] || ''} 
+                                                  onChange={(e) => {
+                                                    const newFields = { ...item.custom_fields, [def.name]: e.target.value };
+                                                    updateRow(idx, 'custom_fields', newFields);
+                                                  }}
+                                                  className="h-10 font-medium rounded-lg"
+                                                />
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </DialogContent>
+                                </Dialog>
+                                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-300 hover:text-rose-500 hover:bg-rose-50" onClick={() => removeRow(idx)}>
+                                  <X size={18} strokeWidth={3} />
+                                </Button>
+                              </div>
                             </td>
                           </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Sidebar Inventory Tracker */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                  <div className="card" style={{ height: 'fit-content', maxHeight: '100%' }}>
-                    <div className="form-label" style={{ marginBottom: 16 }}>Inventory Overview</div>
-                    <div className="search-box" style={{ marginBottom: 16, maxWidth: '100%' }}>
-                      <Search className="search-icon" />
-                      <input placeholder="Quick find product..." value={productSearch} onChange={(e) => setProductSearch(e.target.value)} />
-                    </div>
-                    <div style={{ maxHeight: 500, overflowY: 'auto', paddingRight: 4 }}>
-                      {allProducts
-                        .filter(p => !productSearch || p.product_name.toLowerCase().includes(productSearch.toLowerCase()))
-                        .slice(0, 10)
-                        .map(p => (
-                          <div key={p.id} className="card" style={{ 
-                            padding: '12px', 
-                            marginBottom: '8px', 
-                            cursor: 'pointer',
-                            background: 'var(--bg-primary)',
-                            border: '1.5px solid transparent'
-                          }} onClick={() => handleQuickAdd(p)}>
-                            <div style={{ fontWeight: 600, fontSize: 13 }}>{p.product_name}</div>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: 11 }}>
-                              <span style={{ color: p.quantity < 5 ? 'var(--danger)' : 'var(--text-muted)' }}>Stock: {p.quantity}</span>
-                              <span style={{ fontWeight: 600 }}>₹{p.cost_price || '—'}</span>
-                            </div>
-                          </div>
                         ))}
-                    </div>
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="modal-footer">
-              <div style={{ marginRight: 'auto', display: 'flex', gap: 24, alignItems: 'center' }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  Total Items: <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{items.filter(i => i.product_name).length}</span>
+              {/* Inventory Sidebar */}
+              <div className="space-y-6">
+                <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Inventory Snapshot</h4>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                  <Input 
+                    placeholder="Quick find..." 
+                    className="h-10 pl-9 rounded-xl text-xs" 
+                    value={productSearch}
+                    onChange={(e) => setProductSearch(e.target.value)}
+                  />
                 </div>
-                <div style={{ fontSize: 16, fontWeight: 700 }}>
-                  Grand Total: <span style={{ color: 'var(--accent)' }}>₹{(items.reduce((acc, i) => acc + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0) + (parseFloat(otherCharges) || 0)).toLocaleString('en-IN')}</span>
+                <div className="space-y-3">
+                  {allProducts.filter(p => !productSearch || p.product_name.toLowerCase().includes(productSearch.toLowerCase())).slice(0, 5).map(p => (
+                    <div key={p.id} className="p-4 bg-white rounded-2xl border border-slate-100 shadow-sm group cursor-pointer hover:border-blue-200 transition-all" onClick={() => {
+                      const emptyRow = items.findIndex(i => !i.product_name);
+                      const newItem = { ...emptyItem, product_name: p.product_name, price: p.cost_price, selling_price: p.selling_price, custom_fields: typeof p.custom_fields === 'string' ? JSON.parse(p.custom_fields) : (p.custom_fields || {}) };
+                      if (emptyRow !== -1) {
+                        const newItems = [...items];
+                        newItems[emptyRow] = newItem;
+                        setItems(newItems);
+                      } else {
+                        setItems([...items, newItem]);
+                      }
+                    }}>
+                       <div className="font-black text-xs text-slate-700">{p.product_name}</div>
+                       <div className="flex justify-between mt-2">
+                         <span className="text-[10px] font-black text-slate-400 uppercase">Stock: {p.quantity}</span>
+                         <span className="text-[10px] font-black text-primary">{CURRENCY}{p.cost_price}</span>
+                       </div>
+                    </div>
+                  ))}
                 </div>
               </div>
-              <button className="btn btn-secondary" onClick={() => setShowModal(false)}>Discard</button>
-              <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={saving}>
-                {saving ? 'Processing...' : 'Confirm Purchase'}
-              </button>
             </div>
           </div>
-        </div>
-      )}
 
-      {toast && (
-        <div className={`toast ${toast.type === 'success' ? 'toast-success' : 'toast-error'}`}>
-          {toast.type === 'success' ? <Check size={18} style={{ color: 'var(--success)' }} /> : <X size={18} style={{ color: 'var(--danger)' }} />}
-          <span style={{ fontWeight: 600 }}>{toast.message}</span>
-        </div>
-      )}
+          <DialogFooter className="p-10 bg-white border-t flex items-center justify-between">
+            <div className="flex items-center gap-10">
+               <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Item Count</p>
+                  <p className="text-2xl font-black text-slate-900">{items.filter(i => i.product_name).length}</p>
+               </div>
+               <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Payable</p>
+                  <p className="text-3xl font-black text-emerald-600 tracking-tight">
+                    {CURRENCY}{(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0) + (parseFloat(otherCharges) || 0)).toLocaleString()}
+                  </p>
+               </div>
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Cancel</Button>
+              <Button onClick={handleSave} disabled={saving} className="btn-primary h-14 px-12 rounded-2xl gap-3 shadow-lg shadow-blue-500/20">
+                {saving ? 'Processing...' : <><Check size={20} strokeWidth={3} /> Record Purchase</>}
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

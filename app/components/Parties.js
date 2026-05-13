@@ -2,21 +2,35 @@
 import { useState, useEffect } from 'react';
 import { 
   Plus, Search, Phone, User, Users, Trash2, Edit3, 
-  ArrowUpRight, ArrowDownLeft, X, Check, Save 
+  ArrowUpRight, ArrowDownLeft, X, Check, Save, MapPin, 
+  CreditCard, Building2, PhoneCall, History
 } from 'lucide-react';
+import { useToast } from './ToastProvider';
 
-export default function Parties() {
+// shadcn/ui components
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+
+export default function Parties({ profile }) {
+  const { toast, confirm } = useToast();
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState('All'); // All | Customer | Supplier
+  const [filter, setFilter] = useState('All');
   const [showModal, setShowModal] = useState(false);
   const [editingParty, setEditingParty] = useState(null);
   
-  // Form State
   const [formData, setFormData] = useState({
     name: '', phone: '', address: '', gstin: '', type: 'Customer', opening_balance: 0
   });
+
+  const CURRENCY = profile?.currency_symbol || '₹';
 
   useEffect(() => {
     loadParties();
@@ -27,337 +41,287 @@ export default function Parties() {
       try {
         const data = await window.electronAPI.parties.getAll();
         setParties(data || []);
-      } catch (e) {
-        console.error('Failed to load parties:', e);
-      }
+      } catch (e) { console.error('Failed to load parties:', e); }
     }
     setLoading(false);
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const handleSave = async () => {
     if (!formData.name) return;
-
     try {
       if (editingParty) {
         await window.electronAPI.parties.update(editingParty.id, formData);
+        toast(`${formData.name} updated successfully`);
       } else {
         await window.electronAPI.parties.add(formData);
+        toast(`${formData.name} added to directory`);
       }
       setShowModal(false);
-      setEditingParty(null);
-      setFormData({ name: '', phone: '', address: '', gstin: '', type: 'Customer', opening_balance: 0 });
+      resetForm();
       loadParties();
-    } catch (e) {
-      console.error('Failed to save party:', e);
-    }
+    } catch (e) { toast('Failed to save: ' + e.message, 'error'); }
   };
 
-  const openAdd = () => {
+  const resetForm = () => {
     setEditingParty(null);
     setFormData({ name: '', phone: '', address: '', gstin: '', type: 'Customer', opening_balance: 0 });
-    setShowModal(true);
   };
 
   const openEdit = (p) => {
     setEditingParty(p);
     setFormData({ 
-      name: p.name, 
-      phone: p.phone, 
-      address: p.address, 
-      gstin: p.gstin, 
-      type: p.type, 
-      opening_balance: p.opening_balance 
+      name: p.name, phone: p.phone, address: p.address, 
+      gstin: p.gstin, type: p.type, opening_balance: p.opening_balance 
     });
     setShowModal(true);
   };
 
   const handleDelete = async (id) => {
-    if (confirm('Are you sure you want to delete this party?')) {
-      try {
-        await window.electronAPI.parties.delete(id);
-        loadParties();
-      } catch (e) {
-        console.error(e);
-      }
-    }
+    const party = parties.find(p => p.id === id);
+    const ok = await confirm({
+      type: 'danger',
+      title: `Delete ${party?.name}?`,
+      message: 'This contact and their transaction history will be permanently removed.',
+      confirmText: 'Delete Contact',
+    });
+    if (!ok) return;
+    try {
+      await window.electronAPI.parties.delete(id);
+      toast('Contact removed from directory', 'info');
+      loadParties();
+    } catch (e) { toast('Failed to delete: ' + e.message, 'error'); }
   };
 
   const filtered = parties.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                         p.phone.includes(searchTerm);
+    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.phone.includes(searchTerm);
     const matchesFilter = filter === 'All' || p.type === filter;
     return matchesSearch && matchesFilter;
   });
 
-  const stats = {
-    receivable: parties.filter(p => p.current_balance > 0).reduce((sum, p) => sum + p.current_balance, 0),
-    payable: Math.abs(parties.filter(p => p.current_balance < 0).reduce((sum, p) => sum + p.current_balance, 0))
-  };
+  const receivable = parties.filter(p => p.current_balance > 0).reduce((sum, p) => sum + p.current_balance, 0);
+  const payable = Math.abs(parties.filter(p => p.current_balance < 0).reduce((sum, p) => sum + p.current_balance, 0));
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
-    <div className="animate-in">
-      <div className="page-header">
-        <h2>Business Directory</h2>
-        <p>Manage your customers, suppliers and financial balances</p>
-      </div>
+    <div className="flex flex-col gap-8 md:p-2 lg:p-4 animate-in">
+      <header className="page-header">
+        <div>
+          <h2>Business Directory</h2>
+          <p>Manage your customers, suppliers and financial balances</p>
+        </div>
+        <Button onClick={() => setShowModal(true)} className="btn-primary h-14 px-8 rounded-2xl gap-3 shadow-blue-500/20">
+          <Plus size={20} strokeWidth={3} /> Register New Party
+        </Button>
+      </header>
 
-      {/* Financial Overview */}
+      {/* Financial Health */}
       <div className="metric-grid">
         <div className="metric-card">
           <div className="metric-icon green"><ArrowDownLeft size={24} /></div>
-          <div className="metric-info">
-            <h3>To Receive</h3>
-            <div className="metric-value">₹{stats.receivable.toLocaleString('en-IN')}</div>
-            <div className="metric-sub">From {parties.filter(p => p.current_balance > 0).length} Customers</div>
+          <div>
+            <p className="metric-sub">To Receive</p>
+            <h3 className="metric-value">{CURRENCY}{receivable.toLocaleString('en-IN')}</h3>
+            <div className="mt-2 flex items-center gap-2">
+              <Badge className="bg-emerald-50 text-emerald-600 border-emerald-100 rounded-lg">{parties.filter(p => p.current_balance > 0).length} Customers</Badge>
+            </div>
           </div>
         </div>
         <div className="metric-card">
           <div className="metric-icon red"><ArrowUpRight size={24} /></div>
-          <div className="metric-info">
-            <h3>To Pay</h3>
-            <div className="metric-value">₹{stats.payable.toLocaleString('en-IN')}</div>
-            <div className="metric-sub">To {parties.filter(p => p.current_balance < 0).length} Suppliers</div>
+          <div>
+            <p className="metric-sub">To Pay</p>
+            <h3 className="metric-value">{CURRENCY}{payable.toLocaleString('en-IN')}</h3>
+            <div className="mt-2 flex items-center gap-2">
+              <Badge className="bg-rose-50 text-rose-600 border-rose-100 rounded-lg">{parties.filter(p => p.current_balance < 0).length} Suppliers</Badge>
+            </div>
           </div>
         </div>
         <div className="metric-card">
           <div className="metric-icon blue"><Users size={24} /></div>
-          <div className="metric-info">
-            <h3>Net Balance</h3>
-            <div className="metric-value" style={{ color: stats.receivable - stats.payable >= 0 ? 'var(--success)' : 'var(--danger)' }}>
-              ₹{(stats.receivable - stats.payable).toLocaleString('en-IN')}
-            </div>
-            <div className="metric-sub">Overall position</div>
+          <div>
+            <p className="metric-sub">Net Position</p>
+            <h3 className={`metric-value ${receivable - payable >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {CURRENCY}{(receivable - payable).toLocaleString('en-IN')}
+            </h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Aggregate Ledger</div>
           </div>
         </div>
       </div>
 
-      {/* Actions */}
-      <div className="action-bar">
-        <div className="action-bar-left">
-          <div className="search-box">
-            <Search className="search-icon" />
-            <input 
-              placeholder="Quick search by name or contact..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
-          
-          <div style={{ marginLeft: 8 }}>
-            <div className="flex gap-xs">
-              {['All', 'Customer', 'Supplier'].map(t => (
-                <button 
-                  key={t}
-                  className={`btn btn-sm ${filter === t ? 'btn-primary' : 'btn-secondary'}`}
-                  style={{ borderRadius: 'var(--radius-full)', padding: '6px 16px' }}
-                  onClick={() => setFilter(t)}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Filter & Search */}
+      <div className="flex flex-col md:flex-row items-center gap-4">
+        <div className="relative flex-1 w-full">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
+          <Input 
+            placeholder="Search by name, phone or company..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="form-input h-14 pl-12 rounded-2xl shadow-sm border-slate-200"
+          />
         </div>
-        <button className="btn btn-primary" onClick={openAdd}>
-          <Plus size={16} /> Register New Party
-        </button>
+        <Tabs value={filter} onValueChange={setFilter} className="w-full md:w-auto">
+          <TabsList className="bg-white border border-slate-200 p-1.5 rounded-2xl h-14 w-full md:w-fit">
+            <TabsTrigger value="All" className="px-6 rounded-xl font-black h-full data-[state=active]:bg-slate-900 data-[state=active]:text-white">All</TabsTrigger>
+            <TabsTrigger value="Customer" className="px-6 rounded-xl font-black h-full data-[state=active]:bg-blue-600 data-[state=active]:text-white">Customers</TabsTrigger>
+            <TabsTrigger value="Supplier" className="px-6 rounded-xl font-black h-full data-[state=active]:bg-amber-600 data-[state=active]:text-white">Suppliers</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
 
-      {/* Table Card */}
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {filtered.length > 0 ? (
-          <div className="table-wrap" style={{ border: 'none', boxShadow: 'none' }}>
-            <table>
+      {/* Directory Table */}
+      <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+        <div className="table-wrap border-none shadow-none rounded-none">
+          {filtered.length > 0 ? (
+            <table className="w-full">
               <thead>
                 <tr>
-                  <th>Contact Information</th>
-                  <th>Type</th>
-                  <th>Financial Status</th>
-                  <th style={{ width: 80, textAlign: 'right' }}>Actions</th>
+                  <th>Contact Identity</th>
+                  <th>Relationship</th>
+                  <th>Ledger Balance</th>
+                  <th className="text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody>
-                {filtered.map(p => (
-                  <tr key={p.id}>
+              <tbody className="divide-y divide-slate-50">
+                {filtered.map((p) => (
+                  <tr key={p.id} className="group hover:bg-slate-50/50 transition-colors">
                     <td>
-                      <div style={{ fontWeight: 700, fontSize: 15 }}>{p.name}</div>
-                      <div style={{ display: 'flex', gap: 12, marginTop: 4, alignItems: 'center' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-muted)' }}>
-                          <Phone size={12} /> {p.phone || 'No phone'}
+                      <div className="flex items-center gap-4">
+                        <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-black text-lg ${
+                          p.type === 'Customer' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+                        }`}>
+                          {p.name[0]}
                         </div>
-                        {p.gstin && (
-                          <div style={{ fontSize: 11, background: 'var(--bg-primary)', padding: '2px 8px', borderRadius: 4, fontWeight: 600 }}>
-                            {p.gstin}
+                        <div>
+                          <div className="font-black text-slate-900 text-base">{p.name}</div>
+                          <div className="flex items-center gap-3 mt-1 text-[11px] font-bold text-slate-400 uppercase tracking-widest">
+                            <span className="flex items-center gap-1"><PhoneCall size={12} /> {p.phone || 'No Contact'}</span>
+                            {p.gstin && <span className="border-l pl-3">{p.gstin}</span>}
                           </div>
-                        )}
+                        </div>
                       </div>
                     </td>
                     <td>
-                      <span style={{ 
-                        padding: '4px 12px', 
-                        borderRadius: 'var(--radius-full)', 
-                        fontSize: 11, 
-                        fontWeight: 700,
-                        background: p.type === 'Customer' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                        color: p.type === 'Customer' ? '#2563eb' : '#d97706'
-                      }}>
-                        {p.type}
-                      </span>
+                      <Badge className={`rounded-xl px-4 py-1.5 font-black text-xs ${
+                        p.type === 'Customer' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                      }`}>
+                        {p.type.toUpperCase()}
+                      </Badge>
                     </td>
                     <td>
-                      <div style={{ 
-                        fontWeight: 800, 
-                        fontSize: 16,
-                        color: p.current_balance > 0 ? 'var(--success)' : p.current_balance < 0 ? 'var(--danger)' : 'var(--text-muted)'
-                      }}>
-                        {p.current_balance > 0 ? '+' : p.current_balance < 0 ? '-' : ''}
-                        ₹{Math.abs(p.current_balance).toLocaleString('en-IN')}
+                      <div className={`font-black text-lg ${
+                        p.current_balance > 0 ? 'text-emerald-600' : p.current_balance < 0 ? 'text-rose-600' : 'text-slate-400'
+                      }`}>
+                        {p.current_balance > 0 ? '+' : ''}{CURRENCY}{p.current_balance.toLocaleString('en-IN')}
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
-                        {p.current_balance > 0 ? 'TO RECEIVE' : p.current_balance < 0 ? 'TO PAY' : 'SETTLED'}
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        {p.current_balance > 0 ? 'Receivable' : p.current_balance < 0 ? 'Payable' : 'Settled'}
                       </div>
                     </td>
-                    <td>
-                      <div className="flex justify-end gap-sm">
-                        <button className="btn btn-ghost btn-icon btn-sm" onClick={() => openEdit(p)}>
-                          <Edit3 size={16} />
-                        </button>
-                        <button className="btn btn-ghost btn-icon btn-sm" style={{ color: 'var(--danger)' }} onClick={() => handleDelete(p.id)}>
-                          <Trash2 size={16} />
-                        </button>
+                    <td className="text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="h-10 w-10 rounded-xl text-slate-400 hover:text-primary hover:bg-blue-50">
+                          <Edit3 size={18} />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)} className="h-10 w-10 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50">
+                          <Trash2 size={18} />
+                        </Button>
                       </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-        ) : (
-          <div className="empty-state">
-            <div className="empty-state-icon"><Users size={28} /></div>
-            <h3>No records found</h3>
-            <p>Try searching for a different name or add a new contact</p>
-          </div>
-        )}
-      </div>
-
-      {/* Modal */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal modal-md" onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{editingParty ? 'Update Contact Information' : 'Register New Business Partner'}</h3>
-              <button className="btn btn-ghost btn-icon" onClick={() => setShowModal(false)}>
-                <X size={18} />
-              </button>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-32 text-slate-300">
+              <Users size={64} strokeWidth={1} />
+              <p className="mt-4 font-black text-lg">No directory records found</p>
+              <Button variant="link" className="text-primary font-black mt-2" onClick={() => { setSearchTerm(''); setFilter('All'); }}>Reset All Filters</Button>
             </div>
-            
-            <form onSubmit={handleSave} style={{ background: 'var(--bg-primary)', padding: 0 }}>
-              <div className="modal-body" style={{ padding: 24 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-                  
-                  {/* Personal Info Card */}
-                  <div className="card">
-                    <div className="form-group">
-                      <label className="form-label">Legal Name / Business Name *</label>
-                      <input 
-                        className="form-input" 
-                        autoFocus 
-                        required
-                        style={{ height: 48, fontSize: 16 }}
-                        placeholder="e.g. John Doe Enterprises"
-                        value={formData.name}
-                        onChange={e => setFormData({...formData, name: e.target.value})}
-                      />
-                    </div>
-                    
-                    <div className="form-row">
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Mobile Number</label>
-                        <div style={{ position: 'relative' }}>
-                          <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>+91</span>
-                          <input 
-                            className="form-input" 
-                            style={{ paddingLeft: 46, height: 44 }}
-                            placeholder="9988776655"
-                            value={formData.phone}
-                            onChange={e => setFormData({...formData, phone: e.target.value})}
-                          />
-                        </div>
-                      </div>
-                      <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">Contact Category</label>
-                        <select 
-                          className="form-select"
-                          style={{ height: 44 }}
-                          value={formData.type}
-                          onChange={e => setFormData({...formData, type: e.target.value})}
-                        >
-                          <option value="Customer">Client / Buyer</option>
-                          <option value="Supplier">Vendor / Supplier</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
+          )}
+        </div>
+      </Card>
 
-                  {/* Finance Info Card */}
-                  <div className="card">
-                    <div className="form-row">
-                      <div className="form-group">
-                        <label className="form-label">GSTIN Identification</label>
-                        <input 
-                          className="form-input font-mono" 
-                          style={{ height: 44 }}
-                          placeholder="22AAAAA0000A1Z5"
-                          value={formData.gstin}
-                          onChange={e => setFormData({...formData, gstin: e.target.value.toUpperCase()})}
-                        />
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Opening Account Balance</label>
-                        <div style={{ position: 'relative' }}>
-                          <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }}>₹</span>
-                          <input 
-                            className="form-input" 
-                            type="number"
-                            style={{ height: 44, paddingLeft: 28 }}
-                            placeholder="0.00"
-                            value={formData.opening_balance}
-                            onChange={e => setFormData({...formData, opening_balance: parseFloat(e.target.value) || 0})}
-                          />
-                        </div>
-                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, fontWeight: 600 }}>
-                          * Use negative (-) for payables
-                        </div>
-                      </div>
-                    </div>
+      {/* Party Modal */}
+      <Dialog open={showModal} onOpenChange={setShowModal}>
+        <DialogContent className="sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl rounded-[3rem] bg-white">
+          <DialogHeader className="p-10 bg-slate-900 text-white">
+            <DialogTitle className="text-2xl font-black flex items-center gap-4">
+              <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/20">
+                <User size={24} />
+              </div>
+              {editingParty ? 'Modify Contact' : 'Register New Partner'}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 font-bold text-base mt-2">
+              Add customers or suppliers to track transactions and balances
+            </DialogDescription>
+          </DialogHeader>
 
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label">Billing Address</label>
-                      <textarea 
-                        className="form-textarea"
-                        placeholder="Street, City, Pincode..."
-                        style={{ minHeight: 80 }}
-                        value={formData.address}
-                        onChange={e => setFormData({...formData, address: e.target.value})}
-                      ></textarea>
-                    </div>
-                  </div>
-
+          <div className="p-10 space-y-10 max-h-[70vh] overflow-y-auto bg-slate-50/30">
+            <section className="space-y-6">
+              <div className="flex items-center gap-3">
+                <History size={18} className="text-blue-600" />
+                <h4 className="font-black text-slate-900 uppercase tracking-widest text-xs">Profile & Relationship</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                <div className="md:col-span-2 form-group">
+                  <label className="form-label">Full Name / Business Name *</label>
+                  <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="form-input h-14" placeholder="e.g. John Doe / Delta Corp" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Relationship Type</label>
+                  <Select value={formData.type} onValueChange={(v) => setFormData({...formData, type: v})}>
+                    <SelectTrigger className="form-input h-14 font-black"><SelectValue placeholder="Type" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Customer" className="font-bold">Customer</SelectItem>
+                      <SelectItem value="Supplier" className="font-bold">Supplier</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Phone Number</label>
+                  <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="form-input h-14" placeholder="9876543210" />
                 </div>
               </div>
+            </section>
 
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Discard</button>
-                <button type="submit" className="btn btn-primary btn-lg">
-                  <Check size={18} /> {editingParty ? 'Commit Updates' : 'Save New Contact'}
-                </button>
+            <section className="space-y-6">
+              <div className="flex items-center gap-3">
+                <CreditCard size={18} className="text-emerald-600" />
+                <h4 className="font-black text-slate-900 uppercase tracking-widest text-xs">Compliance & Opening State</h4>
               </div>
-            </form>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                <div className="form-group">
+                  <label className="form-label">GSTIN / Tax ID</label>
+                  <Input value={formData.gstin} onChange={(e) => setFormData({...formData, gstin: e.target.value.toUpperCase()})} className="form-input h-14 font-mono" placeholder="22AAAAA0000A1Z5" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Opening Balance ({CURRENCY})</label>
+                  <Input type="number" value={formData.opening_balance} onChange={(e) => setFormData({...formData, opening_balance: parseFloat(e.target.value) || 0})} className="form-input h-14 font-black" />
+                  <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-tight">Negative (-) means you owe them</p>
+                </div>
+                <div className="md:col-span-2 form-group">
+                  <label className="form-label">Billing Address</label>
+                  <Textarea value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="form-input min-h-[100px] py-4" placeholder="Full street address..." />
+                </div>
+              </div>
+            </section>
           </div>
-        </div>
-      )}
+
+          <DialogFooter className="p-10 bg-white border-t flex gap-3 sm:justify-end">
+            <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Discard</Button>
+            <Button onClick={handleSave} className="btn-primary h-14 px-12 rounded-2xl gap-3">
+              <Check size={20} strokeWidth={3} /> {editingParty ? 'Update Contact' : 'Register Partner'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
