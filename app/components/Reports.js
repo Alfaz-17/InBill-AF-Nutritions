@@ -43,6 +43,7 @@ export default function Reports({ profile }) {
   const [selectedPurchase, setSelectedPurchase] = useState(null);
   const [returnItems, setReturnItems] = useState([]);
   const [returnReason, setReturnReason] = useState('');
+  const [returnPaymentMode, setReturnPaymentMode] = useState('Credit');
   const [savingReturn, setSavingReturn] = useState(false);
 
   // Pagination
@@ -141,13 +142,13 @@ export default function Reports({ profile }) {
       let html;
       let filename;
       if (activeTab === 'sales') {
-        html = getSalesReportHTML(data, fromDate, toDate, profile);
+        html = getSalesReportHTML(data, profile, fromDate, toDate);
         filename = `Sales_Report_${fromDate}_to_${toDate}.pdf`;
       } else if (activeTab === 'stock') {
         html = getStockReportHTML(data, profile);
         filename = `Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`;
       } else if (activeTab === 'purchases') {
-        html = getPurchaseReportHTML(data, fromDate, toDate, profile);
+        html = getPurchaseReportHTML(data, profile, fromDate, toDate);
         filename = `Purchase_Report_${fromDate}_to_${toDate}.pdf`;
       }
       
@@ -191,8 +192,8 @@ export default function Reports({ profile }) {
       setShowPurchaseReturn(true);
     }
     setReturnReason('');
+    setReturnPaymentMode('Cash');
   };
-
   const handleCreateSaleReturn = async () => {
     const itemsToReturn = returnItems.filter(i => i.quantity > 0);
     if (itemsToReturn.length === 0) return;
@@ -203,6 +204,7 @@ export default function Reports({ profile }) {
         sale_id: selectedSale.id,
         party_id: selectedSale.party_id,
         total_amount: totalAmount,
+        payment_mode: returnPaymentMode, // Explicit refund method
         items: itemsToReturn.map(i => ({
           product_id: i.product_id,
           product_name: i.product_name,
@@ -402,7 +404,7 @@ export default function Reports({ profile }) {
                           <p className="metric-sub">Total Cash Inflow</p>
                           <h3 className="metric-value">{CURRENCY}{(data.summary?.cash_received || 0).toLocaleString('en-IN')}</h3>
                           <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
-                            Sales: {CURRENCY}{data.summary?.sales_cash?.toLocaleString()} | Party: {CURRENCY}{data.summary?.party_collections?.toLocaleString()}
+                            Sales: {CURRENCY}{data.summary?.sales_cash?.toLocaleString()} | Party: {CURRENCY}{data.summary?.party_collections?.toLocaleString()} | Refund: -{CURRENCY}{data.summary?.actualRefund?.toLocaleString()}
                           </div>
                         </div>
                       </div>
@@ -585,7 +587,6 @@ export default function Reports({ profile }) {
                         <th>Customer</th>
                         <th className="text-right">Return Value</th>
                         <th>Reason</th>
-                        <th className="text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
@@ -596,30 +597,6 @@ export default function Reports({ profile }) {
                           <td className="font-bold text-slate-600">{r.customer_name || 'Generic'}</td>
                           <td className="text-right font-black text-orange-600">{CURRENCY}{r.total_amount?.toLocaleString()}</td>
                           <td className="text-xs font-bold text-slate-400 italic">{r.reason || 'No reason provided'}</td>
-                          <td className="text-right">
-                            <Button 
-                              variant="ghost" 
-                              size="sm" 
-                              onClick={async () => {
-                                const ok = await confirm({
-                                  title: "Undo Return?",
-                                  message: "Are you sure you want to UNDO this return? This will restore the customer debt and reduce stock.",
-                                  confirmText: "Undo",
-                                  type: "warning"
-                                });
-                                if(ok) {
-                                  const res = await window.electronAPI.returns.deleteSaleReturn(r.id);
-                                  if(res.success) {
-                                    toast("Return undone successfully!", "success");
-                                    fetchReport();
-                                  }
-                                }
-                              }}
-                              className="text-rose-600 hover:bg-rose-50 rounded-xl h-10 px-4 font-bold"
-                            >
-                              <Trash2 size={14} /> Undo
-                            </Button>
-                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -709,142 +686,311 @@ export default function Reports({ profile }) {
 
       {/* Sales Return Modal */}
       <Dialog open={showSalesReturn} onOpenChange={setShowSalesReturn}>
-        <DialogContent className="max-w-2xl rounded-[2.5rem] p-10">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black flex items-center gap-4">
-              <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><RotateCcw size={24}/></div>
-              Process Sales Return
-            </DialogTitle>
-            <DialogDescription className="text-base font-bold text-slate-400 mt-2">
-              Reverse stock and update customer balance for Invoice #{selectedSale?.invoice_number}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-8 my-8">
-            <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
-              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Select Items to Return</h4>
-              <div className="space-y-4">
-                {returnItems.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                    <div>
-                      <div className="font-black text-slate-900">{item.product_name}</div>
-                      <div className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">
-                        Available for Return: {item.available_qty}
-                      </div>
+        <DialogContent className="max-w-2xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+          <div className="max-h-[92vh] flex flex-col">
+            <DialogHeader className="p-10 pb-6 bg-white sticky top-0 z-10 border-b border-slate-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-2xl font-black flex items-center gap-4">
+                    <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><RotateCcw size={24}/></div>
+                    Process Sales Return
+                  </DialogTitle>
+                  <DialogDescription className="text-base font-bold text-slate-400 mt-2">
+                    Invoice #{selectedSale?.invoice_number} • {selectedSale?.customer_name || 'Counter Sale'}
+                  </DialogDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    const newItems = returnItems.map(i => ({ ...i, quantity: i.available_qty }));
+                    setReturnItems(newItems);
+                  }}
+                  className="rounded-xl border-orange-200 text-orange-600 font-black hover:bg-orange-50 h-10 px-4"
+                >
+                  Return All
+                </Button>
+              </div>
+            </DialogHeader>
+  
+            <div className="flex-1 overflow-y-auto p-10 pt-6 custom-scrollbar">
+              <div className="space-y-8">
+                {selectedSale?.due_amount > 0 && (
+                  <div className="bg-blue-50 p-6 rounded-3xl border border-blue-100">
+                    <div className="flex items-center gap-3 text-blue-800 mb-2">
+                      <AlertCircle size={18} />
+                      <span className="font-black">Active Credit Found</span>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <Input 
-                        type="number" 
-                        min="0" 
-                        max={item.available_qty}
-                        value={item.quantity}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value) || 0;
-                          const newItems = [...returnItems];
-                          newItems[idx].quantity = Math.min(val, item.available_qty);
-                          setReturnItems(newItems);
-                        }}
-                        className="w-24 h-12 text-center font-black rounded-xl"
-                      />
+                    <p className="text-sm font-bold text-blue-600">
+                      This sale has an outstanding due of <span className="text-blue-900">{CURRENCY}{selectedSale.due_amount}</span>. 
+                      Returns will prioritize clearing this debt first.
+                    </p>
+                  </div>
+                )}
+  
+                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Select Items to Return</h4>
+                  <div className="space-y-4">
+                    {returnItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                        <div className="flex-1 min-w-0 pr-4">
+                          <div className="font-black text-slate-900 truncate">{item.product_name}</div>
+                          <div className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">
+                            Available: {item.available_qty}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <Input 
+                            type="number" 
+                            min="0" 
+                            max={item.available_qty}
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              const newItems = [...returnItems];
+                              newItems[idx].quantity = Math.min(val, item.available_qty);
+                              setReturnItems(newItems);
+                            }}
+                            className="w-20 h-12 text-center font-black rounded-xl border-slate-200 focus:border-orange-500"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+  
+                <div className="form-group">
+                  <label className="form-label text-slate-900">Refund Method</label>
+                  <div className="flex gap-3">
+                    {['Cash', 'UPI', 'Credit'].map((mode) => (
+                      <Button
+                        key={mode}
+                        type="button"
+                        variant={returnPaymentMode === mode ? 'default' : 'outline'}
+                        onClick={() => setReturnPaymentMode(mode)}
+                        className={`flex-1 h-14 rounded-2xl font-black transition-all ${
+                          returnPaymentMode === mode 
+                            ? 'bg-orange-600 text-white shadow-xl shadow-orange-200 border-transparent scale-[1.02]' 
+                            : 'text-slate-500 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {mode}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] font-bold text-slate-400 mt-3 px-1 italic">
+                    {returnPaymentMode === 'Credit' 
+                      ? `✓ Will clear up to ${CURRENCY}${Math.min(selectedSale?.due_amount || 0, returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0))} debt and any extra as Store Credit.` 
+                      : `✓ This will record a ${returnPaymentMode} refund. Customer's balance of ${CURRENCY}${selectedSale?.due_amount || 0} will NOT change.`}
+                  </p>
+                </div>
+  
+                <div className="form-group">
+                  <label className="form-label">Reason for Return</label>
+                  <textarea 
+                    value={returnReason}
+                    onChange={(e) => setReturnReason(e.target.value)}
+                    placeholder="e.g. Damaged product, Customer changed mind..."
+                    className="form-input min-h-[100px] py-4 rounded-3xl"
+                  />
+                </div>
+  
+                <div className="flex flex-col gap-4 bg-orange-50 p-8 rounded-3xl border border-orange-100 shadow-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-orange-900 font-black text-lg">Total Return Value</span>
+                    <span className="text-2xl font-black text-orange-600">
+                      {CURRENCY}{returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="pt-4 border-t border-orange-200/50 space-y-3">
+                    <div className="flex justify-between items-center text-sm font-bold text-orange-800/70">
+                      <span>1. Debt To Clear (Automatic)</span>
+                      <span className="text-orange-900 font-black">
+                        {CURRENCY}{Math.min(selectedSale?.due_amount || 0, returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0)).toLocaleString()}
+                      </span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center text-sm font-bold text-orange-800/70">
+                      <span>2. Net Refund ({returnPaymentMode})</span>
+                      <span className="text-orange-900 font-black">
+                        {CURRENCY}{Math.max(0, returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0) - (selectedSale?.due_amount || 0)).toLocaleString()}
+                      </span>
                     </div>
                   </div>
-                ))}
+
+                  <p className="text-[10px] text-center font-black uppercase tracking-tighter text-orange-400 mt-2 italic">
+                    {returnPaymentMode === 'Credit' 
+                      ? "✓ Balance will be added as Store Credit to customer ledger" 
+                      : `✓ You are only paying ${CURRENCY}${Math.max(0, returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0) - (selectedSale?.due_amount || 0)).toLocaleString()} in ${returnPaymentMode}`}
+                  </p>
+                </div>
               </div>
             </div>
-
-            <div className="form-group">
-              <label className="form-label">Reason for Return</label>
-              <textarea 
-                value={returnReason}
-                onChange={(e) => setReturnReason(e.target.value)}
-                placeholder="e.g. Damaged product, Customer changed mind..."
-                className="form-input min-h-[100px] py-4 rounded-3xl"
-              />
-            </div>
-
-            <div className="flex justify-between items-center bg-orange-50 p-6 rounded-3xl border border-orange-100">
-              <span className="text-orange-900 font-black">Total Return Value</span>
-              <span className="text-2xl font-black text-orange-600">
-                {CURRENCY}{returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0).toLocaleString()}
-              </span>
-            </div>
+  
+            <DialogFooter className="p-10 pt-6 bg-white border-t border-slate-50 sticky bottom-0 z-10 gap-4">
+              <Button variant="ghost" onClick={() => setShowSalesReturn(false)} className="h-14 px-8 rounded-2xl font-black text-slate-500">Cancel</Button>
+              <Button 
+                onClick={handleCreateSaleReturn} 
+                disabled={savingReturn || returnItems.every(i => i.quantity === 0)}
+                className="h-14 px-10 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black gap-3 shadow-xl shadow-orange-200"
+              >
+                {savingReturn ? 'Processing...' : <><Check size={20} /> Finalize Return</>}
+              </Button>
+            </DialogFooter>
           </div>
-
-          <DialogFooter className="gap-4">
-            <Button variant="ghost" onClick={() => setShowSalesReturn(false)} className="h-14 px-8 rounded-2xl font-black">Cancel</Button>
-            <Button 
-              onClick={handleCreateSaleReturn} 
-              disabled={savingReturn || returnItems.every(i => i.quantity === 0)}
-              className="h-14 px-10 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black gap-3 shadow-xl shadow-orange-200"
-            >
-              {savingReturn ? 'Processing...' : <><Check size={20} /> Finalize Return</>}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
       {/* Purchase Return Modal */}
       <Dialog open={showPurchaseReturn} onOpenChange={setShowPurchaseReturn}>
-        <DialogContent className="max-w-2xl rounded-[2.5rem] p-10">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-black flex items-center gap-4">
-              <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><RotateCcw size={24}/></div>
-              Process Purchase Return
-            </DialogTitle>
-            <DialogDescription className="text-base font-bold text-slate-400 mt-2">
-              Send items back to supplier and update your ledger
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-2xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+          <div className="max-h-[92vh] flex flex-col">
+            <DialogHeader className="p-10 pb-6 bg-white sticky top-0 z-10 border-b border-slate-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <DialogTitle className="text-2xl font-black flex items-center gap-4">
+                    <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><RotateCcw size={24}/></div>
+                    Process Purchase Return
+                  </DialogTitle>
+                  <DialogDescription className="text-base font-bold text-slate-400 mt-2">
+                    Send items back to supplier for Purchase #{selectedPurchase?.id}
+                  </DialogDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm"
+                  onClick={() => {
+                    const newItems = returnItems.map(i => ({ ...i, quantity: i.available_qty }));
+                    setReturnItems(newItems);
+                  }}
+                  className="rounded-xl border-orange-200 text-orange-600 font-black hover:bg-orange-50 h-10 px-4"
+                >
+                  Return All
+                </Button>
+              </div>
+            </DialogHeader>
 
-          <div className="space-y-8 my-8">
-            <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
-              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Select Items to Return</h4>
-              <div className="space-y-4">
-                {returnItems.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-                    <div>
-                      <div className="font-black text-slate-900">{item.product_name}</div>
-                      <div className="text-xs font-bold text-slate-400">Purchased: {item.quantity} | {CURRENCY}{item.price}</div>
+            <div className="flex-1 overflow-y-auto p-10 pt-6 custom-scrollbar">
+              <div className="space-y-8">
+                {selectedPurchase?.due_amount > 0 && (
+                  <div className="bg-emerald-50 p-6 rounded-3xl border border-emerald-100">
+                    <div className="flex items-center gap-3 text-emerald-800 mb-2">
+                      <AlertCircle size={18} />
+                      <span className="font-black">Supplier Credit Available</span>
                     </div>
-                    <div className="flex items-center gap-4">
-                      <Input 
-                        type="number" 
-                        min="0"
-                        value={item.quantity}
-                        onChange={(e) => {
-                          const newItems = [...returnItems];
-                          newItems[idx].quantity = parseInt(e.target.value) || 0;
-                          setReturnItems(newItems);
-                        }}
-                        className="w-24 h-12 text-center font-black rounded-xl"
-                      />
+                    <p className="text-sm font-bold text-emerald-600">
+                      You currently owe this supplier <span className="text-emerald-900">{CURRENCY}{selectedPurchase.due_amount}</span>. 
+                      Returns will prioritize clearing this debt first.
+                    </p>
+                  </div>
+                )}
+
+                <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Select Items to Return</h4>
+                  <div className="space-y-4">
+                    {returnItems.map((item, idx) => (
+                      <div key={idx} className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                        <div className="flex-1 min-w-0 pr-4">
+                          <div className="font-black text-slate-900 truncate">{item.product_name}</div>
+                          <div className="text-[10px] font-black text-orange-600 uppercase tracking-wider">
+                            Original: {item.available_qty}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <Input 
+                            type="number" 
+                            min="0" 
+                            max={item.available_qty}
+                            value={item.quantity}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              const newItems = [...returnItems];
+                              newItems[idx].quantity = Math.min(val, item.available_qty);
+                              setReturnItems(newItems);
+                            }}
+                            className="w-20 h-12 text-center font-black rounded-xl border-slate-200 focus:border-orange-500"
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label text-slate-900">Refund Type (How supplier pays back)</label>
+                  <div className="flex gap-3">
+                    {['Cash', 'UPI', 'Credit'].map((mode) => (
+                      <Button
+                        key={mode}
+                        type="button"
+                        variant={returnPaymentMode === mode ? 'default' : 'outline'}
+                        onClick={() => setReturnPaymentMode(mode)}
+                        className={`flex-1 h-14 rounded-2xl font-black transition-all ${
+                          returnPaymentMode === mode 
+                            ? 'bg-orange-600 text-white shadow-xl shadow-orange-200 border-transparent scale-[1.02]' 
+                            : 'text-slate-500 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        {mode}
+                      </Button>
+                    ))}
+                  </div>
+                  <p className="text-[11px] font-bold text-slate-400 mt-3 px-1 italic">
+                    {returnPaymentMode === 'Credit' 
+                      ? "✓ Balance will be deducted from your debt to this supplier in the Ledger." 
+                      : `✓ Supplier gave you ${returnPaymentMode} back. Your ledger balance will only decrease by the debt cleared.`}
+                  </p>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Return Reason</label>
+                  <textarea 
+                    value={returnReason}
+                    onChange={(e) => setReturnReason(e.target.value)}
+                    placeholder="Reason for sending items back to supplier..."
+                    className="form-input min-h-[100px] py-4 rounded-3xl"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-4 bg-emerald-50 p-8 rounded-3xl border border-emerald-100 shadow-sm">
+                  <div className="flex justify-between items-center">
+                    <span className="text-emerald-900 font-black text-lg">Total Return Value</span>
+                    <span className="text-2xl font-black text-emerald-600">
+                      {CURRENCY}{returnItems.reduce((sum, i) => sum + (i.quantity * (i.price || 0)), 0).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="pt-4 border-t border-emerald-200/50 space-y-3">
+                    <div className="flex justify-between items-center text-sm font-bold text-emerald-800/70">
+                      <span>1. Supplier Debt To Clear</span>
+                      <span className="text-emerald-900 font-black">
+                        {CURRENCY}{Math.min(selectedPurchase?.due_amount || 0, returnItems.reduce((sum, i) => sum + (i.quantity * (i.price || 0)), 0)).toLocaleString()}
+                      </span>
+                    </div>
+                    
+                    <div className="flex justify-between items-center text-sm font-bold text-emerald-800/70">
+                      <span>2. Cash/Refund Recieved</span>
+                      <span className="text-emerald-900 font-black">
+                        {CURRENCY}{Math.max(0, returnItems.reduce((sum, i) => sum + (i.quantity * (i.price || 0)), 0) - (selectedPurchase?.due_amount || 0)).toLocaleString()}
+                      </span>
                     </div>
                   </div>
-                ))}
+                </div>
               </div>
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Return Reason</label>
-              <textarea 
-                value={returnReason}
-                onChange={(e) => setReturnReason(e.target.value)}
-                placeholder="Reason for sending items back to supplier..."
-                className="form-input min-h-[100px] py-4 rounded-3xl"
-              />
-            </div>
+            <DialogFooter className="p-10 pt-6 bg-white border-t border-slate-50 sticky bottom-0 z-10 gap-4">
+              <Button variant="ghost" onClick={() => setShowPurchaseReturn(false)} className="h-14 px-8 rounded-2xl font-black text-slate-500">Cancel</Button>
+              <Button 
+                onClick={handleCreatePurchaseReturn} 
+                disabled={savingReturn || returnItems.every(i => i.quantity === 0)}
+                className="h-14 px-10 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black gap-3 shadow-xl shadow-orange-200"
+              >
+                {savingReturn ? 'Processing...' : <><Check size={20} /> Confirm Stock Removal</>}
+              </Button>
+            </DialogFooter>
           </div>
-
-          <DialogFooter className="gap-4">
-            <Button variant="ghost" onClick={() => setShowPurchaseReturn(false)} className="h-14 px-8 rounded-2xl font-black">Cancel</Button>
-            <Button 
-              onClick={handleCreatePurchaseReturn} 
-              disabled={savingReturn || returnItems.every(i => i.quantity === 0)}
-              className="h-14 px-10 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black gap-3 shadow-xl shadow-orange-200"
-            >
-              {savingReturn ? 'Processing...' : <><Check size={20} /> Confirm Stock Removal</>}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

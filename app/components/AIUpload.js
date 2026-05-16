@@ -125,7 +125,17 @@ export default function AIUpload({ onBack, profile }) {
       }
 
       // Call Electron IPC - logic now runs in the Main Process
-      const result = await window.electronAPI.ai.parseInvoice(payload);
+      let result;
+      if (typeof window !== 'undefined' && window.electronAPI) {
+        result = await window.electronAPI.ai.parseInvoice(payload);
+      } else {
+        const res = await fetch('/api/parse-invoice', { 
+          method: 'POST', 
+          headers: {'Content-Type': 'application/json'}, 
+          body: JSON.stringify(payload) 
+        });
+        result = await res.json();
+      }
 
       if (result.success) {
         if (!result.items || result.items.length === 0) {

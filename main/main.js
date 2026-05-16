@@ -705,6 +705,10 @@ ipcMain.handle('pdf:saveAs', async (_, base64Data, fileName) => {
   return { success: false };
 });
 
+ipcMain.handle('pdf:share', async () => {
+  return { success: false, error: 'Native PDF sharing is not available on this platform.' };
+});
+
 /* ───────── Native Printing IPC ───────── */
 ipcMain.handle('ai:printInvoice', async (_, html) => {
   let printWindow = new BrowserWindow({

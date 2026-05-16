@@ -2,7 +2,7 @@
   "status": "init",
   "type": "frontend",
   "scope": "codebase",
-  "localEndpoint": "http://localhost:3456/",
+  "localEndpoint": "http://localhost:3000/",
   "executionArgs": {
     "projectName": "in+bill",
     "projectPath": "c:\\Users\\alfaz\\OneDrive\\Desktop\\MY_PROJECTS\\in+bill",
@@ -13,5 +13,5 @@
       "API_KEY": "sk-user-NUAWf2qZuNrLrhPRErfXOrCYR7DfRYkycgslTSZgNyFV6TpIyTgUMxJrmZdvWSs4M8M22l9nBcHivkoYrD3PFmiAO5PpwBlUgZyQpk67d-MP_JKpikmFhT8BnYkqMRtBbCU"
     }
   },
-  "serverPort": 51463
+  "serverPort": 59854
 }

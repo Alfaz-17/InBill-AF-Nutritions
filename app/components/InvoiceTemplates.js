@@ -287,12 +287,6 @@ export const getInvoiceHTML = (data, profile = {}) => {
               <div class="bill-box" style="text-align: right;">
                 <h3>Payment Status</h3>
                 <p style="color: #111827; font-size: 14px; font-weight: 800;">${escapeHtml(model.paymentMode)}</p>
-                
-                ${(model.grandTotal - model.paidAmount) > 0.01 ? `
-                  <p style="color: #991b1b; font-weight: 800; font-size: 12px; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.5px;">
-                    Balance Due: ${model.currency}${formatMoney(model.grandTotal - model.paidAmount)}
-                  </p>
-                ` : ''}
               </div>
             </div>
             

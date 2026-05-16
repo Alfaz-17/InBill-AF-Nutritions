@@ -149,6 +149,30 @@ export default function Dashboard({ onNavigate, profile }) {
         </div>
       </div>
 
+      {/* Business Position */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 -mt-4">
+        <div className="bg-white border border-slate-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm">
+          <div>
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Inventory Value</p>
+            <h4 className="text-2xl font-black text-slate-900">{CURRENCY}{(s.inventoryValue || 0).toLocaleString('en-IN')}</h4>
+          </div>
+          <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100">
+            <Package size={20} className="text-slate-700" />
+          </div>
+        </div>
+        <div className="bg-white border border-slate-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm">
+          <div>
+            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Total Profit</p>
+            <h4 className={`text-2xl font-black ${(s.totalProfit || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+              {CURRENCY}{(s.totalProfit || 0).toLocaleString('en-IN')}
+            </h4>
+          </div>
+          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center border border-emerald-100">
+            <ArrowUpCircle size={20} className="text-emerald-600" />
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
         {/* Quick Insights */}
         <div className="lg:col-span-2 space-y-10">
@@ -181,7 +205,12 @@ export default function Dashboard({ onNavigate, profile }) {
                             <Badge className="bg-slate-900 text-white font-black rounded-xl">#{sale.invoice_number}</Badge>
                           </td>
                           <td className="font-bold text-slate-900">{sale.customer_name || 'Counter Sale'}</td>
-                          <td className="text-right font-black text-slate-900">{CURRENCY}{sale.total_amount.toLocaleString('en-IN')}</td>
+                          <td className="text-right font-black text-slate-900">
+                            {CURRENCY}{sale.total_amount.toLocaleString('en-IN')}
+                            {sale.returned_total > 0 && (
+                              <div className="mt-1 text-[10px] font-black text-amber-500 uppercase tracking-widest">Adjusted Total</div>
+                            )}
+                          </td>
                           <td className="text-right text-slate-400 font-bold text-xs">
                             {new Date(sale.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
                           </td>

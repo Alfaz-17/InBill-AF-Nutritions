@@ -123,7 +123,7 @@ export default function Billing({
           batch_number: product.batch_number || '',
           expiry_date: product.expiry_date || '',
           price: product.selling_price,
-          original_price: product.selling_price,
+          original_price: product.mrp || product.selling_price,
           gst_rate: product.gst_rate || 0,
           quantity: 1,
           maxQty: product.quantity,

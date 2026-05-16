@@ -8,6 +8,10 @@
   "scripts": {
     "next-dev": "next dev -p 3456",
     "next-build": "next build",
+    "qa-frontend": "node tests/frontend-contract.mjs",
+    "qa-e2e": "node tests/run-e2e-core.cjs",
+    "qa-financial-integrity": "node tests/run-financial-integrity.cjs",
+    "qa-regression": "node tests/frontend-contract.mjs && node tests/run-e2e-core.cjs && node tests/run-financial-integrity.cjs",
     "electron-dev": "wait-on http://localhost:3456 && electron .",
     "dev": "concurrently \"npm run next-dev\" \"npm run electron-dev\"",
     "build": "next build && electron-builder",

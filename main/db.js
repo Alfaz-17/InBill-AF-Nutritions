@@ -11,9 +11,9 @@ try {
 }
 
 const isDev = app ? !app.isPackaged : true;
-const dbPath = isDev 
+const dbPath = process.env.INBILL_DB_PATH || (isDev 
   ? path.join(__dirname, '../store.db') 
-  : path.join(app.getPath('userData'), 'store.db');
+  : path.join(app.getPath('userData'), 'store.db'));
 
 let db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
@@ -170,6 +170,7 @@ const initDB = () => {
       type         TEXT    DEFAULT 'Customer',
       opening_balance REAL DEFAULT 0,
       current_balance REAL DEFAULT 0,
+      is_deleted      INTEGER DEFAULT 0,
       created_at   TEXT    DEFAULT (datetime('now','localtime'))
     );
 
@@ -205,8 +206,11 @@ const initDB = () => {
       date          TEXT    DEFAULT (datetime('now','localtime')),
       sale_id       INTEGER,
       party_id      INTEGER,
-      total_amount  REAL    DEFAULT 0,
-      reason        TEXT,
+      total_amount         REAL    DEFAULT 0,
+      debt_cleared_amount  REAL    DEFAULT 0,
+      refund_amount        REAL    DEFAULT 0,
+      payment_mode         TEXT    DEFAULT 'Credit',
+      reason               TEXT,
       FOREIGN KEY (sale_id) REFERENCES sales(id),
       FOREIGN KEY (party_id) REFERENCES parties(id)
     );
@@ -228,8 +232,11 @@ const initDB = () => {
       date          TEXT    DEFAULT (datetime('now','localtime')),
       purchase_id   INTEGER,
       party_id      INTEGER,
-      total_amount  REAL    DEFAULT 0,
-      reason        TEXT,
+      total_amount         REAL    DEFAULT 0,
+      debt_cleared_amount  REAL    DEFAULT 0,
+      refund_amount        REAL    DEFAULT 0,
+      payment_mode         TEXT    DEFAULT 'Credit',
+      reason               TEXT,
       FOREIGN KEY (purchase_id) REFERENCES purchases(id),
       FOREIGN KEY (party_id) REFERENCES parties(id)
     );
@@ -426,6 +433,23 @@ const initDB = () => {
     }
   } catch(e) {}
 
+  // Sales return tracking migration
+  try {
+    const saleInfo = db.prepare("PRAGMA table_info(sales)").all();
+    const saleCols = saleInfo.map(c => c.name);
+    if (!saleCols.includes('returned_total')) {
+      db.exec("ALTER TABLE sales ADD COLUMN returned_total REAL DEFAULT 0");
+    }
+  } catch(e) {}
+
+  try {
+    const saleItemInfo = db.prepare("PRAGMA table_info(sale_items)").all();
+    const saleItemCols = saleItemInfo.map(c => c.name);
+    if (!saleItemCols.includes('returned_quantity')) {
+      db.exec("ALTER TABLE sale_items ADD COLUMN returned_quantity INTEGER DEFAULT 0");
+    }
+  } catch(e) {}
+
   try {
     const pReturnInfo = db.prepare("PRAGMA table_info(purchase_returns)").all();
     const pReturnCols = pReturnInfo.map(c => c.name);
@@ -436,6 +460,13 @@ const initDB = () => {
     }
   } catch(e) {}
 
+  try { db.exec("ALTER TABLE returns ADD COLUMN debt_cleared_amount REAL DEFAULT 0;"); } catch(e) {}
+  try { db.exec("ALTER TABLE returns ADD COLUMN refund_amount REAL DEFAULT 0;"); } catch(e) {}
+  try { db.exec("ALTER TABLE purchase_returns ADD COLUMN debt_cleared_amount REAL DEFAULT 0;"); } catch(e) {}
+  try { db.exec("ALTER TABLE purchase_returns ADD COLUMN refund_amount REAL DEFAULT 0;"); } catch(e) {}
+  try { db.exec("ALTER TABLE purchase_returns ADD COLUMN payment_mode TEXT DEFAULT 'Credit';"); } catch(e) {}
+  try { db.exec("ALTER TABLE parties ADD COLUMN is_deleted INTEGER DEFAULT 0;"); } catch(e) {}
+
   // NOTE: Automatic seeding removed. The Setup Wizard handles first-time configuration.
   // resetDB() remains available from Settings for fresh start.
 };
@@ -445,10 +476,11 @@ const resetDB = () => {
   try {
     const txn = db.transaction(() => {
       const tables = [
+        'return_items', 'purchase_return_items', 'returns', 'purchase_returns',
         'sale_items', 'purchase_items', 'party_transactions',
         'sales', 'purchases', 'products', 'parties',
         'custom_categories', 'expense_categories', 'product_attribute_defs',
-        'expenses', 'returns', 'return_items', 'purchase_returns', 'purchase_return_items'
+        'expenses'
       ];
       tables.forEach(t => {
         try { db.prepare(`DELETE FROM ${t}`).run(); } catch(e) {}
@@ -464,6 +496,10 @@ const resetDB = () => {
   } finally {
     db.exec('PRAGMA foreign_keys = ON');
   }
+};
+
+const closeDB = () => {
+  if (db.open) db.close();
 };
 
 /* ───────── Helpers ───────── */
@@ -484,8 +520,8 @@ const generateInvoiceNumber = () => {
 /* ───────── Party Ops ───────── */
 const partyOps = {
   getAll: (type) => {
-    if (type) return db.prepare('SELECT * FROM parties WHERE type = ? ORDER BY name ASC').all(type);
-    return db.prepare('SELECT * FROM parties ORDER BY name ASC').all();
+    if (type) return db.prepare('SELECT * FROM parties WHERE type = ? AND is_deleted = 0 ORDER BY name ASC').all(type);
+    return db.prepare('SELECT * FROM parties WHERE is_deleted = 0 ORDER BY name ASC').all();
   },
   getById: (id) => db.prepare('SELECT * FROM parties WHERE id = ?').get(id),
   add: (p) => {
@@ -495,7 +531,7 @@ const partyOps = {
     `).run(p.name, p.phone || '', p.address || '', p.gstin || '', p.type || 'Customer', p.opening_balance || 0, p.opening_balance || 0);
     const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
-    return res;
+    return { ...res, id: Number(res.lastInsertRowid) };
   },
   update: (id, p) => {
     const res = db.prepare(`
@@ -507,14 +543,11 @@ const partyOps = {
     return res;
   },
   delete: (id) => {
-    const party = db.prepare('SELECT current_balance FROM parties WHERE id = ?').get(id);
-    if (party && Math.abs(party.current_balance) > 0.1) {
-      throw new Error("Cannot delete a party with an outstanding balance. Clear dues first.");
-    }
-    const result = db.prepare('DELETE FROM parties WHERE id = ?').run(id);
+    // Soft delete to preserve foreign key integrity and history
+    const res = db.prepare('UPDATE parties SET is_deleted = 1 WHERE id = ?').run(id);
     const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
-    return result;
+    return res;
   },
   updateBalance: (id, amount) => db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(amount, id),
   
@@ -529,20 +562,36 @@ const partyOps = {
     const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
     
     const txn = db.transaction(() => {
+      const amount = Number(data.amount || 0);
+      if (amount <= 0) throw new Error('Payment amount must be greater than zero');
+      const party = db.prepare('SELECT type, current_balance FROM parties WHERE id = ?').get(data.party_id);
+      if (!party) throw new Error('Party not found');
+
+      if (party.type === 'Supplier') {
+        const payable = Math.max(0, Math.abs(Number(party.current_balance || 0)));
+        if (amount > payable) {
+          throw new Error(`Payment exceeds outstanding payable. Maximum allowed: ${payable}`);
+        }
+      } else {
+        const receivable = Math.max(0, Number(party.current_balance || 0));
+        if (amount > receivable) {
+          throw new Error(`Payment exceeds outstanding receivable. Maximum allowed: ${receivable}`);
+        }
+      }
+
       // Record payment in transaction ledger
       db.prepare(`
         INSERT INTO party_transactions (party_id, type, total_amount, paid_amount, payment_mode, note, date)
         VALUES (?, 'Payment', ?, ?, ?, ?, ?)
-      `).run(data.party_id, data.amount, data.amount, data.payment_mode || 'Cash', data.note || '', data.date || today);
+      `).run(data.party_id, amount, amount, data.payment_mode || 'Cash', data.note || '', data.date || today);
 
       // Update party current balance
       // If payment from customer: current_balance decreases (they owe less)
       // If payment to supplier: current_balance increases (we owe less, balance moves from negative toward zero)
-      const party = db.prepare('SELECT type FROM parties WHERE id = ?').get(data.party_id);
-      const direction = party.type === 'Customer' ? -1 : 1;
+      const direction = party.type === 'Supplier' ? 1 : -1;
       
       db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
-        .run(data.amount * direction, data.party_id);
+        .run(amount * direction, data.party_id);
 
       return { success: true };
     });
@@ -591,15 +640,15 @@ const productOps = {
 
     if (existing) {
       console.log(`[DB] Manually re-activating product: ${trimmedName}`);
-      return db.prepare(`
+      const res = db.prepare(`
         UPDATE products SET 
           brand=?, category=?, product_size=?, unit=?, mrp=?, selling_price=?, cost_price=?, 
-          barcode=?, gst_rate=?, cgst=?, sgst=?, quantity=?, batch_number=?, expiry_date=?,
+          barcode=?, gst_rate=?, cgst=?, sgst=?, quantity=?, min_stock_alert=?, batch_number=?, expiry_date=?,
           is_deleted=0, custom_fields=?
         WHERE id=?
       `).run(p.brand || '', p.category || '', p.product_size || '', p.unit || 'pcs',
              p.mrp || 0, p.selling_price || 0, p.cost_price || 0, p.barcode || '',
-             gst, cgst, sgst, p.quantity || 0, p.batch_number || '', p.expiry_date || '', 
+             gst, cgst, sgst, p.quantity || 0, p.min_stock_alert ?? 0, p.batch_number || '', p.expiry_date || '', 
              p.custom_fields || '{}',
              existing.id);
       const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
@@ -608,11 +657,11 @@ const productOps = {
     }
 
     const res = db.prepare(`
-      INSERT INTO products (product_name, brand, category, product_size, unit, mrp, selling_price, cost_price, barcode, gst_rate, cgst, sgst, quantity, batch_number, expiry_date, is_deleted, custom_fields)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+      INSERT INTO products (product_name, brand, category, product_size, unit, mrp, selling_price, cost_price, barcode, gst_rate, cgst, sgst, quantity, min_stock_alert, batch_number, expiry_date, is_deleted, custom_fields)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
     `).run(trimmedName, p.brand || '', p.category || '', p.product_size || '', p.unit || 'pcs',
            p.mrp || 0, p.selling_price || 0, p.cost_price || 0, p.barcode || '',
-           gst, cgst, sgst, p.quantity || 0, p.batch_number || '', p.expiry_date || '', 
+           gst, cgst, sgst, p.quantity || 0, p.min_stock_alert ?? 0, p.batch_number || '', p.expiry_date || '', 
            p.custom_fields || '{}');
            
     const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
@@ -627,11 +676,11 @@ const productOps = {
     const res = db.prepare(`
       UPDATE products SET 
         product_name=?, brand=?, category=?, product_size=?, unit=?, mrp=?, selling_price=?, cost_price=?, 
-        barcode=?, gst_rate=?, cgst=?, sgst=?, quantity=?, batch_number=?, expiry_date=?, custom_fields=?
+        barcode=?, gst_rate=?, cgst=?, sgst=?, quantity=?, min_stock_alert=?, batch_number=?, expiry_date=?, custom_fields=?
       WHERE id=?
     `).run(p.product_name, p.brand || '', p.category || '', p.product_size || '', p.unit || 'pcs',
            p.mrp || 0, p.selling_price || 0, p.cost_price || 0, p.barcode || '',
-           gst, cgst, sgst, p.quantity || 0, p.batch_number || '', p.expiry_date || '', 
+           gst, cgst, sgst, p.quantity || 0, p.min_stock_alert ?? 0, p.batch_number || '', p.expiry_date || '', 
            p.custom_fields || '{}', id);
 
     const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
@@ -683,9 +732,16 @@ const saleOps = {
       // Validate items before starting
       if (!saleData.items || saleData.items.length === 0) throw new Error("Sale must have at least one item.");
 
+      const getAvailableStock = db.prepare('SELECT product_name, quantity FROM products WHERE id = ? AND COALESCE(is_deleted, 0) = 0');
       for (const item of saleData.items) {
         if (item.quantity <= 0) throw new Error(`Invalid quantity for ${item.product_name}.`);
         if (item.price < 0) throw new Error(`Invalid price for ${item.product_name}.`);
+
+        const stock = getAvailableStock.get(item.product_id);
+        if (!stock) throw new Error(`Product not found: ${item.product_name || item.product_id}.`);
+        if (Number(stock.quantity || 0) < Number(item.quantity || 0)) {
+          throw new Error(`Insufficient stock for ${stock.product_name}. Available: ${stock.quantity}, requested: ${item.quantity}`);
+        }
 
         const itemQty = Number(item.quantity) || 0;
         const itemPrice = parseFloat(item.price) || 0;
@@ -817,7 +873,8 @@ const saleOps = {
   },
 
   getAll: () => db.prepare(`
-    SELECT s.*, p.name as customer_name, p.phone as customer_phone
+    SELECT s.*, p.name as customer_name, p.phone as customer_phone,
+           (s.total_amount - s.returned_total) as net_amount
     FROM sales s
     LEFT JOIN parties p ON s.party_id = p.id
     ORDER BY s.date DESC
@@ -834,7 +891,7 @@ const saleOps = {
     sale.items = db.prepare(`
       SELECT 
         si.*,
-        (SELECT COALESCE(SUM(ri.quantity), 0) FROM return_items ri JOIN returns r ON ri.return_id = r.id WHERE r.sale_id = ? AND ri.product_id = si.product_id) as returned_quantity,
+        si.returned_quantity,
         p.brand,
         p.category,
         p.unit,
@@ -846,7 +903,7 @@ const saleOps = {
       FROM sale_items si
       LEFT JOIN products p ON p.id = si.product_id
       WHERE si.sale_id = ?
-    `).all(id, id);
+    `).all(id);
     return sale;
   },
 
@@ -861,7 +918,7 @@ const saleOps = {
     sale.items = db.prepare(`
       SELECT 
         si.*,
-        (SELECT COALESCE(SUM(ri.quantity), 0) FROM return_items ri JOIN returns r ON ri.return_id = r.id WHERE r.sale_id = ? AND ri.product_id = si.product_id) as returned_quantity,
+        si.returned_quantity,
         p.brand,
         p.category,
         p.unit,
@@ -873,7 +930,7 @@ const saleOps = {
       FROM sale_items si
       LEFT JOIN products p ON p.id = si.product_id
       WHERE si.sale_id = ?
-    `).all(sale.id, sale.id);
+    `).all(sale.id);
     return sale;
   },
 
@@ -960,8 +1017,7 @@ const purchaseOps = {
           const existingProduct = db.prepare('SELECT quantity, cost_price, custom_fields FROM products WHERE id = ?').get(existing.id);
           const currentCost = existingProduct.cost_price || 0;
           if (purchasePrice > currentCost) {
-             console.log(`[DB] Price increase detected. Creating separate new item record.`);
-             existing = null;
+             console.log(`[DB] Price increase detected. Updating cost price.`);
           }
         }
 
@@ -1100,22 +1156,62 @@ const purchaseOps = {
 /* ───────── Dashboard / Stats ───────── */
 const statsOps = {
   getDashboard: () => {
-    const now = new Date();
-    const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
-    // Today's Basic Stats (NET)
-    const todayReturns = db.prepare(`SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count FROM returns WHERE date(date) = ?`).get(today);
+    const today = new Date().toISOString().split('T')[0];
+
+    // 1. Gross Sales today
+    const salesStats = db.prepare(`
+      SELECT 
+        COALESCE(SUM(total_amount), 0) as gross_total,
+        COUNT(*) as total_count,
+        COALESCE(SUM(CASE WHEN payment_mode = 'Cash' THEN paid_amount ELSE 0 END), 0) as cash_from_sales,
+        COALESCE(SUM(CASE WHEN payment_mode != 'Cash' AND payment_mode != 'Credit' THEN paid_amount ELSE 0 END), 0) as digital_from_sales,
+        COALESCE(SUM(due_amount), 0) as credit_from_sales
+      FROM sales 
+      WHERE date(date) = date('now', 'localtime')
+    `).get();
+
+    // 2. Returns today (using the smart debt-refund split)
+    const returnStats = db.prepare(`
+      SELECT 
+        COALESCE(SUM(r.total_amount), 0) as total_returned,
+        COUNT(*) as return_count,
+        COALESCE(SUM(CASE WHEN r.payment_mode = 'Cash' THEN r.refund_amount ELSE 0 END), 0) as cash_refunded,
+        COALESCE(SUM(CASE WHEN r.payment_mode != 'Cash' AND r.payment_mode != 'Credit' THEN r.refund_amount ELSE 0 END), 0) as digital_refunded,
+        COALESCE(SUM(r.debt_cleared_amount + CASE WHEN r.payment_mode = 'Credit' THEN r.refund_amount ELSE 0 END), 0) as credit_impact
+      FROM returns r
+      WHERE date(r.date) = date('now', 'localtime')
+    `).get();
+
+    // 3. Party Transactions today (Payments from customers)
+    const partyStats = db.prepare(`
+      SELECT 
+        COALESCE(SUM(CASE WHEN pt.payment_mode = 'Cash' THEN pt.paid_amount ELSE 0 END), 0) as cash_payments,
+        COALESCE(SUM(CASE WHEN pt.payment_mode != 'Cash' THEN pt.paid_amount ELSE 0 END), 0) as digital_payments
+      FROM party_transactions pt
+      JOIN parties p ON pt.party_id = p.id
+      WHERE date(pt.date) = date('now', 'localtime') AND pt.type = 'Payment' AND p.type = 'Customer'
+    `).get();
+
+    // Consolidated Metrics (Stable Gross Records)
+    const todaySalesTotal = salesStats.gross_total;
+    const todaySalesCount = salesStats.total_count;
     
-    const todaySalesRaw = db.prepare(
-      `SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count FROM sales WHERE date(date) = ?`
-    ).get(today);
+    const todayCash = (salesStats.cash_from_sales + partyStats.cash_payments) - returnStats.cash_refunded;
+    const todayDigital = (salesStats.digital_from_sales + partyStats.digital_payments) - returnStats.digital_refunded;
+    
+    // Today's Credit: Represents NEW credit business generated today.
+    // We don't subtract returns or payments here as per user preference for a gross metric.
+    const todayCredit = salesStats.credit_from_sales;
 
-    // Rollback effect: Net Total and Net Count
-    const todaySalesTotal = todaySalesRaw.total - todayReturns.total;
-    const todaySalesCount = Math.max(0, todaySalesRaw.count - todayReturns.count);
-
-    const todaySales = { total: todaySalesTotal, count: todaySalesCount };
     const totalProducts = db.prepare('SELECT COUNT(*) as count FROM products WHERE is_deleted = 0').get().count;
-    const lowStock = db.prepare('SELECT COUNT(*) as count FROM products WHERE is_deleted = 0 AND quantity <= 10 AND quantity >= 0').get().count;
+    const lowStockItems = db.prepare(`
+      SELECT * FROM products
+      WHERE is_deleted = 0
+        AND quantity >= 0
+        AND quantity <= CASE WHEN COALESCE(min_stock_alert, 0) > 0 THEN min_stock_alert ELSE 10 END
+      ORDER BY quantity ASC
+    `).all();
+    const lowStock = lowStockItems.length;
 
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + 30);
@@ -1124,77 +1220,12 @@ const statsOps = {
       `SELECT COUNT(*) as count FROM products WHERE expiry_date != '' AND expiry_date <= ?`
     ).get(dateStr).count;
 
-    const receivable = db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance > 0.1').get().total;
-    const payable = Math.abs(db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance < -0.1').get().total);
+    const receivable = db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance > 0.1 AND is_deleted = 0').get().total;
+    const payable = Math.abs(db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance < -0.1 AND is_deleted = 0').get().total);
 
-    const totalSales = db.prepare('SELECT COALESCE(SUM(total_amount), 0) as total FROM sales').get().total;
-    const totalReturns = db.prepare('SELECT COALESCE(SUM(total_amount), 0) as total FROM returns').get().total;
-    const totalRevenue = totalSales - totalReturns;
+    const totalRevenue = db.prepare('SELECT COALESCE(SUM(total_amount - returned_total), 0) as total FROM sales').get().total;
 
-    const totalSalesCash = db.prepare('SELECT COALESCE(SUM(paid_amount), 0) as total FROM sales').get().total;
-    const totalPartyCash = db.prepare("SELECT COALESCE(SUM(paid_amount), 0) as total FROM party_transactions WHERE type = 'Payment'").get().total;
-    const totalCashReceived = totalSalesCash + totalPartyCash;
-
-    // Today's Breakdown - RECONCILED
-    // 1. All Cash received today (Sales + Ledger Collections)
-    const todaySalesCash = db.prepare(`
-      SELECT COALESCE(SUM(paid_amount), 0) as total FROM sales 
-      WHERE date(date) = ? AND payment_mode = 'Cash'
-    `).get(today).total;
-
-    const todayPartyCash = db.prepare(`
-      SELECT COALESCE(SUM(pt.paid_amount), 0) as total 
-      FROM party_transactions pt
-      JOIN parties p ON pt.party_id = p.id
-      WHERE date(pt.date) = ? AND pt.type = 'Payment' AND pt.payment_mode = 'Cash' AND p.type = 'Customer'
-    `).get(today).total;
-
-    // Net Cash/Digital Inflow (Subtract returns based on original payment mode)
-    const todayCashReturns = db.prepare(`
-      SELECT COALESCE(SUM(r.total_amount), 0) as total 
-      FROM returns r 
-      JOIN sales s ON r.sale_id = s.id 
-      WHERE date(r.date) = ? AND s.payment_mode = 'Cash'
-    `).get(today).total;
-
-    const todayDigitalReturns = db.prepare(`
-      SELECT COALESCE(SUM(r.total_amount), 0) as total 
-      FROM returns r 
-      JOIN sales s ON r.sale_id = s.id 
-      WHERE date(r.date) = ? AND s.payment_mode != 'Cash'
-    `).get(today).total;
-
-    const todaySalesDigital = db.prepare(`
-      SELECT COALESCE(SUM(paid_amount), 0) as total FROM sales 
-      WHERE date(date) = ? AND payment_mode != 'Cash'
-    `).get(today).total;
-
-    const todayPartyDigital = db.prepare(`
-      SELECT COALESCE(SUM(pt.paid_amount), 0) as total 
-      FROM party_transactions pt
-      JOIN parties p ON pt.party_id = p.id
-      WHERE date(pt.date) = ? AND pt.type = 'Payment' AND pt.payment_mode != 'Cash' AND p.type = 'Customer'
-    `).get(today).total;
-
-    const todayCash = Math.max(0, (todaySalesCash + todayPartyCash) - todayCashReturns);
-    const todayDigital = Math.max(0, (todaySalesDigital + todayPartyDigital) - todayDigitalReturns);
-
-    // 3. Today's Credit (Net change in customer outstandings)
-    // Formula: (New Dues created today) - (Payments received today) - (Sales Returns today)
-    const todayNetCredit = db.prepare(`
-      SELECT 
-        COALESCE(SUM(CASE WHEN pt.type = 'Sale' THEN pt.due_amount ELSE 0 END), 0) - 
-        COALESCE(SUM(CASE WHEN pt.type = 'Payment' THEN pt.paid_amount ELSE 0 END), 0) -
-        COALESCE(SUM(CASE WHEN pt.type = 'Sales Return' THEN pt.total_amount ELSE 0 END), 0)
-      AS net_change
-      FROM party_transactions pt
-      JOIN parties p ON pt.party_id = p.id
-      WHERE date(pt.date) = ? AND p.type = 'Customer'
-    `).get(today).net_change;
-
-    const todayCredit = todayNetCredit;
-    
-    // Profit Calculations
+    // Profit Calculations (All-time)
     const salesMargin = db.prepare(`
       SELECT COALESCE(SUM((COALESCE(si.price, 0) - COALESCE(p.cost_price, 0)) * COALESCE(si.quantity, 0)), 0) as profit 
       FROM sale_items si
@@ -1211,15 +1242,15 @@ const statsOps = {
     const inventoryValue = db.prepare('SELECT COALESCE(SUM(quantity * cost_price), 0) as total FROM products WHERE is_deleted = 0').get().total;
 
     return {
-      todaySalesTotal: todaySales.total,
-      todaySalesCount: todaySales.count,
+      todaySalesTotal,
+      todaySalesCount,
       totalProducts,
       lowStockCount: lowStock,
+      lowStock: lowStockItems,
       expiringCount: expiring,
       receivable,
       payable,
       totalRevenue,
-      totalCashReceived,
       todayCash,
       todayDigital,
       todayCredit,
@@ -1349,7 +1380,7 @@ const statsOps = {
     const overdueParties = db.prepare(`
       SELECT name, current_balance 
       FROM parties 
-      WHERE current_balance > 0 AND type = 'Customer'
+      WHERE current_balance > 0 AND type = 'Customer' AND is_deleted = 0
       ORDER BY current_balance DESC LIMIT 5
     `).all();
 
@@ -1411,9 +1442,14 @@ const reportOps = {
       WHERE date(s.date) BETWEEN ? AND ?
     `).get(from, to).margin;
 
-    const returnsTotal = db.prepare(
-      `SELECT COALESCE(SUM(total_amount), 0) as total FROM returns WHERE date(date) BETWEEN ? AND ?`
-    ).get(from, to).total;
+    const returnsStats = db.prepare(
+      `SELECT 
+        COALESCE(SUM(total_amount), 0) as total,
+        COALESCE(SUM(debt_cleared_amount), 0) as debt_cleared,
+        COALESCE(SUM(refund_amount), 0) as actual_refund,
+        COUNT(*) as count
+       FROM returns WHERE date(date) BETWEEN ? AND ?`
+    ).get(from, to);
 
     const returnMargin = db.prepare(`
       SELECT COALESCE(SUM((ri.price - COALESCE(p.cost_price, 0)) * ri.quantity), 0) as margin
@@ -1429,9 +1465,13 @@ const reportOps = {
       sales, 
       summary: { 
         ...summary, 
-        total: summary.total - returnsTotal,
-        returns: returnsTotal,
-        cash_received: summary.sales_cash + partyCollections,
+        total: summary.total, // Stable Gross Total
+        count: summary.count, // Stable Gross Count
+        net_revenue: summary.total - returnsStats.total,
+        returns: returnsStats.total,
+        debtCleared: returnsStats.debt_cleared,
+        actualRefund: returnsStats.actual_refund,
+        cash_received: (summary.sales_cash + partyCollections) - returnsStats.actual_refund,
         party_collections: partyCollections,
         gross_margin: netMargin,
         profit: netMargin - (expensesSummary.total || 0),
@@ -1442,17 +1482,31 @@ const reportOps = {
 
   purchaseReport: (from, to) => {
     const purchases = db.prepare(
-      `SELECT p.*, pt.name as supplier_name
+      `SELECT p.*, pt.name as supplier_name,
+              (SELECT COALESCE(SUM(total_amount), 0) FROM purchase_returns WHERE purchase_id = p.id) as returned_total
        FROM purchases p 
        LEFT JOIN parties pt ON p.party_id = pt.id
        WHERE date(p.date) BETWEEN ? AND ? 
        ORDER BY p.date DESC`
     ).all(from, to);
+
     const summary = db.prepare(
       `SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count
        FROM purchases WHERE date(date) BETWEEN ? AND ?`
     ).get(from, to);
-    return { purchases, summary };
+
+    const returnsTotal = db.prepare(
+      `SELECT COALESCE(SUM(total_amount), 0) as total FROM purchase_returns WHERE date(date) BETWEEN ? AND ?`
+    ).get(from, to).total;
+
+    return { 
+      purchases, 
+      summary: {
+        ...summary,
+        total: summary.total - returnsTotal,
+        returns: returnsTotal
+      }
+    };
   },
 
   stockReport: () => {
@@ -1486,10 +1540,25 @@ const returnOps = {
         }
       }
 
+      // 1. Calculate Smart Split (Debt first, then Refund)
+      let debtCleared = 0;
+      let refundAmount = 0;
+      let originalSale = null;
+
+      if (data.sale_id) {
+        originalSale = db.prepare('SELECT due_amount, paid_amount FROM sales WHERE id = ?').get(data.sale_id);
+        if (originalSale) {
+          debtCleared = Math.min(data.total_amount, originalSale.due_amount);
+          refundAmount = data.total_amount - debtCleared;
+        }
+      } else {
+        refundAmount = data.total_amount;
+      }
+
       const info = db.prepare(`
-        INSERT INTO returns (sale_id, party_id, total_amount, reason)
-        VALUES (?, ?, ?, ?)
-      `).run(data.sale_id || null, data.party_id || null, data.total_amount, data.reason || '');
+        INSERT INTO returns (sale_id, party_id, total_amount, debt_cleared_amount, refund_amount, payment_mode, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(data.sale_id || null, data.party_id || null, data.total_amount, debtCleared, refundAmount, data.payment_mode || 'Credit', data.reason || '');
       
       const returnId = info.lastInsertRowid;
 
@@ -1512,20 +1581,39 @@ const returnOps = {
 
       // 3. Update Party Balance and Record Ledger
       if (data.party_id) {
-        // For Sales Return, we owe the customer back or their debt decreases
-        db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
-          .run(data.total_amount, data.party_id);
+        // ALWAYS clear the debt first in the ledger
+        if (debtCleared > 0) {
+          db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?').run(debtCleared, data.party_id);
+          db.prepare(`
+            INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
+            VALUES (?, 'Sales Return', ?, ?, ?, datetime('now','localtime'))
+          `).run(data.party_id, returnId, debtCleared, `Debt Cleared for Sale ID: ${data.sale_id || 'N/A'}`);
+        }
 
-        db.prepare(`
-          INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
-          VALUES (?, 'Sales Return', ?, ?, ?, datetime('now','localtime'))
-        `).run(data.party_id, returnId, data.total_amount, `Return for Sale ID: ${data.sale_id || 'N/A'}`);
+        // If Credit mode selected, extra refund becomes Store Credit
+        if (refundAmount > 0 && (data.payment_mode === 'Credit' || !data.payment_mode)) {
+          db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?').run(refundAmount, data.party_id);
+          db.prepare(`
+            INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
+            VALUES (?, 'Sales Return', ?, ?, ?, datetime('now','localtime'))
+          `).run(data.party_id, returnId, refundAmount, `Store Credit from Return ID: ${returnId}`);
+        }
       }
 
-      // 4. Update Original Sale Record (Reduce its due amount)
+      // 4. Update Original Sale Record
       if (data.sale_id) {
+        // Reduce due amount by the debt cleared
         db.prepare('UPDATE sales SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+          .run(debtCleared, data.sale_id);
+        
+        // Track returned total on the original sale
+        db.prepare('UPDATE sales SET returned_total = returned_total + ? WHERE id = ?')
           .run(data.total_amount, data.sale_id);
+        
+        const updateSaleItem = db.prepare('UPDATE sale_items SET returned_quantity = returned_quantity + ? WHERE sale_id = ? AND product_id = ?');
+        for (const item of data.items) {
+           updateSaleItem.run(item.quantity, data.sale_id, item.product_id);
+        }
       }
 
       return { success: true, returnId };
@@ -1563,23 +1651,38 @@ const returnOps = {
         reduceStock.run(item.quantity, item.product_id);
       }
 
-      // 2. Reverse Party Balance (Increase debt)
+      // 2. Reverse Smart Reconciliation
       if (ret.party_id) {
-        db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
-          .run(ret.total_amount, ret.party_id);
+        // Add back the debt cleared and the store credit (if any)
+        const totalCreditImpact = ret.debt_cleared_amount + (ret.payment_mode === 'Credit' ? ret.refund_amount : 0);
+        if (totalCreditImpact > 0) {
+          db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
+            .run(totalCreditImpact, ret.party_id);
+        }
         
-        // Remove ledger entry
+        // Remove ledger entries
         db.prepare("DELETE FROM party_transactions WHERE type = 'Sales Return' AND reference_id = ?")
           .run(id);
       }
 
       // 3. Reverse Original Sale Due
-      if (ret.sale_id) {
+      if (ret.sale_id && ret.debt_cleared_amount > 0) {
         db.prepare('UPDATE sales SET due_amount = due_amount + ? WHERE id = ?')
-          .run(ret.total_amount, ret.sale_id);
+          .run(ret.debt_cleared_amount, ret.sale_id);
       }
 
-      // 4. Delete return records
+      // 4. Update Sales Table Tracking (Reverse Rollback)
+      if (ret.sale_id) {
+        db.prepare('UPDATE sales SET returned_total = MAX(0, returned_total - ?) WHERE id = ?')
+          .run(ret.total_amount, ret.sale_id);
+        
+        const updateSaleItem = db.prepare('UPDATE sale_items SET returned_quantity = MAX(0, returned_quantity - ?) WHERE sale_id = ? AND product_id = ?');
+        for (const item of items) {
+           updateSaleItem.run(item.quantity, ret.sale_id, item.product_id);
+        }
+      }
+
+      // 5. Delete return records
       db.prepare('DELETE FROM return_items WHERE return_id = ?').run(id);
       db.prepare('DELETE FROM returns WHERE id = ?').run(id);
 
@@ -1594,11 +1697,25 @@ const returnOps = {
 
   createPurchaseReturn: (data) => {
     const txn = db.transaction(() => {
-      // 1. Insert into purchase_returns table
+      // 1. Calculate Smart Split (Debt first, then Refund)
+      let debtCleared = 0;
+      let refundAmount = 0;
+      let originalPurchase = null;
+
+      if (data.purchase_id) {
+        originalPurchase = db.prepare('SELECT due_amount FROM purchases WHERE id = ?').get(data.purchase_id);
+        if (originalPurchase) {
+          debtCleared = Math.min(data.total_amount, originalPurchase.due_amount);
+          refundAmount = data.total_amount - debtCleared;
+        }
+      } else {
+        refundAmount = data.total_amount;
+      }
+
       const info = db.prepare(`
-        INSERT INTO purchase_returns (purchase_id, party_id, total_amount, reason)
-        VALUES (?, ?, ?, ?)
-      `).run(data.purchase_id || null, data.party_id || null, data.total_amount, data.reason || '');
+        INSERT INTO purchase_returns (purchase_id, party_id, total_amount, debt_cleared_amount, refund_amount, payment_mode, reason)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(data.purchase_id || null, data.party_id || null, data.total_amount, debtCleared, refundAmount, data.payment_mode || 'Credit', data.reason || '');
       
       const pReturnId = info.lastInsertRowid;
 
@@ -1607,7 +1724,6 @@ const returnOps = {
         INSERT INTO purchase_return_items (purchase_return_id, product_id, product_name, quantity, price, total_price)
         VALUES (?, ?, ?, ?, ?, ?)
       `);
-      // For Purchase Return, we are sending items back, so stock decreases
       const reduceStock = db.prepare(`UPDATE products SET quantity = quantity - ? WHERE id = ?`);
 
       for (const item of data.items) {
@@ -1622,20 +1738,32 @@ const returnOps = {
 
       // 3. Update Party Balance and Record Ledger
       if (data.party_id) {
-        // For Purchase Return, the supplier owes us back or our debt to them decreases
-        db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
-          .run(data.total_amount, data.party_id);
+        // ALWAYS clear the debt first (Supplier balance decreases means we owe them less, so current_balance increases towards 0)
+        // Wait, supplier balances are usually negative or tracked differently. 
+        // In this system: Customer debt is +, Supplier debt is -. 
+        // So Purchase Return (returning item) should INCREASE balance (e.g. -1000 to -500).
+        if (debtCleared > 0) {
+          db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(debtCleared, data.party_id);
+          db.prepare(`
+            INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
+            VALUES (?, 'Purchase Return', ?, ?, ?, datetime('now','localtime'))
+          `).run(data.party_id, pReturnId, debtCleared, `Debt Cleared for Purchase ID: ${data.purchase_id || 'N/A'}`);
+        }
 
-        db.prepare(`
-          INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
-          VALUES (?, 'Purchase Return', ?, ?, ?, datetime('now','localtime'))
-        `).run(data.party_id, pReturnId, data.total_amount, `Return for Purchase ID: ${data.purchase_id || 'N/A'}`);
+        // If Credit mode selected, extra refund becomes Store Credit with supplier
+        if (refundAmount > 0 && (data.payment_mode === 'Credit' || !data.payment_mode)) {
+          db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(refundAmount, data.party_id);
+          db.prepare(`
+            INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
+            VALUES (?, 'Purchase Return', ?, ?, ?, datetime('now','localtime'))
+          `).run(data.party_id, pReturnId, refundAmount, `Supplier Credit from Return ID: ${pReturnId}`);
+        }
       }
 
       // 4. Update Original Purchase Record (Reduce its due amount)
       if (data.purchase_id) {
         db.prepare('UPDATE purchases SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
-          .run(data.total_amount, data.purchase_id);
+          .run(debtCleared, data.purchase_id);
       }
 
       return { success: true, pReturnId };
@@ -1679,11 +1807,16 @@ const returnOps = {
         }
       }
 
-      // 2. Reverse Party Balance (Decrease our credit/Increase our debt)
+      // 2. Reverse Smart Reconciliation
       if (ret.party_id) {
-        db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
-          .run(ret.total_amount, ret.party_id);
+        // Subtract back the debt cleared and the store credit (if any)
+        const totalCreditImpact = (ret.debt_cleared_amount || 0) + (ret.payment_mode === 'Credit' ? (ret.refund_amount || 0) : 0);
+        if (totalCreditImpact > 0) {
+          db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
+            .run(totalCreditImpact, ret.party_id);
+        }
         
+        // Remove ledger entries
         db.prepare("DELETE FROM party_transactions WHERE type = 'Purchase Return' AND reference_id = ?")
           .run(id);
       }
@@ -1794,6 +1927,10 @@ const storageOps = {
       sale_items: db.prepare('SELECT * FROM sale_items').all(),
       purchases: db.prepare('SELECT * FROM purchases').all(),
       purchase_items: db.prepare('SELECT * FROM purchase_items').all(),
+      returns: db.prepare('SELECT * FROM returns').all(),
+      return_items: db.prepare('SELECT * FROM return_items').all(),
+      purchase_returns: db.prepare('SELECT * FROM purchase_returns').all(),
+      purchase_return_items: db.prepare('SELECT * FROM purchase_return_items').all(),
       expenses: db.prepare('SELECT * FROM expenses').all(),
       parties: db.prepare('SELECT * FROM parties').all(),
       party_transactions: db.prepare('SELECT * FROM party_transactions').all(),
@@ -1826,9 +1963,10 @@ const storageOps = {
     const trx = db.transaction((d) => {
       // Clear existing tables in correct order for foreign keys
       const tables = [
+        'return_items', 'purchase_return_items', 'returns', 'purchase_returns',
         'sale_items', 'purchase_items', 'party_transactions',
         'sales', 'purchases', 'products', 'parties',
-        'custom_categories', 'expense_categories', 'product_attribute_defs'
+        'expenses', 'custom_categories', 'expense_categories', 'product_attribute_defs'
       ];
       
       tables.forEach(t => db.prepare(`DELETE FROM ${t}`).run());
@@ -1836,6 +1974,7 @@ const storageOps = {
 
       // Import tables dynamically
       dynamicInsert('products', d.products);
+      dynamicInsert('expense_categories', d.expense_categories);
       dynamicInsert('custom_categories', d.categories);
       dynamicInsert('parties', d.parties);
       dynamicInsert('party_transactions', d.party_transactions);
@@ -1843,9 +1982,12 @@ const storageOps = {
       dynamicInsert('sale_items', d.sale_items);
       dynamicInsert('purchases', d.purchases);
       dynamicInsert('purchase_items', d.purchase_items);
+      dynamicInsert('returns', d.returns);
+      dynamicInsert('return_items', d.return_items);
+      dynamicInsert('purchase_returns', d.purchase_returns);
+      dynamicInsert('purchase_return_items', d.purchase_return_items);
       dynamicInsert('product_attribute_defs', d.attribute_defs);
       dynamicInsert('expenses', d.expenses);
-      dynamicInsert('expense_categories', d.expense_categories);
 
       // Import profile settings (row 1 only)
       if (d.profile) {
@@ -2175,7 +2317,7 @@ const syncToCloud = async () => {
 
 module.exports = { 
   db,
-  initDB, resetDB, productOps, saleOps, purchaseOps,
+  initDB, resetDB, closeDB, productOps, saleOps, purchaseOps,
   statsOps, reportOps, expenseOps, partyOps, returnOps,
   businessProfileOps, categoryOps, expenseCategoryOps,
   attributeOps, storageOps, syncToCloud, authOps,

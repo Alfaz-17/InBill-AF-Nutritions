@@ -1,7 +1,7 @@
 const { GoogleGenAI } = require('@google/genai');
 
 async function list() {
-  const apiKey = 'AIzaSyDd7WMuZBKCtbEi8P1TXNQbF6sKlPoUtqI';
+  const apiKey = process.env.GEMINI_API_KEY; // REMOVED HARDCODED KEY FOR SECURITY
   const ai = new GoogleGenAI({ apiKey });
   try {
     const models = await ai.models.list();

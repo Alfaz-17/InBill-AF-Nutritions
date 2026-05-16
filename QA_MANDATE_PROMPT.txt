@@ -1,0 +1,29 @@
+# 🛡️ FINAL QA MANDATE: Production Readiness & Crash Test
+
+**To the Tester:**
+This is the final validation phase before we deliver the InBill ERP to the client. Do NOT just click buttons to see if they work. Your job is to **try to break the software**. If the client finds a crash that you missed, the testing is considered a failure.
+
+---
+
+### 1. Runtime & Crash Audit (The "Zero-Crash" Goal)
+*   **Rapid Interaction**: Open 5 different tabs (Billing, Products, Reports, etc.) as fast as possible. Does the app freeze or show a white screen?
+*   **Search Stress**: In the product search, type random characters (e.g., `!@#$%^&*`) very fast. Ensure the database doesn't crash on "Invalid SQL" errors.
+*   **Empty Fields**: Try to save a Product, a Sale, and a Party with **nothing** filled in. The system must show a validation error, NOT a runtime crash.
+
+### 2. The "Financial Integrity" Deep-Dive
+*   **The Return Chain**: Perform a Sale → Return it → Delete the Return → Delete the Sale. Check the Stock and Party Balance at *every* step. One single digit of difference is a "Critical Bug."
+*   **Round-off Errors**: Create a sale with items like ₹99.99 or ₹10.55. Check if the Dashboard "Total" matches the sum of the invoices exactly.
+*   **Profit Reconciliation**: Verify that `(Total Sales - Total Returns - Total Expenses = Dashboard Net Profit)`. Use a calculator to verify the system’s math.
+
+### 3. Data Safety & Synchronization
+*   **Cloud Interruption**: Start a Cloud Sync and turn off your internet/WiFi in the middle of it. The app must handle the error gracefully and allow you to retry later without data loss.
+*   **Backup Restore**: Export your data to JSON. Delete all products. Import the JSON back. If even one product or price is missing, it is a fail.
+
+### 4. The "Client Experience" Check
+*   **PDF Polish**: Generate 5 different PDFs (Invoices, Stock Report, Ledger). Look for overlapping text, blurry logos, or missing GST numbers.
+*   **Navigation**: Go from the Setup Wizard back to the Dashboard. Ensure no "Setup" data is lost and the UI looks premium on a standard laptop screen.
+
+---
+
+**Deliverable Required**: 
+I need a "Pass/Fail" report for every item in the `FINAL_PRODUCTION_CHECKLIST.md`. If you find a bug, I need the exact steps to reproduce it and a screenshot of the Console (Ctrl+Shift+I).
