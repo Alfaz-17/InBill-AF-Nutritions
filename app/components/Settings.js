@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon, Key, Check, Eye, EyeOff, Info, 
   ShieldCheck, AlertTriangle, Building2, Save, Trash2, 
-  ArrowDownLeft, X, Database, Smartphone, Globe, Lock, Palette, FileText, Monitor, CheckCircle2, Layout, List, MessageCircle, RefreshCw, Download
+  ArrowDownLeft, X, Database, Globe, Lock, Palette, FileText, Monitor, CheckCircle2, Layout, List, MessageCircle, RefreshCw, Download, Zap
 } from 'lucide-react';
 import { useToast } from './ToastProvider';
 
@@ -25,6 +25,13 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
   const [saving, setSaving] = useState(false);
   const [keyStatus, setKeyStatus] = useState({ configured: false, maskedKey: '' });
   const [error, setError] = useState('');
+  
+  const [neonConfig, setNeonConfig] = useState({ url: '', useCloud: false });
+  const [syncing, setSyncing] = useState(false);
+  const [softwarePassword, setSoftwarePassword] = useState('');
+  const [hasSoftwarePassword, setHasSoftwarePassword] = useState(false);
+
+
   
   const [profileForm, setProfileForm] = useState({
     business_name: '', business_short: '', store_base_url: 'https://inbill.store', tagline: 'Billing & Inventory',
@@ -51,42 +58,16 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
   const [profileSaved, setProfileSaved] = useState(false);
   const [newTaxRate, setNewTaxRate] = useState('');
   const [newUnit, setNewUnit] = useState('');
-  const [updateInfo, setUpdateInfo] = useState({ checked: false, available: false, version: '', loading: false });
+
 
   useEffect(() => {
     checkKeyStatus();
     loadProfile();
+    loadNeonConfig();
+    checkSoftwarePasswordStatus();
   }, []);
 
-  const handleCheckUpdate = async (manual = false) => {
-    if (updateInfo.loading) return;
-    setUpdateInfo(prev => ({ ...prev, loading: true }));
-    try {
-      if (window.electronAPI?.system) {
-        const res = await window.electronAPI.system.checkUpdate();
-        if (res.success) {
-          const isNew = res.latestVersion !== res.currentVersion;
-          setUpdateInfo({ 
-            checked: true, 
-            available: isNew, 
-            version: res.latestVersion, 
-            current: res.currentVersion,
-            url: res.updateUrl,
-            loading: false 
-          });
-          if (manual) {
-            if (isNew) toast(`New version ${res.latestVersion} available!`, 'info');
-            else toast('You are on the latest version', 'success');
-          }
-        } else {
-          if (manual) toast('Could not connect to update server', 'error');
-          setUpdateInfo(prev => ({ ...prev, loading: false }));
-        }
-      }
-    } catch (e) {
-      setUpdateInfo(prev => ({ ...prev, loading: false }));
-    }
-  };
+
 
   const loadProfile = async () => {
     try {
@@ -129,6 +110,73 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
     } catch (e) { /* silent */ }
   };
 
+  const loadNeonConfig = async () => {
+    try {
+      if (window.electronAPI?.settings) {
+        const config = await window.electronAPI.settings.getNeonConfig();
+        setNeonConfig(config);
+      }
+    } catch (e) { /* silent */ }
+  };
+
+  const checkSoftwarePasswordStatus = async () => {
+    try {
+      if (window.electronAPI?.auth) {
+        const { hasPassword } = await window.electronAPI.auth.check();
+        setHasSoftwarePassword(hasPassword);
+      }
+    } catch (e) { console.error(e); }
+  };
+
+  const handleSaveSoftwarePassword = async () => {
+    setSaving(true);
+    try {
+      if (window.electronAPI?.auth) {
+        const res = await window.electronAPI.auth.setPassword(softwarePassword);
+        if (res.success) {
+          toast(softwarePassword ? 'Password set successfully' : 'Password removed', 'success');
+          setSoftwarePassword('');
+          checkSoftwarePasswordStatus();
+        } else {
+          toast(res.error || 'Failed to save password', 'error');
+        }
+      }
+    } catch (e) { toast(e.message, 'error'); }
+    setSaving(false);
+  };
+
+  const handleSaveNeonConfig = async () => {
+    setSaving(true);
+    try {
+      const res = await window.electronAPI.settings.setNeonConfig(neonConfig);
+      if (res.success) {
+        toast('Cloud configuration saved', 'success');
+      } else {
+        toast(res.error || 'Failed to save', 'error');
+      }
+    } catch (e) { toast(e.message, 'error'); }
+    setSaving(false);
+  };
+
+  const handleSyncToCloud = async () => {
+    if (!neonConfig.url) {
+      toast('Please enter a Neon Connection URL first', 'error');
+      return;
+    }
+    setSyncing(true);
+    try {
+      const res = await window.electronAPI.settings.syncToCloud();
+      if (res.success) {
+        toast('Local data synced to Neon Cloud!', 'success');
+      } else {
+        toast(res.error || 'Sync failed', 'error');
+      }
+    } catch (e) { toast(e.message, 'error'); }
+    setSyncing(false);
+  };
+
+
+
   const handleSaveKey = async () => {
     if (!apiKey.trim()) return;
     setSaving(true);
@@ -168,24 +216,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
     setSaving(false);
   };
 
-  const handleReset = async () => {
-    const ok = await confirm({
-      type: 'danger',
-      title: 'Reset All Application Data?',
-      message: 'This will permanently DELETE all products, sales, expenses, and parties. This action cannot be undone.',
-      confirmText: 'Yes, Delete Everything',
-    });
-    if (!ok) return;
-    setSaving(true);
-    try {
-      const res = await window.electronAPI.settings.resetData();
-      if (res.success) {
-        toast('Application data has been reset', 'success');
-        setTimeout(() => location.reload(), 1000);
-      }
-    } catch (e) { toast('Reset failed: ' + e.message, 'error'); }
-    setSaving(false);
-  };
+
 
   return (
     <div className="flex flex-col gap-8 md:p-2 lg:p-4 animate-in">
@@ -205,7 +236,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
             <Layout size={16} /> Standards
           </TabsTrigger>
           <TabsTrigger value="ai" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
-            <Smartphone size={16} /> AI Automation
+            <Zap size={16} /> AI Automation
           </TabsTrigger>
           <TabsTrigger value="whatsapp" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <MessageCircle size={16} /> WhatsApp
@@ -213,6 +244,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
           <TabsTrigger value="data" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Database size={16} /> Data & Security
           </TabsTrigger>
+
         </TabsList>
 
         {/* Business Profile */}
@@ -230,10 +262,19 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                     value={profileForm.business_name || ''} 
                     onChange={(e) => {
                       const name = e.target.value;
-                      const slug = name.toLowerCase().replace(/[^\w ]+/g, '').replace(/ +/g, '-');
-                      setProfileForm({...profileForm, business_name: name, business_short: slug});
+                      setProfileForm({...profileForm, business_name: name});
                     }} 
                     className="form-input" 
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Short Code (e.g., IB)</label>
+                  <Input 
+                    value={profileForm.business_short || ''} 
+                    maxLength={3}
+                    onChange={(e) => setProfileForm({...profileForm, business_short: e.target.value.toUpperCase()})} 
+                    className="form-input font-black uppercase" 
+                    placeholder="E.g. IB"
                   />
                 </div>
                 <div className="form-group">
@@ -274,7 +315,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                   <div className="flex items-center gap-6 p-6 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
                     {profileForm.logo_path ? (
                       <div className="relative group">
-                        <img src={`local-file://${profileForm.logo_path}`} className="h-20 w-20 object-contain bg-white p-2 rounded-xl border border-slate-200" />
+                        <img src={`local-file://asset/?path=${encodeURIComponent(profileForm.logo_path)}&t=${Date.now()}`} className="h-20 w-20 object-contain bg-white p-2 rounded-xl border border-slate-200" />
                         <button 
                           onClick={() => setProfileForm({...profileForm, logo_path: ''})}
                           className="absolute -top-2 -right-2 bg-rose-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
@@ -290,19 +331,53 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                     <div className="flex-1">
                       <p className="text-sm font-black text-slate-900 mb-1">Upload Brand Logo</p>
                       <p className="text-xs font-bold text-slate-400 mb-4">PNG, JPG, WebP or SVG (Max 5mb)</p>
-                      <Button 
-                        variant="outline" 
-                        size="sm" 
-                        className="font-black rounded-lg gap-2"
-                        onClick={async () => {
-                          if (window.electronAPI?.business) {
-                            const path = await window.electronAPI.business.pickLogo();
-                            if (path) setProfileForm({...profileForm, logo_path: path});
-                          }
-                        }}
-                      >
-                        Choose File...
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm" 
+                          className="font-black rounded-lg gap-2 h-10 px-4 border-slate-200 hover:border-primary transition-colors"
+                          onClick={async () => {
+                            if (window.electronAPI?.business) {
+                              try {
+                                const path = await window.electronAPI.business.pickLogo();
+                                if (path) {
+                                  const newProfile = { ...profileForm, logo_path: path };
+                                  setProfileForm(newProfile);
+                                  // Immediate save for logo for better UX
+                                  const payload = { 
+                                    ...newProfile, 
+                                    master_data: JSON.stringify(newProfile.master_data) 
+                                  };
+                                  await window.electronAPI.business.updateProfile(payload);
+                                  if (onProfileUpdate) onProfileUpdate();
+                                  toast('Logo updated and saved!', 'success');
+                                }
+                              } catch (e) {
+                                toast('Upload failed', 'error');
+                              }
+                            }
+                          }}
+                        >
+                          <Monitor size={16} /> {profileForm.logo_path ? 'Change Logo' : 'Select File'}
+                        </Button>
+                        {profileForm.logo_path && (
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="text-rose-600 font-black hover:bg-rose-50 rounded-lg h-10"
+                            onClick={async () => {
+                              const newProfile = { ...profileForm, logo_path: '' };
+                              setProfileForm(newProfile);
+                              const payload = { ...newProfile, master_data: JSON.stringify(newProfile.master_data) };
+                              await window.electronAPI.business.updateProfile(payload);
+                              if (onProfileUpdate) onProfileUpdate();
+                              toast('Logo removed');
+                            }}
+                          >
+                            Remove
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -507,10 +582,71 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                 <CardDescription className="text-base font-medium">Export and Restore your data</CardDescription>
               </CardHeader>
               <CardContent className="p-10 pt-0 space-y-4">
-                <Button variant="secondary" className="w-full h-14 rounded-xl font-bold" onClick={async () => {
-                  const res = await window.electronAPI.storage.exportData();
-                  if (res.success) toast('Backup saved!', 'success');
-                }}>Export Backup (.json)</Button>
+                <div className="grid grid-cols-2 gap-4">
+                  <Button variant="secondary" className="h-14 rounded-xl font-bold" onClick={async () => {
+                    const res = await window.electronAPI.storage.exportData();
+                    if (res.success) toast('Backup saved!', 'success');
+                    else if (res.error) toast('Export failed: ' + res.error, 'error');
+                  }}>Export Backup (.json)</Button>
+
+                  <Button variant="outline" className="h-14 rounded-xl font-bold border-slate-200" onClick={async () => {
+                    const ok = await confirm({
+                      type: 'danger',
+                      title: 'Overwrite All Data?',
+                      message: 'Importing a backup will REPLACE all current data. This action cannot be undone.',
+                      confirmText: 'Yes, Import & Replace',
+                    });
+                    if (!ok) return;
+                    
+                    const res = await window.electronAPI.storage.importData();
+                    if (res.success) {
+                      toast('Backup restored successfully!', 'success');
+                      setTimeout(() => location.reload(), 1500);
+                    } else if (res.error) {
+                      toast('Import failed: ' + res.error, 'error');
+                    }
+                  }}>Import Backup (.json)</Button>
+                </div>
+                <div className="pt-6 mt-6 border-t border-slate-100 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-lg font-black text-slate-900">Neon Cloud Sync</h4>
+                      <p className="text-xs font-bold text-slate-500">Enable cloud-based setup and backups</p>
+                    </div>
+                    <Switch 
+                      checked={neonConfig.useCloud} 
+                      onCheckedChange={(v) => setNeonConfig({ ...neonConfig, useCloud: v })} 
+                    />
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="form-group">
+                      <label className="form-label">Neon Connection URL</label>
+                      <Input 
+                        type="password"
+                        value={neonConfig.url} 
+                        onChange={(e) => setNeonConfig({ ...neonConfig, url: e.target.value })} 
+                        placeholder="postgresql://user:pass@host/db"
+                        className="form-input h-12"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={handleSaveNeonConfig} disabled={saving} className="flex-1 h-12 rounded-xl font-bold">
+                        Save Config
+                      </Button>
+                      <Button onClick={handleSyncToCloud} disabled={syncing} className="flex-1 h-12 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white gap-2">
+                        {syncing ? <RefreshCw className="animate-spin" size={16} /> : <Download size={16} />}
+                        Sync to Cloud
+                      </Button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-500 font-bold bg-indigo-50 p-4 rounded-2xl border border-indigo-100 leading-relaxed">
+                    <b>Why Neon Cloud?</b> Enabling Cloud Sync allows you to access your business data from multiple devices simultaneously and provides an automatic off-site backup. 
+                    <br/><br/>
+                    <b>Setup:</b> Copy your connection string from the Neon Console (PostgreSQL format). 
+                    The app will automatically mirror your local products, sales, and ledgers to the cloud.
+                  </p>
+                </div>
               </CardContent>
             </Card>
 
@@ -544,79 +680,42 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                   </p>
                 </div>
                 <Button onClick={handleProfileSave} className="btn-primary w-full h-12 rounded-xl font-bold">Save Security PIN</Button>
-              </CardContent>
-            </Card>
-
-            <Card className="rounded-[2.5rem] border-rose-100 bg-rose-50/10 shadow-xl shadow-rose-200/10">
-              <CardHeader className="p-10">
-                <CardTitle className="text-2xl font-black text-rose-900">Danger Zone</CardTitle>
-                <CardDescription className="text-base font-medium">Operations that cannot be undone</CardDescription>
-              </CardHeader>
-              <CardContent className="p-10 pt-0">
-                <Button className="btn-danger w-full h-14 rounded-xl font-bold" onClick={handleReset}>Wipe All App Data</Button>
-              </CardContent>
-            </Card>
-
-            {/* System Update Status */}
-            <Card className="rounded-[2.5rem] border-slate-100 shadow-xl overflow-hidden md:col-span-2">
-              <CardHeader className="p-10 bg-slate-900 text-white">
-                 <div className="flex items-center justify-between">
-                   <div>
-                     <CardTitle className="text-2xl font-black">System Status</CardTitle>
-                     <CardDescription className="text-slate-400 font-bold">App version and update management</CardDescription>
-                   </div>
-                   <Badge variant="outline" className="border-slate-700 text-slate-400 font-black px-4 py-1.5 rounded-xl uppercase tracking-widest text-[10px]">
-                      Internal Build
-                   </Badge>
-                 </div>
-              </CardHeader>
-              <CardContent className="p-10 space-y-8">
-                <div className="flex items-center justify-between p-8 bg-slate-50 rounded-[2rem] border border-slate-100">
-                  <div className="flex items-center gap-6">
-                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg ${
-                      updateInfo.available ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-white text-slate-400 shadow-slate-200'
-                    }`}>
-                      {updateInfo.available ? <Download size={28} /> : <ShieldCheck size={28} />}
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Version</p>
-                      <h4 className="text-2xl font-black text-slate-900">v{updateInfo.current || '2.0.0'}</h4>
-                    </div>
+                
+                <div className="pt-8 mt-8 border-t border-slate-100 space-y-6">
+                  <div>
+                    <h4 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      <ShieldCheck size={20} className="text-emerald-500" /> Software Open Password
+                    </h4>
+                    <p className="text-xs font-bold text-slate-500">Ask for a password every time the application is opened</p>
                   </div>
 
-                  <div className="flex items-center gap-3">
-                    {updateInfo.available ? (
-                      <Button 
-                        onClick={() => window.open(updateInfo.url, '_blank')}
-                        className="btn-primary h-14 px-8 rounded-2xl gap-3 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
-                      >
-                        <Download size={20} /> Get v{updateInfo.version} Now
-                      </Button>
-                    ) : (
-                      <Button 
-                        variant="outline" 
-                        onClick={() => handleCheckUpdate(true)} 
-                        disabled={updateInfo.loading}
-                        className="h-14 px-8 rounded-2xl font-black border-slate-200 gap-3"
-                      >
-                        <RefreshCw size={20} className={updateInfo.loading ? 'animate-spin' : ''} /> 
-                        {updateInfo.loading ? 'Checking...' : 'Check for Updates'}
-                      </Button>
-                    )}
+                  <div className={`p-4 rounded-2xl border ${hasSoftwarePassword ? 'bg-emerald-50 border-emerald-100' : 'bg-slate-50 border-slate-200'}`}>
+                    <p className="text-xs font-bold text-slate-700">
+                      Status: {hasSoftwarePassword ? '✅ Security Enabled' : '❌ No startup password set'}
+                    </p>
                   </div>
+
+                  <div className="form-group">
+                    <label className="form-label">{hasSoftwarePassword ? 'Change or Remove Password' : 'Set Startup Password'}</label>
+                    <Input 
+                      type="password"
+                      value={softwarePassword} 
+                      onChange={(e) => setSoftwarePassword(e.target.value)} 
+                      placeholder={hasSoftwarePassword ? "Enter new password (leave blank to remove)" : "Enter startup password"}
+                      className="form-input h-12"
+                    />
+                  </div>
+                  <Button 
+                    onClick={handleSaveSoftwarePassword} 
+                    disabled={saving} 
+                    className={`w-full h-12 rounded-xl font-bold ${hasSoftwarePassword && !softwarePassword ? 'bg-rose-600 hover:bg-rose-700' : 'btn-primary'}`}
+                  >
+                    {saving ? 'Processing...' : (hasSoftwarePassword ? (softwarePassword ? 'Update Password' : 'Remove Security') : 'Enable Startup Security')}
+                  </Button>
                 </div>
-
-                {updateInfo.available && (
-                  <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-start gap-4">
-                    <Info className="text-emerald-600 mt-1" size={20} />
-                    <div>
-                      <p className="text-emerald-900 font-black text-sm uppercase tracking-tight">Security & Performance Update</p>
-                      <p className="text-emerald-700/80 font-bold text-sm mt-1">Version {updateInfo.version} contains critical optimizations for faster billing and security patches. We recommend updating immediately.</p>
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
+
           </div>
         </TabsContent>
 
@@ -700,6 +799,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
             </CardFooter>
           </Card>
         </TabsContent>
+
       </Tabs>
     </div>
   );

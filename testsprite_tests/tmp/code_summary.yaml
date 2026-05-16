@@ -1,0 +1,97 @@
+version: "2"
+type: frontend
+tech_stack:
+  - Javascript
+  - Next.js
+  - Tailwind CSS
+  - shadcn/ui
+  - better-sqlite3
+  - postgres.js
+  - Electron
+routes:
+  - path: /
+    file: app/page.js
+    auth_required: false
+    description: Main Dashboard with financial overview
+  - path: /billing
+    file: app/components/Billing.js
+    auth_required: false
+    description: Invoice generation and sales interface
+  - path: /products
+    file: app/components/Products.js
+    auth_required: false
+    description: Inventory and product management
+  - path: /parties
+    file: app/components/Parties.js
+    auth_required: false
+    description: Customer and Supplier ledger management
+  - path: /reports
+    file: app/components/Reports.js
+    auth_required: false
+    description: Business reports and analytics
+  - path: /expenses
+    file: app/components/Expenses.js
+    auth_required: false
+    description: Daily expense tracking
+  - path: /settings
+    file: app/components/Settings.js
+    auth_required: false
+    description: Application configuration and cloud sync
+features:
+  - name: Billing & Invoicing
+    description: Create sales invoices, calculate GST, and update stock
+    files:
+      - app/components/Billing.js
+      - main/db.js
+    entry_route: /billing
+    user_interactions:
+      - Select customer or walk-in
+      - Add products to cart
+      - Set payment mode (Cash/UPI/Credit)
+      - Generate and print invoice
+    api_calls:
+      - method: IPC
+        endpoint: sale:create
+  - name: Inventory Management
+    description: Add, edit, and track product stock and pricing
+    files:
+      - app/components/Products.js
+      - main/db.js
+    entry_route: /products
+    user_interactions:
+      - Add new product with details
+      - Update stock quantity
+      - Search products by name or barcode
+    api_calls:
+      - method: IPC
+        endpoint: product:create
+  - name: Party Ledger
+    description: Track customer and supplier balances and payments
+    files:
+      - app/components/Parties.js
+      - main/db.js
+    entry_route: /parties
+    user_interactions:
+      - Create new party
+      - Record payment/collection
+      - View transaction history
+    api_calls:
+      - method: IPC
+        endpoint: party:recordPayment
+  - name: Cloud Synchronization
+    description: Mirror local data to Neon Cloud database
+    files:
+      - app/components/Settings.js
+      - main/db.js
+    entry_route: /settings
+    user_interactions:
+      - Paste Neon connection URL
+      - Click Sync to Cloud
+      - Toggle Background Sync
+    api_calls:
+      - method: IPC
+        endpoint: settings:syncToCloud
+known_limitations:
+  - issue: Print preview requires Electron main process, not testable in browser
+    location: app/components/Billing.js
+    impact: PDF generation cannot be verified in headful browser tests

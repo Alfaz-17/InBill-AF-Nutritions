@@ -41,6 +41,7 @@ export default function Purchases({ profile }) {
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [details, setDetails] = useState({});
+  const [paidAmount, setPaidAmount] = useState(0);
   const [viewMode, setViewMode] = useState('list');
   const [allProducts, setAllProducts] = useState([]);
   const [activeSuggestion, setActiveSuggestion] = useState({ row: null, query: '' });
@@ -139,6 +140,8 @@ export default function Purchases({ profile }) {
       const payload = {
         party_id: selectedSupplier?.id,
         supplier_name: supplierName,
+        total_amount: items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0),
+        paid_amount: paidAmount,
         other_charges: 0,
         items: validItems.map(i => ({
           product_name: i.product_name,
@@ -386,8 +389,8 @@ export default function Purchases({ profile }) {
                       <div className="relative">
                         <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <Input 
-                          placeholder="Search or enter supplier..." 
-                          className="form-input h-14 pl-12"
+                          placeholder="Search or enter supplier name..." 
+                          className="h-14 pl-12 bg-white text-slate-900 border-slate-200 font-bold focus:border-blue-500 rounded-2xl shadow-sm transition-all"
                           value={supplierSearch}
                           onChange={(e) => {
                             setSupplierSearch(e.target.value);
@@ -396,17 +399,22 @@ export default function Purchases({ profile }) {
                           }}
                         />
                         {showSupplierDropdown && supplierSearch && (
-                          <Card className="absolute top-full left-0 right-0 mt-2 z-50 rounded-2xl shadow-xl overflow-hidden border-slate-100">
+                          <Card className="absolute top-full left-0 right-0 mt-2 z-50 rounded-2xl shadow-2xl overflow-hidden border-slate-200 bg-white">
                              <ScrollArea className="h-48">
                                {suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase())).map(s => (
-                                 <div key={s.id} className="p-4 hover:bg-slate-50 cursor-pointer flex justify-between items-center border-b last:border-0" onClick={() => {
+                                 <div key={s.id} className="p-4 hover:bg-blue-50 cursor-pointer flex justify-between items-center border-b border-slate-50 last:border-0 group transition-colors" onClick={() => {
                                    setSelectedSupplier(s);
                                    setSupplierSearch(s.name);
                                    setSupplierName(s.name);
                                    setShowSupplierDropdown(false);
                                  }}>
-                                    <div className="font-bold text-slate-900">{s.name}</div>
-                                    <div className="text-[10px] font-black text-slate-400 uppercase">Balance: {CURRENCY}{s.current_balance}</div>
+                                    <div>
+                                      <div className="font-black text-slate-900 text-sm">{s.name}</div>
+                                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">{s.phone || 'No phone'}</div>
+                                    </div>
+                                    <Badge variant="outline" className="text-[10px] font-black bg-emerald-50 text-emerald-600 border-emerald-100">
+                                      Bal: {CURRENCY}{s.current_balance}
+                                    </Badge>
                                  </div>
                                ))}
                              </ScrollArea>
@@ -441,32 +449,50 @@ export default function Purchases({ profile }) {
                         {items.map((item, idx) => (
                           <tr key={idx} className="hover:bg-slate-50/50">
                             <td className="p-4 relative">
-                              <Input 
-                                placeholder="Enter product name..." 
-                                className="h-10 font-bold border-none bg-transparent shadow-none focus:bg-white focus:shadow-sm"
-                                value={item.product_name}
-                                onChange={(e) => updateRow(idx, 'product_name', e.target.value)}
-                              />
-                              {activeSuggestion.row === idx && activeSuggestion.query.length > 0 && (
-                                <Card className="absolute top-full left-0 w-full z-[100] shadow-2xl border-slate-200 overflow-hidden bg-white mt-1">
-                                  <ScrollArea className="h-48">
-                                    {allProducts.filter(p => p.product_name.toLowerCase().includes(activeSuggestion.query.toLowerCase())).map(p => (
-                                      <div key={p.id} className="p-3 hover:bg-blue-50 cursor-pointer border-b last:border-0 flex justify-between items-center" onMouseDown={() => selectSuggestion(idx, p)}>
-                                        <div>
-                                          <p className="text-sm font-bold text-slate-900">{p.product_name}</p>
-                                          <p className="text-[10px] text-slate-400 font-bold uppercase">{p.brand || 'No Brand'}</p>
+                                <Input 
+                                  placeholder="Enter product name..." 
+                                  className="h-10 font-bold border-none bg-transparent shadow-none focus:bg-white focus:shadow-sm text-slate-900 placeholder:text-slate-400"
+                                  value={item.product_name}
+                                  onChange={(e) => {
+                                    updateRow(idx, 'product_name', e.target.value);
+                                    setActiveSuggestion({ row: idx, query: e.target.value });
+                                  }}
+                                  onFocus={() => setActiveSuggestion({ row: idx, query: item.product_name })}
+                                  onBlur={() => setTimeout(() => setActiveSuggestion({ row: -1, query: '' }), 200)}
+                                />
+                                {activeSuggestion.row === idx && activeSuggestion.query.length > 0 && (
+                                  <Card className="absolute top-full left-0 w-[120%] z-[100] shadow-2xl border-slate-300 overflow-hidden bg-white mt-2 ring-2 ring-blue-100">
+                                    <ScrollArea className="h-64 bg-white">
+                                      {allProducts.filter(p => p.product_name.toLowerCase().includes(activeSuggestion.query.toLowerCase())).map(p => (
+                                        <div key={p.id} className="p-4 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 flex justify-between items-center transition-colors group" onMouseDown={() => selectSuggestion(idx, p)}>
+                                          <div className="flex flex-col gap-0.5">
+                                            <p className="text-sm font-black text-slate-900">{p.product_name}</p>
+                                            <div className="flex items-center gap-2">
+                                              <Badge className="bg-slate-100 text-slate-500 font-bold text-[9px] px-1.5 py-0 border-none uppercase tracking-tight">
+                                                {p.brand || 'No Brand'}
+                                              </Badge>
+                                              <span className="text-[10px] font-bold text-slate-400">Stock: {p.quantity}</span>
+                                            </div>
+                                          </div>
+                                          <div className="text-right">
+                                            <p className="text-xs font-black text-emerald-600">{CURRENCY}{p.cost_price}</p>
+                                            <p className="text-[9px] font-bold text-slate-400 uppercase">Cost Price</p>
+                                          </div>
                                         </div>
-                                        <Badge variant="outline" className="text-[9px] font-black">{CURRENCY}{p.cost_price}</Badge>
-                                      </div>
-                                    ))}
-                                  </ScrollArea>
-                                </Card>
-                              )}
+                                      ))}
+                                      {allProducts.filter(p => p.product_name.toLowerCase().includes(activeSuggestion.query.toLowerCase())).length === 0 && (
+                                        <div className="p-8 text-center text-slate-400 font-bold italic text-sm">
+                                          New Product — Press Tab to continue
+                                        </div>
+                                      )}
+                                    </ScrollArea>
+                                  </Card>
+                                )}
                             </td>
                             <td className="p-4">
                               <Input 
                                 type="number" 
-                                className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white"
+                                className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white text-slate-900"
                                 value={item.quantity}
                                 onChange={(e) => updateRow(idx, 'quantity', e.target.value)}
                               />
@@ -475,7 +501,7 @@ export default function Purchases({ profile }) {
                               <div className="relative">
                                 <Input 
                                   type="number" 
-                                  className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white pr-6"
+                                  className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white pr-6 text-slate-900"
                                   value={item.price}
                                   onChange={(e) => updateRow(idx, 'price', e.target.value)}
                                 />
@@ -489,7 +515,7 @@ export default function Purchases({ profile }) {
                             <td className="p-4">
                               <Input 
                                 type="number" 
-                                className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white text-blue-600"
+                                className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white text-blue-600 font-bold"
                                 value={item.selling_price}
                                 onChange={(e) => updateRow(idx, 'selling_price', e.target.value)}
                               />
@@ -596,15 +622,33 @@ export default function Purchases({ profile }) {
           <DialogFooter className="p-10 bg-white border-t flex items-center justify-between">
             <div className="flex items-center gap-10">
                <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Item Count</p>
-                  <p className="text-2xl font-black text-slate-900">{items.filter(i => i.product_name).length}</p>
-               </div>
-               <div>
-                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Payable</p>
-                  <p className="text-3xl font-black text-emerald-600 tracking-tight">
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Bill</p>
+                  <p className="text-2xl font-black text-slate-900">
                     {CURRENCY}{(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0)).toLocaleString()}
                   </p>
                </div>
+               <div>
+                  <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Paid Amount</p>
+                  <div className="flex items-center gap-3">
+                    <Input 
+                      type="number" 
+                      className="h-12 w-32 font-black text-lg border-slate-200 rounded-xl"
+                      value={paidAmount}
+                      onChange={(e) => setPaidAmount(parseFloat(e.target.value) || 0)}
+                    />
+                    <Button variant="ghost" size="sm" className="h-10 text-[10px] font-black uppercase text-blue-600 bg-blue-50" onClick={() => setPaidAmount(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0))}>
+                      Full Pay
+                    </Button>
+                  </div>
+               </div>
+               {items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0) - paidAmount > 0 && (
+                 <div>
+                    <p className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Due / Credit</p>
+                    <p className="text-2xl font-black text-rose-600 tracking-tight">
+                      {CURRENCY}{(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0) - paidAmount).toLocaleString()}
+                    </p>
+                 </div>
+               )}
             </div>
             <div className="flex gap-3">
               <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Cancel</Button>

@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 const emptyProduct = {
   product_name: '', brand: '', category: '', product_size: '', unit: 'pcs',
   selling_price: '', cost_price: '', barcode: '',
-  gst_rate: 0, cgst: 0, sgst: 0, quantity: '', batch_number: '', expiry_date: '',
+  gst_rate: 0, cgst: 0, sgst: 0, quantity: '', min_stock_alert: 10, batch_number: '', expiry_date: '',
   custom_fields: {}
 };
 
@@ -41,19 +41,23 @@ export default function Products({ profile }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCat, setFilterCat] = useState('All');
   const [showModal, setShowModal] = useState(false);
-  const [showAttrModal, setShowAttrModal] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
   const [newCat, setNewCat] = useState('');
-  const [attrForm, setAttrForm] = useState({ name: '', type: 'text' });
+  const [newAttrName, setNewAttrName] = useState('');
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ ...emptyProduct });
   const [showFilter, setShowFilter] = useState(false);
+  
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
 
   useEffect(() => { 
     loadProducts(); 
     loadCategories();
     loadAttributeDefs();
   }, []);
+
 
   const loadAttributeDefs = async () => {
     if (typeof window !== 'undefined' && window.electronAPI?.attributes) {
@@ -92,6 +96,14 @@ export default function Products({ profile }) {
     return matchSearch && matchCat;
   });
 
+  // Pagination Logic
+  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1); // Reset to page 1 on search/filter
+  }, [searchTerm, filterCat]);
+
   const openAdd = () => {
     setEditId(null);
     setForm({ ...emptyProduct });
@@ -117,6 +129,7 @@ export default function Products({ profile }) {
       cgst: p.cgst ?? ((p.gst_rate || 0) / 2),
       sgst: p.sgst ?? ((p.gst_rate || 0) / 2),
       quantity: p.quantity || '',
+      min_stock_alert: p.min_stock_alert ?? 10,
       batch_number: p.batch_number || '',
       expiry_date: p.expiry_date || '',
       custom_fields: parsedFields,
@@ -136,6 +149,7 @@ export default function Products({ profile }) {
         cgst: parseFloat(form.cgst) || 0,
         sgst: parseFloat(form.sgst) || 0,
         quantity: parseInt(form.quantity) || 0,
+        min_stock_alert: parseInt(form.min_stock_alert) || 0,
         custom_fields: JSON.stringify(form.custom_fields || {})
       };
       if (editId) {
@@ -148,6 +162,46 @@ export default function Products({ profile }) {
       setShowModal(false);
       loadProducts();
     } catch (e) { toast('System error: ' + e.message, 'error'); }
+  };
+
+  const commitAttributeDef = async () => {
+    if (!newAttrName.trim()) return;
+    try {
+      await window.electronAPI.attributes.add({ 
+        name: newAttrName.trim(), 
+        type: 'text', 
+        required: 0 
+      });
+      await loadAttributeDefs();
+      setNewAttrName('');
+      toast(`System field "${newAttrName}" added`);
+    } catch (e) { toast('Failed to add field', 'error'); }
+  };
+
+  const handleDeleteAttribute = async (id, name) => {
+    console.log(`[UI] Requesting delete for attribute ID: ${id}, Name: ${name}`);
+    if (!id) {
+      console.error('[UI] Cannot delete attribute: Missing ID');
+      return;
+    }
+    
+    const ok = await confirm({
+      type: 'danger',
+      title: 'Remove Field?',
+      message: `Remove "${name}" from the system? This hides the field from all products. Existing data remains in the database.`,
+      confirmText: 'Remove Field',
+    });
+    if (!ok) return;
+
+    try {
+      const result = await window.electronAPI.attributes.delete(id);
+      console.log('[UI] Delete result:', result);
+      await loadAttributeDefs();
+      toast('Custom field removed');
+    } catch (e) { 
+      console.error('[UI] Delete Attribute Error:', e);
+      toast('Failed to remove field: ' + e.message, 'error'); 
+    }
   };
 
   const handleDelete = async (id) => {
@@ -166,19 +220,6 @@ export default function Products({ profile }) {
     } catch (e) { toast('Error: ' + e.message, 'error'); }
   };
 
-  const commitAttributeDef = async () => {
-    if (!attrForm.name) return;
-    try {
-      await window.electronAPI.attributes.add({ 
-        name: attrForm.name, 
-        type: attrForm.type, 
-        required: 0 
-      });
-      await loadAttributeDefs();
-      setShowAttrModal(false);
-      toast(`Field "${attrForm.name}" added successfully`);
-    } catch (e) { toast('Failed to add field', 'error'); }
-  };
 
   const handleAddCategory = async () => {
     if (!newCat.trim()) return;
@@ -205,20 +246,6 @@ export default function Products({ profile }) {
     } catch (e) { toast('Failed to delete category'); }
   };
 
-  const handleDeleteAttribute = async (id, name) => {
-    const ok = await confirm({
-      type: 'danger',
-      title: 'Remove Field?',
-      message: `Remove "${name}" from the system? This will not delete data from existing products, but you won't be able to add this field to new products.`,
-      confirmText: 'Remove Field',
-    });
-    if (!ok) return;
-    try {
-      await window.electronAPI.attributes.delete(id);
-      loadAttributeDefs();
-      toast('Custom field removed');
-    } catch (e) { toast('Failed to remove field'); }
-  };
 
   if (loading) {
     return (
@@ -258,7 +285,7 @@ export default function Products({ profile }) {
           <div className="metric-icon yellow"><AlertTriangle size={24} /></div>
           <div>
             <p className="metric-sub">Low Stock</p>
-            <h3 className="metric-value">{products.filter(p => p.quantity > 0 && p.quantity <= 10).length} Items</h3>
+            <h3 className="metric-value">{products.filter(p => p.quantity > 0 && p.quantity <= (p.min_stock_alert ?? 10)).length} Items</h3>
           </div>
         </div>
         <div className="metric-card">
@@ -322,7 +349,7 @@ export default function Products({ profile }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.map((p) => (
+                {paginated.map((p) => (
                   <tr key={p.id} className="group hover:bg-slate-50/50 transition-colors">
                     <td>
                       <div className="flex items-center gap-3">
@@ -340,13 +367,13 @@ export default function Products({ profile }) {
                       <Badge className="bg-blue-50 text-blue-600 border-blue-100 rounded-xl font-black">{p.category || 'General'}</Badge>
                     </td>
                     <td className="text-right">
-                      <div className="font-black text-slate-900 text-lg">{CURRENCY}{p.selling_price.toLocaleString()}</div>
+                      <div className="font-black text-slate-900 text-lg">{CURRENCY}{p.selling_price?.toLocaleString() || '0'}</div>
                     </td>
                     <td className="text-center">
                       <Badge className={`rounded-xl px-4 py-1.5 font-black text-xs ${
-                        p.quantity <= 0 ? 'bg-rose-500' : p.quantity <= 10 ? 'bg-amber-500' : 'bg-emerald-500'
+                        p.quantity <= 0 ? 'bg-rose-500' : p.quantity <= (p.min_stock_alert ?? 10) ? 'bg-amber-500' : 'bg-emerald-500'
                       }`}>
-                        {p.quantity <= 0 ? 'OUT' : p.quantity <= 10 ? `LOW: ${p.quantity}` : `${p.quantity} IN`}
+                        {p.quantity <= 0 ? 'OUT' : p.quantity <= (p.min_stock_alert ?? 10) ? `LOW: ${p.quantity}` : `${p.quantity} IN`}
                       </Badge>
                     </td>
                     <td className="text-right">
@@ -371,11 +398,47 @@ export default function Products({ profile }) {
             </div>
           )}
         </div>
+        
+        {/* Pagination Controls */}
+        {totalPages > 1 && (
+          <div className="p-6 bg-slate-50 border-t flex items-center justify-between">
+            <p className="text-xs font-bold text-slate-500">
+              Showing <span className="text-slate-900">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-slate-900">{Math.min(currentPage * itemsPerPage, filtered.length)}</span> of <span className="text-slate-900">{filtered.length}</span> items
+            </p>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-10 px-4 rounded-xl font-bold" 
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage(prev => prev - 1)}
+              >
+                Previous
+              </Button>
+              <div className="flex items-center gap-1 px-4 text-sm font-black">
+                Page {currentPage} of {totalPages}
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-10 px-4 rounded-xl font-bold" 
+                disabled={currentPage === totalPages}
+                onClick={() => setCurrentPage(prev => prev + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Product Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-w-[92vw] sm:max-w-4xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all">
+        <DialogContent 
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          className="max-w-[92vw] sm:max-w-4xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all"
+        >
           <DialogHeader className="p-10 bg-slate-900 text-white">
             <DialogTitle className="text-2xl font-black flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/20">
@@ -441,8 +504,16 @@ export default function Products({ profile }) {
                   <Input type="number" value={form.selling_price || ''} onChange={(e) => setForm({ ...form, selling_price: e.target.value })} className="form-input h-14 text-2xl font-black text-blue-600" />
                 </div>
                 <div className="form-group md:col-span-2">
-                  <label className="form-label">Cost Price ({CURRENCY})</label>
+                  <label className="form-label flex justify-between">
+                    Cost Price ({CURRENCY})
+                    {editId && <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full uppercase animate-pulse">Manual Update</span>}
+                  </label>
                   <Input type="number" value={form.cost_price || ''} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} className="form-input h-14 font-black text-emerald-600" />
+                  {editId && (
+                    <p className="text-[10px] font-bold text-slate-400 mt-2 italic">
+                      Note: Changing cost here updates ALL existing stock. For new price batches, use the <b>Stock Inflow</b> module.
+                    </p>
+                  )}
                 </div>
                 <div className="form-group md:col-span-2">
                   <label className="form-label">{TAX_LABEL} Percentage (%)</label>
@@ -464,51 +535,82 @@ export default function Products({ profile }) {
                   <label className="form-label">Current Stock</label>
                   <Input type="number" value={form.quantity || ''} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="form-input h-14 font-black text-rose-600" />
                 </div>
+                <div className="form-group">
+                  <label className="form-label">Alert Stock Qty</label>
+                  <Input type="number" value={form.min_stock_alert} onChange={(e) => setForm({ ...form, min_stock_alert: e.target.value })} className="form-input h-14 font-black text-amber-600" />
+                  <p className="text-[9px] font-bold text-slate-400 mt-2 italic">Triggers low-stock warning</p>
+                </div>
               </div>
             </section>
 
-            {/* Custom Fields */}
+            {/* Custom Fields - Improved UI */}
             <section className="space-y-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Barcode size={18} className="text-purple-600" />
-                  <h4 className="font-black text-slate-900 uppercase tracking-widest text-xs">Industry Attributes</h4>
+                  <h4 className="font-black text-slate-900 uppercase tracking-widest text-xs">Product Specifications</h4>
                 </div>
-                <Button variant="ghost" size="sm" className="font-black text-primary text-[10px] uppercase gap-2 hover:bg-blue-50" onClick={() => setShowAttrModal(true)}>
-                  <Plus size={14} strokeWidth={3} /> Add New Attribute
-                </Button>
               </div>
               
-              {attributeDefs.length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
-                  {attributeDefs.map((def) => (
-                    <div key={def.id} className="form-group">
-                      <label className="form-label flex justify-between">
-                        {def.name}
-                        <X 
-                          size={12} 
-                          className="cursor-pointer text-slate-300 hover:text-red-500 transition-colors" 
-                          onClick={() => handleDeleteAttribute(def.id, def.name)}
+              <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm space-y-8">
+                <div className="flex gap-3 items-end">
+                  <div className="flex-1 space-y-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">New Specification Name</label>
+                    <Input 
+                      placeholder="e.g. Flavor, Protein Content, Warranty" 
+                      value={newAttrName} 
+                      onChange={(e) => setNewAttrName(e.target.value)}
+                      className="h-12 rounded-xl border-slate-100 bg-slate-50/50"
+                    />
+                  </div>
+                  <Button onClick={commitAttributeDef} className="h-12 px-6 rounded-xl bg-purple-600 font-black gap-2 text-white">
+                    <Plus size={16} /> Add Field
+                  </Button>
+                </div>
+
+                {attributeDefs.length > 0 ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 pt-6 border-t border-slate-50">
+                    {attributeDefs.map((def) => (
+                      <div key={def.id} className="form-group group">
+                        <div className="flex justify-between items-center mb-2">
+                          <label className="form-label flex items-center gap-2 mb-0">
+                            <div className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                            {def.name}
+                          </label>
+                          <Button 
+                            type="button"
+                            variant="ghost" 
+                            size="icon" 
+                            className="h-8 w-8 text-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDeleteAttribute(def.id, def.name);
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                        </div>
+                        <Input 
+                          value={form.custom_fields[def.name] || ''}
+                          onChange={(e) => setForm({ 
+                            ...form, 
+                            custom_fields: { ...form.custom_fields, [def.name]: e.target.value } 
+                          })} 
+                          className="form-input h-12 bg-slate-50/30 border-slate-100 focus:bg-white transition-all font-bold"
+                          placeholder={`Enter ${def.name}...`}
                         />
-                      </label>
-                      <Input 
-                        type={def.type === 'date' ? 'date' : def.type === 'number' ? 'number' : 'text'}
-                        value={form.custom_fields[def.name] || ''}
-                        onChange={(e) => setForm({ 
-                          ...form, 
-                          custom_fields: { ...form.custom_fields, [def.name]: e.target.value } 
-                        })} 
-                        className="form-input h-12"
-                      />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="p-12 text-center bg-white rounded-[2rem] border border-slate-100 border-dashed">
-                  <p className="text-slate-400 font-bold">No custom attributes defined yet</p>
-                </div>
-              )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 text-slate-400 text-sm font-medium italic">
+                    Add custom fields above to track industry-specific details.
+                  </div>
+                )}
+              </div>
             </section>
+
           </div>
 
           <DialogFooter className="p-10 bg-white border-t flex gap-3 sm:justify-end">
@@ -544,10 +646,14 @@ export default function Products({ profile }) {
                   <Button 
                     variant="ghost" 
                     size="icon" 
-                    className="h-8 w-8 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-100 opacity-0 group-hover:opacity-100 transition-all"
-                    onClick={() => handleDeleteCategory(c.id, c.name)}
+                    className="h-9 w-9 rounded-xl text-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleDeleteCategory(c.id, c.name);
+                    }}
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={16} />
                   </Button>
                 </div>
               ))}
@@ -556,41 +662,6 @@ export default function Products({ profile }) {
         </DialogContent>
       </Dialog>
 
-      {/* Attribute Definition Modal */}
-      <Dialog open={showAttrModal} onOpenChange={setShowAttrModal}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
-          <DialogHeader className="p-8 bg-slate-900 text-white">
-            <DialogTitle className="font-black text-xl flex items-center gap-3">
-              <Barcode size={20} className="text-purple-400" /> Define New Field
-            </DialogTitle>
-          </DialogHeader>
-          <div className="p-8 space-y-6 bg-white">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Field Name</label>
-                <Input 
-                  placeholder="e.g. Serial Number, Warranty" 
-                  value={attrForm.name} 
-                  onChange={(e) => setAttrForm({...attrForm, name: e.target.value})}
-                  className="h-12 font-bold rounded-xl"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Data Type</label>
-                <Select value={attrForm.type} onValueChange={(v) => setAttrForm({...attrForm, type: v})}>
-                  <SelectTrigger className="h-12 font-bold rounded-xl"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="text" className="font-bold">Text / Alpha-numeric</SelectItem>
-                    <SelectItem value="number" className="font-bold">Numbers Only</SelectItem>
-                    <SelectItem value="date" className="font-bold">Calendar Date</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <Button onClick={commitAttributeDef} className="w-full h-12 rounded-xl bg-purple-600 font-black">Create System Field</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

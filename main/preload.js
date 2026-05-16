@@ -29,13 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     create: (data) => ipcRenderer.invoke('purchases:create', data),
     getAll: () => ipcRenderer.invoke('purchases:getAll'),
     getById: (id) => ipcRenderer.invoke('purchases:getById', id),
-  },
-
-  /* ── Purchases ── */
-  purchases: {
-    create: (data) => ipcRenderer.invoke('purchases:create', data),
-    getAll: () => ipcRenderer.invoke('purchases:getAll'),
-    getById: (id) => ipcRenderer.invoke('purchases:getById', id),
+    delete: (id) => ipcRenderer.invoke('purchases:delete', id),
   },
 
   /* ── Expenses ── */
@@ -49,6 +43,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stats: {
     dashboard: () => ipcRenderer.invoke('stats:dashboard'),
     getMonthly: () => ipcRenderer.invoke('stats:getMonthly'),
+    getAiSnapshot: () => ipcRenderer.invoke('stats:getAiSnapshot'),
   },
 
   /* ── Reports ── */
@@ -56,6 +51,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     sales: (from, to) => ipcRenderer.invoke('reports:sales', from, to),
     purchases: (from, to) => ipcRenderer.invoke('reports:purchases', from, to),
     stock: () => ipcRenderer.invoke('reports:stock'),
+  },
+
+  /* ── Returns ── */
+  returns: {
+    createSaleReturn: (data) => ipcRenderer.invoke('returns:createSaleReturn', data),
+    getAllSaleReturns: () => ipcRenderer.invoke('returns:getAllSaleReturns'),
+    deleteSaleReturn: (id) => ipcRenderer.invoke('returns:deleteSaleReturn', id),
+    createPurchaseReturn: (data) => ipcRenderer.invoke('returns:createPurchaseReturn', data),
+    getAllPurchaseReturns: () => ipcRenderer.invoke('returns:getAllPurchaseReturns'),
+    deletePurchaseReturn: (id) => ipcRenderer.invoke('returns:deletePurchaseReturn', id),
   },
 
   /* ── Parties ── */
@@ -75,6 +80,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectFile: () => ipcRenderer.invoke('ai:selectFile'),
     parseInvoice: (data) => ipcRenderer.invoke('ai:parseInvoice', data),
     printInvoice: (html) => ipcRenderer.invoke('ai:printInvoice', html),
+    getInsights: (snapshot) => ipcRenderer.invoke('ai:getInsights', snapshot),
   },
 
   /* ── Settings ── */
@@ -82,6 +88,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getGeminiKey: () => ipcRenderer.invoke('settings:getGeminiKey'),
     setGeminiKey: (key) => ipcRenderer.invoke('settings:setGeminiKey', key),
     resetData: () => ipcRenderer.invoke('settings:resetData'),
+    getNeonConfig: () => ipcRenderer.invoke('settings:getNeonConfig'),
+    setNeonConfig: (config) => ipcRenderer.invoke('settings:setNeonConfig', config),
+    syncToCloud: () => ipcRenderer.invoke('settings:syncToCloud'),
+  },
+
+  /* ── Mobile Access ── */
+  mobile: {
+    getConfig: () => ipcRenderer.invoke('mobile:getConfig'),
+    generate: () => ipcRenderer.invoke('mobile:generate'),
+    revoke: () => ipcRenderer.invoke('mobile:revoke'),
   },
 
   /* ── Business Profile ── */
@@ -128,5 +144,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /* ── System ── */
   system: {
     checkUpdate: () => ipcRenderer.invoke('app:checkUpdate'),
+  },
+  
+  /* ── Authentication ── */
+  auth: {
+    check: () => ipcRenderer.invoke('auth:check'),
+    verify: (password) => ipcRenderer.invoke('auth:verify', password),
+    setPassword: (password) => ipcRenderer.invoke('auth:setPassword', password),
+  },
+  
+  /* ── WhatsApp ── */
+  whatsapp: {
+    sendMessage: (data) => ipcRenderer.invoke('whatsapp:sendMessage', data),
   }
 });

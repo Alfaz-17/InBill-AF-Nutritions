@@ -1,12 +1,19 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   FileBarChart, Download, Calendar, IndianRupee,
-  ShoppingCart, Package, TruckIcon, TrendingUp, ArrowRight, Check, RotateCcw, X, User, Hash, AlertCircle, RotateCcw as ReturnIcon,
-  Printer, Wallet
+  ShoppingCart, Package, Truck, TrendingUp, ArrowRight, Check, RotateCcw, X, User, Hash, AlertCircle, RotateCcw as ReturnIcon,
+  Printer, Wallet, Brain, Sparkles, RefreshCw, MessageCircle, Download as DownloadIcon, Trash2
 } from 'lucide-react';
-import { toast } from "sonner";
 import { getInvoiceHTML } from './InvoiceTemplates';
+import { getSalesReportHTML, getStockReportHTML, getPurchaseReportHTML } from './ReportTemplates';
+import { useToast } from './ToastProvider';
+
+// Recharts for visual elements
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  AreaChart, Area
+} from 'recharts';
 
 // shadcn/ui components
 import { Button } from "@/components/ui/button";
@@ -17,6 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 
 export default function Reports({ profile }) {
+  const { toast, confirm } = useToast();
   const [activeTab, setActiveTab] = useState('sales');
   const [fromDate, setFromDate] = useState(() => {
     const d = new Date();
@@ -37,7 +45,15 @@ export default function Reports({ profile }) {
   const [returnReason, setReturnReason] = useState('');
   const [savingReturn, setSavingReturn] = useState(false);
 
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
+
   const CURRENCY = profile?.currency_symbol || '₹';
+
+  useEffect(() => {
+    fetchReport();
+  }, [activeTab, fromDate, toDate]);
 
   const buildInvoiceData = (fullSale) => ({
     invoiceNumber: fullSale.invoice_number,
@@ -54,103 +70,6 @@ export default function Reports({ profile }) {
     paymentMode: fullSale.payment_mode
   });
 
-  const handleInitiateSalesReturn = async (sale) => {
-    if (typeof window === 'undefined' || !window.electronAPI) return;
-    try {
-      const fullSale = await window.electronAPI.sales.getByInvoice(sale.invoice_number);
-      if (fullSale) {
-        setSelectedSale(fullSale);
-        setReturnItems(fullSale.items.map(item => ({
-          ...item,
-          return_qty: 0
-        })));
-        setReturnReason('');
-        setShowSalesReturn(true);
-      }
-    } catch (e) { toast.error("Could not load sale details"); }
-  };
-
-  const handleInitiatePurchaseReturn = async (purchase) => {
-    if (typeof window === 'undefined' || !window.electronAPI) return;
-    try {
-      const fullPurchase = await window.electronAPI.purchases.getById(purchase.id);
-      if (fullPurchase) {
-        setSelectedPurchase(fullPurchase);
-        setReturnItems(fullPurchase.items.map(item => ({
-          ...item,
-          return_qty: 0
-        })));
-        setReturnReason('');
-        setShowPurchaseReturn(true);
-      }
-    } catch (e) { toast.error("Could not load purchase details"); }
-  };
-
-  const updateSalesReturnQty = (productId, qty) => {
-    setReturnItems(prev => prev.map(item => 
-      item.product_id === productId ? { ...item, return_qty: Math.max(0, Math.min(item.quantity, qty)) } : item
-    ));
-  };
-
-  const updatePurchaseReturnQty = (productName, qty) => {
-    setReturnItems(prev => prev.map(item => 
-      item.product_name === productName ? { ...item, return_qty: Math.max(0, Math.min(item.quantity, qty)) } : item
-    ));
-  };
-
-  const handleSaveSalesReturn = async () => {
-    const itemsToReturn = returnItems.filter(i => i.return_qty > 0);
-    if (itemsToReturn.length === 0) {
-      toast.error("Select at least one item to return");
-      return;
-    }
-    setSavingReturn(true);
-    try {
-      const payload = {
-        sale_id: selectedSale.id,
-        invoice_number: selectedSale.invoice_number,
-        reason: returnReason,
-        items: itemsToReturn.map(i => ({
-          product_id: i.product_id,
-          product_name: i.product_name,
-          quantity: i.return_qty,
-          refund_amount: i.return_qty * i.price
-        }))
-      };
-      await window.electronAPI.returns.create(payload);
-      toast.success("Sales return successful!");
-      setShowSalesReturn(false);
-      fetchReport();
-    } catch (e) { toast.error("Return failed: " + e.message); }
-    setSavingReturn(false);
-  };
-
-  const handleSavePurchaseReturn = async () => {
-    const itemsToReturn = returnItems.filter(i => i.return_qty > 0);
-    if (itemsToReturn.length === 0) {
-      toast.error("Select at least one item to return");
-      return;
-    }
-    setSavingReturn(true);
-    try {
-      const payload = {
-        purchase_id: selectedPurchase.id,
-        party_id: selectedPurchase.party_id,
-        supplier_name: selectedPurchase.supplier_name,
-        reason: returnReason,
-        items: itemsToReturn.map(i => ({
-          product_name: i.product_name,
-          quantity: i.return_qty,
-          price: i.price
-        }))
-      };
-      await window.electronAPI.purchaseReturns.create(payload);
-      toast.success("Purchase return successful!");
-      setShowPurchaseReturn(false);
-      fetchReport();
-    } catch (e) { toast.error("Return failed: " + e.message); }
-    setSavingReturn(false);
-  };
   const handlePrintInvoice = async (sale) => {
     if (typeof window === 'undefined' || !window.electronAPI) return;
     try {
@@ -158,11 +77,11 @@ export default function Reports({ profile }) {
       if (fullSale) {
         const html = getInvoiceHTML(buildInvoiceData(fullSale), profile);
         await window.electronAPI.ai.printInvoice(html);
-        toast.success("Printing invoice...");
+        toast("Printing invoice...", "success");
       }
     } catch (e) { 
       console.error(e);
-      toast.error("Print failed: " + e.message); 
+      toast("Print failed: " + e.message, "error"); 
     }
   };
 
@@ -177,15 +96,15 @@ export default function Reports({ profile }) {
         if (res.success) {
           const saveResult = await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${fullSale.invoice_number}.pdf`);
           if (saveResult.success) {
-            toast.success("Exact invoice PDF downloaded!");
+            toast("Exact invoice PDF downloaded!", "success");
           }
         } else {
-          toast.error("Failed to generate PDF");
+          toast("Failed to generate PDF", "error");
         }
       }
     } catch (e) {
       console.error(e);
-      toast.error("Download failed: " + e.message);
+      toast("Error generating PDF", "error");
     }
     setPdfGenerating(false);
   };
@@ -193,24 +112,151 @@ export default function Reports({ profile }) {
   const fetchReport = async () => {
     if (typeof window === 'undefined' || !window.electronAPI) return;
     setLoading(true);
+    setCurrentPage(1);
     try {
       let result;
       if (activeTab === 'sales') {
         result = await window.electronAPI.reports.sales(fromDate, toDate);
       } else if (activeTab === 'purchases') {
         result = await window.electronAPI.reports.purchases(fromDate, toDate);
+      } else if (activeTab === 'stock') {
+        result = await window.electronAPI.reports.stock();
       } else if (activeTab === 'monthly') {
         result = await window.electronAPI.stats.getMonthly();
-      } else {
-        result = await window.electronAPI.reports.stock();
+      } else if (activeTab === 'returns') {
+        result = await window.electronAPI.returns.getAllSaleReturns();
       }
       setData(result);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      toast.error("Failed to fetch report");
+    }
     setLoading(false);
   };
 
+  const handleDownloadReportPDF = async () => {
+    if (!data || pdfGenerating) return;
+    setPdfGenerating(true);
+    try {
+      let html;
+      let filename;
+      if (activeTab === 'sales') {
+        html = getSalesReportHTML(data, fromDate, toDate, profile);
+        filename = `Sales_Report_${fromDate}_to_${toDate}.pdf`;
+      } else if (activeTab === 'stock') {
+        html = getStockReportHTML(data, profile);
+        filename = `Stock_Report_${new Date().toISOString().split('T')[0]}.pdf`;
+      } else if (activeTab === 'purchases') {
+        html = getPurchaseReportHTML(data, fromDate, toDate, profile);
+        filename = `Purchase_Report_${fromDate}_to_${toDate}.pdf`;
+      }
+      
+      const res = await window.electronAPI.pdf.generate(html);
+      if (res.success) {
+        await window.electronAPI.pdf.saveAs(res.buffer, filename);
+        toast("Report Saved Successfully!", "success");
+      }
+    } catch (e) {
+      console.error(e);
+      toast("Error generating PDF", "error");
+    }
+    setPdfGenerating(false);
+  };
+
+  const openReturnModal = async (record, type) => {
+    if (type === 'sale') {
+      const fullSale = await window.electronAPI.sales.getByInvoice(record.invoice_number);
+      if (fullSale) {
+        setSelectedSale(fullSale);
+        const items = fullSale.items.map(item => {
+          const returned = item.returned_quantity || 0;
+          const available = item.quantity - returned;
+          return {
+            ...item,
+            available_qty: available,
+            quantity: available // Auto-select full available quantity
+          };
+        });
+        setReturnItems(items);
+        setShowSalesReturn(true);
+      }
+    } else {
+      setSelectedPurchase(record);
+      const items = (record.items || []).map(i => ({ 
+        ...i, 
+        available_qty: i.quantity, 
+        quantity: i.quantity // Auto-select full quantity
+      }));
+      setReturnItems(items);
+      setShowPurchaseReturn(true);
+    }
+    setReturnReason('');
+  };
+
+  const handleCreateSaleReturn = async () => {
+    const itemsToReturn = returnItems.filter(i => i.quantity > 0);
+    if (itemsToReturn.length === 0) return;
+    setSavingReturn(true);
+    try {
+      const totalAmount = itemsToReturn.reduce((sum, i) => sum + (i.quantity * i.price), 0);
+      const res = await window.electronAPI.returns.createSaleReturn({
+        sale_id: selectedSale.id,
+        party_id: selectedSale.party_id,
+        total_amount: totalAmount,
+        items: itemsToReturn.map(i => ({
+          product_id: i.product_id,
+          product_name: i.product_name,
+          quantity: i.quantity,
+          price: i.price
+        })),
+        reason: returnReason
+      });
+      if (res.success) {
+        toast("Return processed successfully!", "success");
+        setShowSalesReturn(false);
+        fetchReport();
+      } else {
+        toast(res.error || "Failed to process return", "error");
+      }
+    } catch (e) {
+      toast("Error: " + e.message, "error");
+    }
+    setSavingReturn(false);
+  };
+
+  const handleCreatePurchaseReturn = async () => {
+    const itemsToReturn = returnItems.filter(i => i.quantity > 0);
+    if (itemsToReturn.length === 0) return;
+    setSavingReturn(true);
+    try {
+      const totalAmount = itemsToReturn.reduce((sum, i) => sum + (i.quantity * i.price), 0);
+      const res = await window.electronAPI.returns.createPurchaseReturn({
+        purchase_id: selectedPurchase.id,
+        party_id: selectedPurchase.party_id,
+        total_amount: totalAmount,
+        items: itemsToReturn.map(i => ({
+          product_id: i.product_id,
+          product_name: i.product_name,
+          quantity: i.quantity,
+          price: i.price
+        })),
+        reason: returnReason
+      });
+      if (res.success) {
+        toast("Return processed successfully!", "success");
+        setShowPurchaseReturn(false);
+        fetchReport();
+      } else {
+        toast(res.error || "Failed to process return", "error");
+      }
+    } catch (e) {
+      toast("Error: " + e.message, "error");
+    }
+    setSavingReturn(false);
+  };
+
   return (
-    <div className="flex flex-col gap-8 md:p-2 lg:p-4 animate-in">
+    <div className="flex flex-col gap-10 md:p-2 lg:p-4">
       <header className="page-header">
         <div>
           <h2>Business Intelligence</h2>
@@ -219,23 +265,22 @@ export default function Reports({ profile }) {
       </header>
 
       <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v); setData(null); }} className="w-full">
-        <TabsList className="flex w-fit p-1.5 bg-slate-100 rounded-2xl mb-10 border border-slate-200/50">
+        <TabsList className="flex w-fit p-1.5 bg-slate-100 rounded-2xl mb-10 border border-slate-200/50 shadow-inner">
           <TabsTrigger value="sales" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
-            <ShoppingCart size={18} /> Sales Report
+            <ShoppingCart size={18} /> Sales
           </TabsTrigger>
           <TabsTrigger value="purchases" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
-            <TruckIcon size={18} /> Purchase Report
+            <Truck size={18} /> Purchases
           </TabsTrigger>
           <TabsTrigger value="monthly" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
-            <FileBarChart size={18} /> Monthly Stats
+            <FileBarChart size={18} /> Stats
           </TabsTrigger>
-          <TabsTrigger value="stock" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
-            <Package size={18} /> Inventory Status
+          <TabsTrigger value="returns" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-orange-600 data-[state=active]:shadow-lg transition-all">
+            <RotateCcw size={18} /> Returns
           </TabsTrigger>
         </TabsList>
 
         <div className="space-y-10">
-          {/* Filtering Section */}
           {(activeTab === 'sales' || activeTab === 'purchases') && (
             <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-visible">
               <CardContent className="p-10 flex flex-col md:flex-row items-end justify-between gap-8">
@@ -255,17 +300,62 @@ export default function Reports({ profile }) {
                     </div>
                   </div>
                 </div>
-                <Button onClick={fetchReport} disabled={loading} className="btn-primary h-14 px-10 rounded-2xl gap-3 min-w-[200px]">
-                  {loading ? 'Processing...' : <><FileBarChart size={20} /> Run Analysis</>}
-                </Button>
+                <div className="flex gap-4">
+                  <Button onClick={fetchReport} disabled={loading} className="btn-primary h-14 px-10 rounded-2xl gap-3 flex-1 md:flex-none">
+                    {loading ? 'Processing...' : <><FileBarChart size={20} /> Run Analysis</>}
+                  </Button>
+                  {data && (activeTab === 'sales' || activeTab === 'stock' || activeTab === 'purchases') && (
+                    <Button 
+                      onClick={handleDownloadReportPDF} 
+                      disabled={pdfGenerating}
+                      variant="outline" 
+                      className="h-14 px-10 rounded-2xl gap-3 border-slate-200 text-slate-700 hover:bg-slate-50 font-black"
+                    >
+                      <Download size={20} className="text-blue-600" /> 
+                      <span className="hidden md:inline">Export PDF</span>
+                    </Button>
+                  )}
+                </div>
               </CardContent>
             </Card>
           )}
 
-          {/* Report Data Views */}
           {data ? (
             <div className="space-y-10 animate-in">
-              {/* Metrics */}
+              {activeTab === 'monthly' && (
+                <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+                  <CardHeader className="p-10 pb-2">
+                    <CardTitle className="text-xl font-black">Performance Visualization</CardTitle>
+                    <CardDescription className="text-base font-bold text-slate-400">Cash Inflow vs Outflow Trend</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-10 h-[400px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={data} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorPurchases" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.1}/>
+                            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                        <XAxis dataKey="month" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontWeight: 'bold', fontSize: 12}} dy={10} />
+                        <YAxis axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontWeight: 'bold', fontSize: 12}} />
+                        <Tooltip 
+                          contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '12px' }}
+                          itemStyle={{ fontWeight: 'black' }}
+                        />
+                        <Area type="monotone" dataKey="sales" name="Sales" stroke="#10b981" strokeWidth={4} fillOpacity={1} fill="url(#colorSales)" />
+                        <Area type="monotone" dataKey="purchases" name="Stock Inflow" stroke="#f43f5e" strokeWidth={4} fillOpacity={1} fill="url(#colorPurchases)" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              )}
+
               {(activeTab === 'sales' || activeTab === 'purchases' || activeTab === 'stock') && (
                 <div className="metric-grid">
                   {(activeTab === 'sales' || activeTab === 'purchases') && (
@@ -309,8 +399,11 @@ export default function Reports({ profile }) {
                       <div className="metric-card">
                         <div className="metric-icon blue"><Wallet size={24} /></div>
                         <div>
-                          <p className="metric-sub">Cash Received</p>
+                          <p className="metric-sub">Total Cash Inflow</p>
                           <h3 className="metric-value">{CURRENCY}{(data.summary?.cash_received || 0).toLocaleString('en-IN')}</h3>
+                          <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                            Sales: {CURRENCY}{data.summary?.sales_cash?.toLocaleString()} | Party: {CURRENCY}{data.summary?.party_collections?.toLocaleString()}
+                          </div>
                         </div>
                       </div>
                       <div className="metric-card">
@@ -320,6 +413,7 @@ export default function Reports({ profile }) {
                           <h3 className="metric-value text-emerald-600">
                             {CURRENCY}{(data.summary?.profit || 0).toLocaleString('en-IN')}
                           </h3>
+                          <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Calculated Net</div>
                         </div>
                       </div>
                     </>
@@ -327,7 +421,6 @@ export default function Reports({ profile }) {
                 </div>
               )}
 
-              {/* Data Table */}
               <div className="table-wrap">
                 {activeTab === 'sales' && (
                   <table>
@@ -342,38 +435,67 @@ export default function Reports({ profile }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {data.sales?.map((s) => (
+                      {data.sales?.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((s) => (
                         <tr key={s.id} className="hover:bg-slate-50 transition-colors">
                           <td>
                             <div className="font-black text-primary">#{s.invoice_number}</div>
+                            {s.returned_total > 0 && (
+                              <Badge className="bg-orange-100 text-orange-600 text-[9px] font-black uppercase h-4 px-1.5 rounded-md border-orange-200">Returned</Badge>
+                            )}
                             <div className="text-[11px] font-bold text-slate-400 mt-0.5">{new Date(s.date).toLocaleDateString('en-IN')}</div>
                           </td>
                           <td className="font-bold text-slate-900">{s.customer_name || 'Counter Sale'}</td>
                           <td className="text-right font-medium text-slate-500">{CURRENCY}{s.total_gst?.toLocaleString()}</td>
-                          <td className="text-right font-black text-slate-900 text-base">{CURRENCY}{s.total_amount?.toLocaleString()}</td>
+                          <td className="text-right font-black text-slate-900 text-base">{CURRENCY}{(s.total_amount - (s.returned_total || 0)).toLocaleString()}</td>
                           <td className="text-center">
                             <Badge variant="outline" className="rounded-xl font-black bg-slate-50">{s.payment_mode}</Badge>
                           </td>
                           <td className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex justify-end gap-1.5">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={async () => {
+                                  if (!s) return;
+                                  const total = (s.total_amount || 0) - (s.returned_total || 0);
+                                  const msg = `Hello ${s.customer_name || 'Customer'},\nYour invoice #${s.invoice_number || ''} for ${CURRENCY}${total.toLocaleString()} from ${profile?.business_name || 'InBill'} is available. Thank you!`;
+                                  const phone = s.customer_phone || '';
+                                  if (!phone) {
+                                    toast("No phone number found for this customer", "info");
+                                    return;
+                                  }
+                                  window.open(`https://wa.me/${phone.length === 10 ? '91' + phone : phone}?text=${encodeURIComponent(msg)}`, '_blank');
+                                }}
+                                className="h-9 w-9 p-0 text-emerald-600 hover:bg-emerald-50 rounded-xl"
+                                title="Share on WhatsApp"
+                              >
+                                <MessageCircle size={16} />
+                              </Button>
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => handleDownloadPDF(s)} 
                                 disabled={pdfGenerating}
-                                className="text-blue-600 font-black gap-2 hover:bg-blue-50"
+                                className="h-9 w-9 p-0 text-blue-600 hover:bg-blue-50 rounded-xl"
+                                title="Download PDF"
                               >
-                                <Download size={14} /> PDF
+                                <DownloadIcon size={16} />
                               </Button>
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
                                 onClick={() => handlePrintInvoice(s)} 
-                                className="text-slate-600 font-black gap-2 hover:bg-slate-100"
+                                className="h-9 w-9 p-0 text-slate-600 hover:bg-slate-50 rounded-xl"
+                                title="Print Invoice"
                               >
-                                <Printer size={14} /> Print
+                                <Printer size={16} />
                               </Button>
-                              <Button variant="ghost" size="sm" onClick={() => handleInitiateSalesReturn(s)} className="text-rose-600 font-black gap-2 hover:bg-rose-50">
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => openReturnModal(s, 'sale')} 
+                                className="h-9 px-3 text-orange-600 font-bold gap-2 hover:bg-orange-50 rounded-xl"
+                              >
                                 <RotateCcw size={14} /> Return
                               </Button>
                             </div>
@@ -384,6 +506,19 @@ export default function Reports({ profile }) {
                   </table>
                 )}
 
+                {activeTab === 'sales' && data.sales?.length > itemsPerPage && (
+                  <div className="p-6 bg-slate-50 border-t flex items-center justify-between">
+                    <p className="text-xs font-bold text-slate-500">
+                      Showing {Math.min(data.sales.length, (currentPage - 1) * itemsPerPage + 1)} - {Math.min(data.sales.length, currentPage * itemsPerPage)} of {data.sales.length} invoices
+                    </p>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="h-10 rounded-xl font-bold">Prev</Button>
+                      <span className="flex items-center px-4 font-black text-sm">Page {currentPage}</span>
+                      <Button variant="outline" size="sm" disabled={currentPage * itemsPerPage >= data.sales.length} onClick={() => setCurrentPage(p => p + 1)} className="h-10 rounded-xl font-bold">Next</Button>
+                    </div>
+                  </div>
+                )}
+
                 {activeTab === 'purchases' && (
                   <table>
                     <thead>
@@ -391,18 +526,98 @@ export default function Reports({ profile }) {
                         <th>Date</th>
                         <th>Supplier</th>
                         <th className="text-right">Investment</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {data.purchases?.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((p) => (
+                        <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="font-bold text-slate-500">{new Date(p.date).toLocaleDateString('en-IN')}</td>
+                          <td className="font-bold text-slate-900">{p.supplier_name || 'Generic Vendor'}</td>
+                          <td className="text-right font-black text-rose-600 text-lg">
+                            <div className="flex items-center justify-end gap-4">
+                              <span>{CURRENCY}{p.total_amount?.toLocaleString()}</span>
+                              <div className="flex items-center gap-2">
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={() => openReturnModal(p, 'purchase')} 
+                                  className="text-orange-600 font-black gap-2 hover:bg-orange-50 h-10 px-4 rounded-xl"
+                                >
+                                  <RotateCcw size={14} /> Return
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm" 
+                                  onClick={async () => {
+                                    const ok = await confirm({
+                                      title: "Delete Purchase?",
+                                      message: "Are you sure? This will reverse stock and supplier balance.",
+                                      confirmText: "Delete",
+                                      type: "danger"
+                                    });
+                                    if(ok) {
+                                      const res = await window.electronAPI.purchases.delete(p.id);
+                                      if(res.success) {
+                                        toast("Purchase deleted!", "success");
+                                        fetchReport();
+                                      }
+                                    }
+                                  }} 
+                                  className="text-rose-600 font-black gap-2 hover:bg-rose-50 h-10 px-4 rounded-xl"
+                                >
+                                  <Trash2 size={14} /> Delete
+                                </Button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+
+                {activeTab === 'returns' && (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Invoice #</th>
+                        <th>Customer</th>
+                        <th className="text-right">Return Value</th>
+                        <th>Reason</th>
                         <th className="text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {data.purchases?.map((p) => (
-                        <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                          <td className="font-bold text-slate-900">{new Date(p.date).toLocaleDateString('en-IN')}</td>
-                          <td className="font-bold text-slate-600">{p.supplier_name || 'Generic Vendor'}</td>
-                          <td className="text-right font-black text-rose-600 text-lg">{CURRENCY}{p.total_amount?.toLocaleString()}</td>
+                      {(data || []).map((r) => (
+                        <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="font-bold text-slate-500">{new Date(r.date).toLocaleDateString('en-IN')}</td>
+                          <td className="font-black text-slate-900">#{r.invoice_number || 'N/A'}</td>
+                          <td className="font-bold text-slate-600">{r.customer_name || 'Generic'}</td>
+                          <td className="text-right font-black text-orange-600">{CURRENCY}{r.total_amount?.toLocaleString()}</td>
+                          <td className="text-xs font-bold text-slate-400 italic">{r.reason || 'No reason provided'}</td>
                           <td className="text-right">
-                            <Button variant="ghost" size="sm" onClick={() => handleInitiatePurchaseReturn(p)} className="text-rose-600 font-black gap-2 hover:bg-rose-50">
-                              <RotateCcw size={14} /> Return
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  title: "Undo Return?",
+                                  message: "Are you sure you want to UNDO this return? This will restore the customer debt and reduce stock.",
+                                  confirmText: "Undo",
+                                  type: "warning"
+                                });
+                                if(ok) {
+                                  const res = await window.electronAPI.returns.deleteSaleReturn(r.id);
+                                  if(res.success) {
+                                    toast("Return undone successfully!", "success");
+                                    fetchReport();
+                                  }
+                                }
+                              }}
+                              className="text-rose-600 hover:bg-rose-50 rounded-xl h-10 px-4 font-bold"
+                            >
+                              <Trash2 size={14} /> Undo
                             </Button>
                           </td>
                         </tr>
@@ -494,81 +709,141 @@ export default function Reports({ profile }) {
 
       {/* Sales Return Modal */}
       <Dialog open={showSalesReturn} onOpenChange={setShowSalesReturn}>
-        <DialogContent className="sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl rounded-[3rem] bg-white">
-          <DialogHeader className="p-10 bg-slate-900 text-white">
+        <DialogContent className="max-w-2xl rounded-[2.5rem] p-10">
+          <DialogHeader>
             <DialogTitle className="text-2xl font-black flex items-center gap-4">
-              <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center">
-                <RotateCcw size={24} className="text-blue-400" />
-              </div>
-              Sales Return — #{selectedSale?.invoice_number}
+              <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><RotateCcw size={24}/></div>
+              Process Sales Return
             </DialogTitle>
-            <DialogDescription className="text-slate-400 font-bold text-base mt-2">
-              Process returns to inventory and calculate refund amounts
+            <DialogDescription className="text-base font-bold text-slate-400 mt-2">
+              Reverse stock and update customer balance for Invoice #{selectedSale?.invoice_number}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-10 space-y-8 max-h-[60vh] overflow-y-auto bg-slate-50/30">
-            <div className="table-wrap border-slate-200 shadow-none rounded-2xl overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 border-b">
-                  <tr>
-                    <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Item</th>
-                    <th className="p-4 text-center font-black text-slate-400 text-[10px] uppercase w-20">Sold</th>
-                    <th className="p-4 text-center font-black text-slate-400 text-[10px] uppercase w-24">Return</th>
-                    <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase w-24">Refund</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {returnItems.map((item) => (
-                    <tr key={item.product_id} className="bg-white">
-                      <td className="p-4">
-                        <p className="font-black text-slate-900">{item.product_name}</p>
-                        <p className="text-[11px] font-bold text-slate-400 mt-0.5">Rate: {CURRENCY}{item.price}</p>
-                      </td>
-                      <td className="p-4 text-center font-black text-slate-400">{item.quantity}</td>
-                      <td className="p-4">
-                        <Input 
-                          type="number" 
-                          className="h-10 text-center font-black rounded-xl border-slate-200" 
-                          value={item.return_qty} 
-                          onChange={(e) => updateSalesReturnQty(item.product_id, parseInt(e.target.value) || 0)} 
-                          max={item.quantity}
-                          min={0}
-                        />
-                      </td>
-                      <td className="p-4 text-right font-black text-slate-900 text-base">
-                        {CURRENCY}{(item.price * item.return_qty).toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          <div className="space-y-8 my-8">
+            <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Select Items to Return</h4>
+              <div className="space-y-4">
+                {returnItems.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <div>
+                      <div className="font-black text-slate-900">{item.product_name}</div>
+                      <div className="text-[10px] font-black text-emerald-600 uppercase tracking-wider">
+                        Available for Return: {item.available_qty}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <Input 
+                        type="number" 
+                        min="0" 
+                        max={item.available_qty}
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 0;
+                          const newItems = [...returnItems];
+                          newItems[idx].quantity = Math.min(val, item.available_qty);
+                          setReturnItems(newItems);
+                        }}
+                        className="w-24 h-12 text-center font-black rounded-xl"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="form-group">
-              <label className="form-label">Internal Return Note</label>
-              <Input 
-                placeholder="Reason for return (e.g. Defective, Wrong size)" 
+              <label className="form-label">Reason for Return</label>
+              <textarea 
                 value={returnReason}
                 onChange={(e) => setReturnReason(e.target.value)}
-                className="form-input h-14"
+                placeholder="e.g. Damaged product, Customer changed mind..."
+                className="form-input min-h-[100px] py-4 rounded-3xl"
+              />
+            </div>
+
+            <div className="flex justify-between items-center bg-orange-50 p-6 rounded-3xl border border-orange-100">
+              <span className="text-orange-900 font-black">Total Return Value</span>
+              <span className="text-2xl font-black text-orange-600">
+                {CURRENCY}{returnItems.reduce((sum, i) => sum + (i.quantity * i.price), 0).toLocaleString()}
+              </span>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-4">
+            <Button variant="ghost" onClick={() => setShowSalesReturn(false)} className="h-14 px-8 rounded-2xl font-black">Cancel</Button>
+            <Button 
+              onClick={handleCreateSaleReturn} 
+              disabled={savingReturn || returnItems.every(i => i.quantity === 0)}
+              className="h-14 px-10 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black gap-3 shadow-xl shadow-orange-200"
+            >
+              {savingReturn ? 'Processing...' : <><Check size={20} /> Finalize Return</>}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Purchase Return Modal */}
+      <Dialog open={showPurchaseReturn} onOpenChange={setShowPurchaseReturn}>
+        <DialogContent className="max-w-2xl rounded-[2.5rem] p-10">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black flex items-center gap-4">
+              <div className="p-3 bg-orange-100 text-orange-600 rounded-2xl"><RotateCcw size={24}/></div>
+              Process Purchase Return
+            </DialogTitle>
+            <DialogDescription className="text-base font-bold text-slate-400 mt-2">
+              Send items back to supplier and update your ledger
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-8 my-8">
+            <div className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-4">Select Items to Return</h4>
+              <div className="space-y-4">
+                {returnItems.map((item, idx) => (
+                  <div key={idx} className="flex items-center justify-between bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                    <div>
+                      <div className="font-black text-slate-900">{item.product_name}</div>
+                      <div className="text-xs font-bold text-slate-400">Purchased: {item.quantity} | {CURRENCY}{item.price}</div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <Input 
+                        type="number" 
+                        min="0"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const newItems = [...returnItems];
+                          newItems[idx].quantity = parseInt(e.target.value) || 0;
+                          setReturnItems(newItems);
+                        }}
+                        className="w-24 h-12 text-center font-black rounded-xl"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Return Reason</label>
+              <textarea 
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                placeholder="Reason for sending items back to supplier..."
+                className="form-input min-h-[100px] py-4 rounded-3xl"
               />
             </div>
           </div>
 
-          <DialogFooter className="p-10 bg-white border-t flex flex-col sm:flex-row items-center justify-between gap-6">
-            <div className="text-center sm:text-left">
-              <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest mb-1">Estimated Refund</p>
-              <p className="text-4xl font-black text-blue-600 tracking-tight">
-                {CURRENCY}{returnItems.reduce((sum, i) => sum + (i.price * i.return_qty), 0).toLocaleString()}
-              </p>
-            </div>
-            <div className="flex gap-3 w-full sm:w-auto">
-              <Button variant="outline" className="font-black h-14 px-8 rounded-2xl flex-1 sm:flex-none" onClick={() => setShowSalesReturn(false)}>Cancel</Button>
-              <Button className="btn-primary h-14 px-10 rounded-2xl flex-1 sm:flex-none gap-2" onClick={handleSaveSalesReturn} disabled={savingReturn}>
-                {savingReturn ? 'Processing...' : <><RotateCcw size={18} strokeWidth={3} /> Complete Return</>}
-              </Button>
-            </div>
+          <DialogFooter className="gap-4">
+            <Button variant="ghost" onClick={() => setShowPurchaseReturn(false)} className="h-14 px-8 rounded-2xl font-black">Cancel</Button>
+            <Button 
+              onClick={handleCreatePurchaseReturn} 
+              disabled={savingReturn || returnItems.every(i => i.quantity === 0)}
+              className="h-14 px-10 bg-orange-600 hover:bg-orange-700 text-white rounded-2xl font-black gap-3 shadow-xl shadow-orange-200"
+            >
+              {savingReturn ? 'Processing...' : <><Check size={20} /> Confirm Stock Removal</>}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

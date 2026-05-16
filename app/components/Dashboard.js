@@ -4,7 +4,7 @@ import {
   Clock, TrendingUp, Plus, ArrowRight, Wallet,
   IndianRupee, ShoppingCart, Package, AlertTriangle, Check,
   ArrowDownLeft, ArrowUpRight, Users, ScanLine, TruckIcon,
-  ChevronRight, ArrowUpCircle, Target
+  ChevronRight, ArrowUpCircle, Target, Sparkles, Brain, RefreshCw
 } from 'lucide-react';
 
 // shadcn/ui components
@@ -57,6 +57,14 @@ export default function Dashboard({ onNavigate, profile }) {
           <p>Real-time analytics for {profile?.business_name || 'your business'}</p>
         </div>
         <div className="flex gap-3">
+          <Button 
+            variant="outline" 
+            onClick={loadDashboard} 
+            className="h-14 px-6 rounded-2xl gap-3 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all active:scale-95"
+          >
+            <RefreshCw size={20} className={loading ? "animate-spin" : ""} />
+            <span className="hidden md:inline">Refresh Stats</span>
+          </Button>
           <Button onClick={() => onNavigate('billing')} className="btn-primary h-14 px-8 rounded-2xl gap-3 shadow-blue-500/20">
             <Plus size={20} strokeWidth={3} /> New Transaction
           </Button>

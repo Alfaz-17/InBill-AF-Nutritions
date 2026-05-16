@@ -2,9 +2,9 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, Package,
-  User, CreditCard, Printer, X, Check, FileText, ExternalLink, Wallet, ScanLine, Settings2, IndianRupee
+  User, CreditCard, Printer, X, Check, FileText, ExternalLink, Wallet, ScanLine, Settings2, IndianRupee, MessageCircle
 } from 'lucide-react';
-import { toast } from "sonner";
+import { useToast } from './ToastProvider';
 import { getInvoiceHTML as generateInvoiceHTML } from './InvoiceTemplates';
 
 // shadcn/ui components
@@ -22,6 +22,7 @@ export default function Billing({
   customerData, setCustomerData, 
   paymentData, setPaymentData 
 }) {
+  const { toast } = useToast();
   const [products, setProducts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -93,20 +94,23 @@ export default function Billing({
       toast.error("Item out of stock");
       return;
     }
-    setCart((prev) => {
-      const exists = prev.find((c) => c.product_id === product.id);
-      if (exists) {
-        if (exists.quantity >= product.quantity) {
-          toast.warning("Cannot add more than available stock");
-          return prev;
-        }
-        toast.success(`Added another ${product.product_name}`);
-        return prev.map((c) =>
-          c.product_id === product.id ? { ...c, quantity: c.quantity + 1 } : c
-        );
+
+    const existingItem = cart.find((c) => c.product_id === product.id);
+
+    if (existingItem) {
+      if (existingItem.quantity >= product.quantity) {
+        toast.warning("Cannot add more than available stock");
+        return;
       }
+      toast.success(`Added another ${product.product_name}`);
+      setCart((prev) =>
+        prev.map((c) =>
+          c.product_id === product.id ? { ...c, quantity: c.quantity + 1 } : c
+        )
+      );
+    } else {
       toast.success(`Added ${product.product_name} to cart`);
-      return [
+      setCart((prev) => [
         ...prev,
         {
           product_id: product.id,
@@ -125,8 +129,8 @@ export default function Billing({
           maxQty: product.quantity,
           custom_fields: product.custom_fields || '{}'
         },
-      ];
-    });
+      ]);
+    }
   };
 
   const updateCartQty = (productId, delta) => {
@@ -312,11 +316,23 @@ export default function Billing({
       const html = generateInvoiceHTML(saleResult, profile);
       const res = await window.electronAPI.pdf.generate(html);
       if (res.success) {
-        await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${saleResult.invoiceNumber}.pdf`);
+        await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${saleResult.invoice_number || saleResult.invoiceNumber}.pdf`);
         toast.success("PDF Saved Successfully!");
       } else { toast.error("Failed to generate PDF"); }
     } catch (e) { console.error(e); toast.error("Error generating PDF"); }
     setPdfGenerating(false);
+  };
+
+  const handlePrint = async () => {
+    if (!saleResult || typeof window === 'undefined' || !window.electronAPI) return;
+    try {
+      const html = generateInvoiceHTML(saleResult, profile);
+      await window.electronAPI.ai.printInvoice(html);
+      toast.success("Printing invoice...");
+    } catch (e) {
+      console.error(e);
+      toast.error("Print failed");
+    }
   };
 
   return (
@@ -393,8 +409,14 @@ export default function Billing({
                           </div>
                           
                           <div className="flex items-end justify-between pt-3 border-t border-slate-100">
-                            <div>
+                            <div className="flex flex-col">
                               <p className="text-xl font-black text-slate-900">{CURRENCY}{p.selling_price}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <p className="text-[9px] font-black text-slate-400 uppercase">Cost: {CURRENCY}{p.cost_price}</p>
+                                {p.batch_number && (
+                                  <p className="text-[9px] font-black text-blue-500 bg-blue-50 px-1 rounded-sm uppercase">{p.batch_number}</p>
+                                )}
+                              </div>
                             </div>
                             <Badge className={`${p.quantity <= 0 ? 'bg-red-500' : 'bg-green-500'} hover:bg-opacity-100 text-[9px] font-black`}>
                               {p.quantity <= 0 ? 'OUT' : `${p.quantity} IN STOCK`}
@@ -425,25 +447,25 @@ export default function Billing({
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-6">
-                  <div className="grid sm:grid-cols-3 gap-4">
+                  <div className="grid sm:grid-cols-3 gap-6 items-end">
                     <div className="relative">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">
                         Customer Name <span className="text-red-500">*</span>
                       </label>
                       <Input 
-                        placeholder="Full Name / Business Name (Required)" 
+                        placeholder="Name / Business Name" 
                         value={partySearch}
                         onChange={(e) => {
                           setPartySearch(e.target.value);
                           setCustomerName(e.target.value);
                           setShowPartyDropdown(true);
                         }}
-                        className="font-semibold"
+                        className="h-12 font-bold bg-slate-50 border-slate-100 focus:bg-white transition-all"
                       />
                       {showPartyDropdown && parties.length > 0 && (
-                        <Card className="absolute top-[calc(100%+4px)] left-0 w-full z-50 shadow-xl border-slate-200 overflow-hidden">
+                        <Card className="absolute top-[calc(100%+4px)] left-0 w-full z-50 shadow-2xl border-slate-200 overflow-hidden rounded-2xl animate-in fade-in zoom-in-95">
                           {parties.filter(p => !partySearch || p.name.toLowerCase().includes(partySearch.toLowerCase())).slice(0, 5).map(p => (
-                            <div key={p.id} className="p-3 hover:bg-slate-50 cursor-pointer border-b last:border-0" onMouseDown={() => {
+                            <div key={p.id} className="p-3 hover:bg-slate-50 cursor-pointer border-b last:border-0 transition-colors" onMouseDown={() => {
                               setSelectedParty(p);
                               setPartySearch(p.name);
                               setCustomerName(p.name);
@@ -451,15 +473,35 @@ export default function Billing({
                               setCustomerAddress(p.address || '');
                               setShowPartyDropdown(false);
                             }}>
-                              <p className="text-sm font-bold">{p.name}</p>
-                              <p className="text-xs text-slate-500 font-medium">{p.phone || 'No phone'}</p>
+                              <p className="text-sm font-bold text-slate-900">{p.name}</p>
+                              <p className="text-[10px] text-slate-400 font-black uppercase">{p.phone || 'No phone'}</p>
                             </div>
                           ))}
                         </Card>
                       )}
                     </div>
-                    <Input placeholder="Mobile Number" value={customerPhone} onChange={(e) => setCustomerPhone(e.target.value)} />
-                    <Input placeholder="Address / City" value={customerAddress} onChange={(e) => setCustomerAddress(e.target.value)} />
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">
+                        Mobile Number
+                      </label>
+                      <Input 
+                        placeholder="Phone (WhatsApp)" 
+                        value={customerPhone} 
+                        onChange={(e) => setCustomerPhone(e.target.value)} 
+                        className="h-12 font-bold bg-slate-50 border-slate-100 focus:bg-white transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">
+                        Address / City
+                      </label>
+                      <Input 
+                        placeholder="Location" 
+                        value={customerAddress} 
+                        onChange={(e) => setCustomerAddress(e.target.value)} 
+                        className="h-12 font-bold bg-slate-50 border-slate-100 focus:bg-white transition-all"
+                      />
+                    </div>
                   </div>
 
                   <div className="mt-8">
@@ -667,87 +709,77 @@ export default function Billing({
       </Tabs>
 
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
-        <DialogContent className="max-w-[90vw] sm:max-w-2xl max-h-[90vh] p-0 overflow-hidden border-none shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)] rounded-[2.5rem] bg-white transition-all overflow-y-auto">
+        <DialogContent className="max-w-[400px] p-0 overflow-hidden border-none shadow-2xl rounded-[2rem] bg-white animate-in zoom-in-95 duration-200">
           <DialogHeader className="sr-only">
             <DialogTitle>Sale Completed</DialogTitle>
           </DialogHeader>
 
-          <div className="relative bg-slate-900 p-8 sm:p-12 flex flex-col items-center text-white text-center overflow-hidden">
-            {/* Proper Cross Button */}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className="absolute top-4 right-4 z-50 h-10 w-10 rounded-2xl bg-white/5 hover:bg-white/10 text-white border border-white/10 backdrop-blur-md transition-all active:scale-95"
-              onClick={() => setShowSuccessModal(false)}
-            >
-              <X size={20} strokeWidth={2.5} />
-            </Button>
+          <div className="bg-slate-900 p-6 flex flex-col items-center text-white text-center relative overflow-hidden">
+            {/* Glossy background effect */}
+            <div className="absolute top-[-50%] left-[-50%] w-[200%] h-[200%] bg-gradient-to-br from-indigo-500/20 to-transparent rotate-12 pointer-events-none" />
             
-            <div className="relative w-20 h-20 sm:w-24 sm:h-24 bg-white/10 backdrop-blur-xl rounded-[2rem] flex items-center justify-center mb-6 shadow-2xl border border-white/10 animate-in zoom-in-50 duration-500">
-              <Check size={40} strokeWidth={4} className="text-emerald-400 drop-shadow-lg sm:w-12 sm:h-12" />
+            <div className="relative w-16 h-16 bg-emerald-500 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-emerald-500/40 animate-in bounce-in duration-500">
+              <Check size={32} strokeWidth={4} className="text-white" />
             </div>
             
-            <h2 className="relative text-3xl sm:text-4xl font-black tracking-tight mb-2">Sale Completed!</h2>
-            <p className="relative opacity-70 font-bold text-base sm:text-lg">Your invoice is ready and saved</p>
+            <h2 className="text-xl font-black tracking-tight">Invoice Generated!</h2>
+            <p className="opacity-60 text-xs font-bold uppercase tracking-widest mt-1">Order #{saleResult?.invoice_number}</p>
           </div>
           
-          <div className="p-6 sm:p-10 space-y-6 sm:space-y-8 bg-white">
-            <div className="bg-slate-50 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 text-center border border-slate-100 shadow-inner relative">
-              <p className="text-[10px] sm:text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Invoice Reference</p>
-              <p className="text-5xl sm:text-7xl font-black text-slate-900 tracking-tighter">#{saleResult?.invoice_number}</p>
-              
-              <div className="flex flex-wrap items-center justify-center gap-3 mt-6 sm:mt-8">
-                {saleResult?.due_amount <= 0 ? (
-                  <Badge className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
-                    <Check size={14} strokeWidth={3} /> FULLY PAID
-                  </Badge>
-                ) : saleResult?.paid_amount > 0 ? (
-                  <Badge className="bg-amber-50 text-amber-600 border border-amber-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
-                    <Check size={14} strokeWidth={3} /> PARTIAL PAYMENT
-                  </Badge>
-                ) : (
-                  <Badge className="bg-rose-50 text-rose-600 border border-rose-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
-                    <X size={14} strokeWidth={3} /> FULL CREDIT
-                  </Badge>
-                )}
-                {saleResult?.party_id && (
-                  <Badge className="bg-blue-50 text-blue-600 border border-blue-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
-                    <User size={14} /> LINKED TO LEDGER
-                  </Badge>
-                )}
-                <Badge className="bg-white text-slate-500 border border-slate-200 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
-                  <CreditCard size={14} /> {paymentMode}
-                </Badge>
+          <div className="p-6 space-y-4">
+            <div className="grid grid-cols-2 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+              <div className="text-center border-r border-slate-200">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Total Amount</p>
+                <p className="text-xl font-black text-slate-900">{CURRENCY}{saleResult?.grandTotal?.toLocaleString()}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter">Status</p>
+                <p className={`text-xs font-black uppercase ${saleResult?.due_amount <= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {saleResult?.due_amount <= 0 ? 'Fully Paid' : 'Credit Sale'}
+                </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-2">
+                <Button 
+                  className="h-12 gap-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 font-black shadow-lg shadow-indigo-100" 
+                  onClick={handlePrint}
+                >
+                  <Printer size={18} /> Print
+                </Button>
+                <Button 
+                  variant="outline"
+                  className="h-12 gap-2 rounded-xl border-slate-200 font-black text-slate-700 hover:bg-slate-50" 
+                  onClick={handleDownloadPDF} 
+                  disabled={pdfGenerating}
+                >
+                  <FileText size={18} className="text-blue-500" /> Download
+                </Button>
+              </div>
+              
               <Button 
-                size="lg" 
-                className="h-14 sm:h-16 text-base sm:text-lg gap-3 rounded-2xl shadow-xl shadow-emerald-500/20 bg-indigo-600 hover:bg-indigo-700 font-black transition-all active:scale-[0.98]" 
-                onClick={handleDownloadPDF} 
-                disabled={pdfGenerating}
-              >
-                <Printer size={20} />
-                {pdfGenerating ? 'Preparing...' : 'Print Invoice'}
-              </Button>
-              <Button 
-                variant="outline" 
-                size="lg" 
-                className="h-14 sm:h-16 text-base sm:text-lg gap-3 rounded-2xl border-slate-200 font-black text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all active:scale-[0.98]" 
+                variant="outline"
+                className="h-12 gap-2 rounded-xl border-emerald-100 bg-emerald-50/50 font-black text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200" 
                 onClick={() => {
-                  const msg = `Hello ${saleResult?.customer_name || 'Customer'},\nYour invoice #${saleResult?.invoiceNumber} for ${CURRENCY}${saleResult?.grandTotal} from ${profile?.business_name || 'us'} is ready.`;
-                  window.open(`https://wa.me/91${customerPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+                  if (!saleResult) return;
+                  const phone = saleResult.customer_phone || '';
+                  if (!phone) {
+                    toast.info("No phone number found for this customer");
+                    return;
+                  }
+                  const total = saleResult.grandTotal || 0;
+                  const msg = `Hello ${saleResult.customer_name || 'Customer'},\nYour invoice #${saleResult.invoice_number} for ${CURRENCY}${total.toLocaleString()} from ${profile?.business_name || 'InBill'} is ready. Thank you!`;
+                  window.open(`https://wa.me/${phone.length === 10 ? '91' + phone : phone}?text=${encodeURIComponent(msg)}`, '_blank');
                 }}
               >
-                <ExternalLink size={20} className="text-emerald-500" />
-                WhatsApp
+                <MessageCircle size={18} className="text-emerald-500" /> Share on WhatsApp
               </Button>
             </div>
 
             <Button 
               variant="ghost" 
-              className="w-full text-slate-400 font-black hover:text-slate-900 hover:bg-slate-50 h-12 rounded-xl transition-all" 
+              className="w-full text-slate-400 font-black hover:text-slate-900 h-10 rounded-xl" 
               onClick={() => { 
                 setShowSuccessModal(false); 
                 setViewMode('browse'); 
@@ -756,7 +788,7 @@ export default function Billing({
                 setPaymentData({ mode: 'Cash', paid: '' });
               }}
             >
-              Back to Billing Center
+              Done & New Sale
             </Button>
           </div>
         </DialogContent>

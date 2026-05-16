@@ -3,8 +3,11 @@ const { pathToFileURL } = require('url');
 const { GoogleGenAI } = require('@google/genai');
 const path = require('path');
 const fs = require('fs');
-const isDev = require('electron-is-dev');
-const { initDB, resetDB, productOps, saleOps, purchaseOps, statsOps, reportOps, expenseOps, partyOps, businessProfileOps, categoryOps, expenseCategoryOps, attributeOps, storageOps } = require('./db');
+const isDev = !app.isPackaged;
+const { db, initDB, resetDB, productOps, saleOps, purchaseOps, statsOps, reportOps, expenseOps, partyOps, returnOps, businessProfileOps, categoryOps, expenseCategoryOps, attributeOps, storageOps, syncToCloud, mobileAccessOps, authOps } = require('./db');
+
+// Disable GPU acceleration to prevent "Access Denied" errors on synced drives like OneDrive
+app.disableHardwareAcceleration();
 
 let mainWindow;
 
@@ -24,32 +27,120 @@ function createWindow() {
     show: false,
   });
 
-  const startUrl = isDev
-    ? 'http://localhost:3456'
-    : `file://${path.join(__dirname, '../out/index.html')}`;
-
-  mainWindow.loadURL(startUrl);
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:3456');
+    // mainWindow.webContents.openDevTools();
+  } else {
+    // In production, load index.html via the app:// protocol
+    mainWindow.loadURL('app://-/index.html');
+  }
 
   if (isDev) {
-    mainWindow.webContents.openDevTools();
+    mainWindow.show();
+  } else {
+    mainWindow.once('ready-to-show', () => {
+      mainWindow.show();
+    });
   }
 
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
 protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { standard: true, secure: true, bypassCSP: true, allowServiceWorkers: true, supportFetchAPI: true, corsEnabled: true, stream: true } },
   { scheme: 'local-file', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
 ]);
 
 app.whenReady().then(() => {
+  // Production File Protocol Handler
+  if (!isDev) {
+    protocol.handle('app', async (request) => {
+      try {
+        const url = new URL(request.url);
+        let pathname = url.pathname;
+        if (pathname.startsWith('/')) pathname = pathname.substring(1);
+        
+        // Normalize pathname for Windows and trailingSlash support
+        if (pathname === '' || pathname === '/') pathname = 'index.html';
+        
+        let filePath = path.join(__dirname, '../out', pathname);
+        
+        // Fallback logic for Next.js Static Export
+        if (!fs.existsSync(filePath)) {
+          // 1. Try appending .html (Next.js default for some routes)
+          if (fs.existsSync(filePath + '.html')) {
+            filePath += '.html';
+          } 
+          // 2. Try index.html in the folder (trailingSlash: true)
+          else if (fs.existsSync(path.join(filePath, 'index.html'))) {
+            filePath = path.join(filePath, 'index.html');
+          }
+          // 3. SPA Fallback: If it's not a static asset (no extension), serve root index.html
+          else if (!pathname.includes('.')) {
+            filePath = path.join(__dirname, '../out', 'index.html');
+          }
+        }
+
+        if (!fs.existsSync(filePath)) {
+          return new Response('Not Found', { status: 404 });
+        }
+
+        // Determine Mime Type
+        const ext = path.extname(filePath).toLowerCase();
+        const mimeTypes = {
+          '.html': 'text/html',
+          '.js': 'text/javascript',
+          '.css': 'text/css',
+          '.json': 'application/json',
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.svg': 'image/svg+xml',
+          '.ico': 'image/x-icon',
+          '.webp': 'image/webp',
+          '.woff': 'font/woff',
+          '.woff2': 'font/woff2',
+          '.ttf': 'font/ttf'
+        };
+        
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+        const data = fs.readFileSync(filePath);
+        
+        return new Response(data, {
+          status: 200,
+          headers: { 'Content-Type': contentType }
+        });
+      } catch (err) {
+        console.error('Protocol Handler Error:', err);
+        return new Response('Internal Server Error', { status: 500 });
+      }
+    });
+  }
   // Register local-file protocol to handle local asset loading
-  protocol.handle('local-file', (request) => {
+  // Register local-file protocol to handle local asset loading with standard URL structure
+  protocol.handle('local-file', async (request) => {
     try {
-      const url = request.url.replace('local-file://', '');
-      return net.fetch(pathToFileURL(decodeURIComponent(url)).toString());
+      const url = new URL(request.url);
+      const filePath = url.searchParams.get('path');
+      
+      if (!filePath) {
+        return new Response('Missing path', { status: 400 });
+      }
+
+      // Handle both absolute and potentially relative paths
+      const absolutePath = path.isAbsolute(filePath) ? filePath : path.join(process.cwd(), filePath);
+
+      if (!fs.existsSync(absolutePath)) {
+        console.warn('⚠️ local-file not found:', absolutePath);
+        return new Response('File not found', { status: 404 });
+      }
+
+      // Use pathToFileURL for net.fetch to handle special characters in paths correctly
+      return net.fetch(pathToFileURL(absolutePath).toString());
     } catch (e) {
       console.error('Protocol Error:', e);
+      return new Response('Internal Server Error', { status: 500 });
     }
   });
 
@@ -93,6 +184,7 @@ ipcMain.handle('purchases:create', async (_, data) => {
 });
 ipcMain.handle('purchases:getAll', () => purchaseOps.getAll());
 ipcMain.handle('purchases:getById', (_, id) => purchaseOps.getById(id));
+ipcMain.handle('purchases:delete', (_, id) => purchaseOps.delete(id));
 
 /* ───────── Updates IPC ───────── */
 ipcMain.handle('app:checkUpdate', async () => {
@@ -121,11 +213,20 @@ ipcMain.handle('expenses:delete', (_, id) => expenseOps.delete(id));
 /* ───────── Dashboard IPC ───────── */
 ipcMain.handle('stats:dashboard', () => statsOps.getDashboard());
 ipcMain.handle('stats:getMonthly', () => statsOps.getMonthlyStats());
+ipcMain.handle('stats:getAiSnapshot', () => statsOps.getAiSnapshot());
 
 /* ───────── Reports IPC ───────── */
 ipcMain.handle('reports:sales', (_, from, to) => reportOps.salesReport(from, to));
 ipcMain.handle('reports:purchases', (_, from, to) => reportOps.purchaseReport(from, to));
 ipcMain.handle('reports:stock', () => reportOps.stockReport());
+
+/* ───────── Returns IPC ───────── */
+ipcMain.handle('returns:createSaleReturn', (_, data) => returnOps.createSaleReturn(data));
+ipcMain.handle('returns:getAllSaleReturns', () => returnOps.getAllSaleReturns());
+ipcMain.handle('returns:deleteSaleReturn', (_, id) => returnOps.deleteSaleReturn(id));
+ipcMain.handle('returns:createPurchaseReturn', (_, data) => returnOps.createPurchaseReturn(data));
+ipcMain.handle('returns:getAllPurchaseReturns', () => returnOps.getAllPurchaseReturns());
+ipcMain.handle('returns:deletePurchaseReturn', (_, id) => returnOps.deletePurchaseReturn(id));
 
 /* ───────── Party IPC ───────── */
 ipcMain.handle('parties:getAll', (_, type) => partyOps.getAll(type));
@@ -136,6 +237,23 @@ ipcMain.handle('parties:delete', (_, id) => partyOps.delete(id));
 ipcMain.handle('parties:updateBalance', (_, id, amount) => partyOps.updateBalance(id, amount));
 ipcMain.handle('parties:getLedger', (_, id) => partyOps.getLedger(id));
 ipcMain.handle('parties:recordPayment', (_, data) => partyOps.recordPayment(data));
+
+/* ───────── Authentication IPC ───────── */
+ipcMain.handle('auth:check', () => {
+  const password = authOps.getPassword();
+  return { hasPassword: !!password };
+});
+ipcMain.handle('auth:verify', (_, password) => {
+  return authOps.verify(password);
+});
+ipcMain.handle('auth:setPassword', (_, password) => {
+  try {
+    authOps.setPassword(password);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
 
 /* ───────── Business Profile IPC ───────── */
 
@@ -336,14 +454,55 @@ ipcMain.handle('ai:parseInvoice', async (_, { base64, mimeType }) => {
   }
 });
 
-/* ── Gemini API Key Management ── */
+ipcMain.handle('ai:getInsights', async (_, snapshot) => {
+  try {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) return { success: false, error: "GEMINI_API_KEY not configured." };
+
+    const ai = new GoogleGenAI({ apiKey });
+    
+    const prompt = `
+      You are a world-class Business Intelligence Consultant for a small retail/trading business.
+      Analyze this business snapshot and provide 4-5 "SMART INSIGHTS" that are punchy, actionable, and helpful.
+      
+      Business Snapshot:
+      ${JSON.stringify(snapshot, null, 2)}
+      
+      RULES:
+      1. Be concise. One sentence per insight.
+      2. Identify trends (e.g., profit up/down, fast movers, stock risks, payment delays).
+      3. Use a professional yet encouraging tone.
+      4. Avoid jargon. Use plain business English.
+      5. Look for "hidden" patterns (e.g. if one category is 80% of revenue, mention it).
+      
+      Return ONLY a JSON array of strings:
+      ["Insight 1", "Insight 2", "Insight 3", "Insight 4"]
+    `;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ text: prompt }],
+      config: { responseMimeType: "application/json" },
+    });
+
+    const resultText = response.text || "[]";
+    return { success: true, insights: JSON.parse(resultText) };
+  } catch (err) {
+    console.error("AI Insights error:", err);
+    return { success: false, error: err.message };
+  }
+});
+
+/* ── Helper: Get API Key from DB ── */
 function getGeminiApiKey() {
-  return process.env.GEMINI_API_KEY || '';
+  const row = db.prepare('SELECT gemini_api_key FROM business_profile WHERE id = 1').get();
+  return row?.gemini_api_key || '';
 }
 
 /* ── Settings IPC ── */
 ipcMain.handle('settings:getGeminiKey', () => {
-  const key = getGeminiApiKey();
+  const row = db.prepare('SELECT gemini_api_key FROM business_profile WHERE id = 1').get();
+  const key = row?.gemini_api_key || '';
   if (!key) return { configured: false, maskedKey: '' };
   const masked = key.substring(0, 6) + '•'.repeat(Math.max(0, key.length - 10)) + key.substring(key.length - 4);
   return { configured: true, maskedKey: masked };
@@ -351,20 +510,51 @@ ipcMain.handle('settings:getGeminiKey', () => {
 
 ipcMain.handle('settings:setGeminiKey', (_, newKey) => {
   try {
-    const envPath = path.join(__dirname, '..', '.env.local');
-    let lines = [];
-    if (fs.existsSync(envPath)) {
-      const content = fs.readFileSync(envPath, 'utf8');
-      lines = content.split('\n').filter(l => !l.trim().startsWith('GEMINI_API_KEY='));
-    }
-    lines.push(`GEMINI_API_KEY=${newKey.trim()}`);
-    fs.writeFileSync(envPath, lines.filter(l => l.trim()).join('\n') + '\n');
-    process.env.GEMINI_API_KEY = newKey.trim();
+    db.prepare('UPDATE business_profile SET gemini_api_key = ? WHERE id = 1').run(newKey.trim());
     return { success: true };
   } catch (err) {
     return { success: false, error: err.message };
   }
 });
+
+/* ── Neon Cloud Configuration ── */
+ipcMain.handle('settings:getNeonConfig', () => {
+  const row = db.prepare('SELECT neon_db_url, use_cloud FROM business_profile WHERE id = 1').get();
+  return {
+    url: row?.neon_db_url || '',
+    useCloud: row?.use_cloud === 1
+  };
+});
+
+ipcMain.handle('settings:setNeonConfig', async (_, { url, useCloud }) => {
+  try {
+    // Clean URL: Remove 'psql', quotes, and leading/trailing spaces
+    let cleanUrl = (url || '').trim();
+    if (cleanUrl.startsWith('psql ')) {
+      cleanUrl = cleanUrl.replace(/^psql\s+['"]?|['"]?$/g, '');
+    } else {
+      cleanUrl = cleanUrl.replace(/^['"]|['"]$/g, '');
+    }
+    
+    db.prepare('UPDATE business_profile SET neon_db_url = ?, use_cloud = ? WHERE id = 1').run(cleanUrl, useCloud ? 1 : 0);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('settings:syncToCloud', async () => {
+  try {
+    return await syncToCloud();
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+/* ── Mobile Access Configuration ── */
+ipcMain.handle('mobile:getConfig', () => mobileAccessOps.get());
+ipcMain.handle('mobile:generate', () => mobileAccessOps.generate());
+ipcMain.handle('mobile:revoke', () => mobileAccessOps.revoke());
 
 ipcMain.handle('settings:resetData', () => {
   try {
@@ -376,35 +566,79 @@ ipcMain.handle('settings:resetData', () => {
 });
 
 ipcMain.handle('storage:export', async () => {
-  const { filePath } = await dialog.showSaveDialog({
-    title: 'Export Business Data',
-    defaultPath: `InBill_Backup_${new Date().toISOString().split('T')[0]}.json`,
-    filters: [{ name: 'JSON', extensions: ['json'] }]
-  });
-  
-  if (filePath) {
-    const data = storageOps.exportAll();
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-    return { success: true };
+  try {
+    const { filePath } = await dialog.showSaveDialog({
+      title: 'Export Business Data',
+      defaultPath: `InBill_Backup_${new Date().toISOString().split('T')[0]}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }]
+    });
+    
+    if (filePath) {
+      const data = storageOps.exportAll();
+      fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+      return { success: true };
+    }
+    return { success: false };
+  } catch (err) {
+    console.error('Export Error:', err);
+    return { success: false, error: err.message };
   }
-  return { success: false };
 });
 
 ipcMain.handle('storage:import', async () => {
-  const { filePaths } = await dialog.showOpenDialog({
-    title: 'Import Business Data',
-    filters: [{ name: 'JSON', extensions: ['json'] }],
-    properties: ['openFile']
-  });
+  try {
+    const { filePaths } = await dialog.showOpenDialog({
+      title: 'Import Business Data',
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+      properties: ['openFile']
+    });
 
-  if (filePaths && filePaths[0]) {
-    const content = fs.readFileSync(filePaths[0], 'utf8');
-    const data = JSON.parse(content);
-    storageOps.importAll(data);
-    return { success: true };
+    if (filePaths && filePaths[0]) {
+      const content = fs.readFileSync(filePaths[0], 'utf8');
+      const data = JSON.parse(content);
+      storageOps.importAll(data);
+      return { success: true };
+    }
+    return { success: false };
+  } catch (err) {
+    console.error('Import Error:', err);
+    return { success: false, error: err.message };
   }
-  return { success: false };
 });
+
+/* ── Helper: Resolve local-file protocol in HTML for PDF/Print ── */
+async function resolveLocalImages(html) {
+  // Regex to match local-file URLs and capture the path parameter
+  // It looks for path= followed by anything up to a quote, space, or &
+  const pattern = /local-file:\/\/[\?&]path=([^"'\s&]+)/g;
+  const matches = [...html.matchAll(pattern)];
+  let resolvedHtml = html;
+  
+  for (const match of matches) {
+    try {
+      const fullProtocolUrl = match[0];
+      const encodedPath = match[1];
+      const filePath = decodeURIComponent(encodedPath);
+      
+      if (filePath && fs.existsSync(filePath)) {
+        const buffer = fs.readFileSync(filePath);
+        const ext = path.extname(filePath).toLowerCase().replace('.', '');
+        let mime = 'image/png';
+        if (['jpg', 'jpeg'].includes(ext)) mime = 'image/jpeg';
+        else if (ext === 'webp') mime = 'image/webp';
+        else if (ext === 'svg') mime = 'image/svg+xml';
+        
+        const base64 = buffer.toString('base64');
+        const dataUri = `data:${mime};base64,${base64}`;
+        // Important: Replace ONLY the specific URL found
+        resolvedHtml = resolvedHtml.split(fullProtocolUrl).join(dataUri);
+      }
+    } catch (e) {
+      console.error('❌ Image Resolve Error:', e);
+    }
+  }
+  return resolvedHtml;
+}
 
 /* ───────── PDF Generation & Sharing IPC ───────── */
 ipcMain.handle('pdf:generate', async (_, html) => {
@@ -415,12 +649,23 @@ ipcMain.handle('pdf:generate', async (_, html) => {
     }
   });
 
+  let tempHtmlPath = null;
   try {
-    // We use a data URL to load the HTML content directly
-    await pdfWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    let finalHtml = html;
+    try {
+      finalHtml = await resolveLocalImages(html);
+    } catch (resolveErr) {
+      console.error('⚠️ resolveLocalImages failed, using original HTML:', resolveErr);
+    }
+
+    // Use a temporary file instead of data: URL to avoid length limits (crucial for large Base64 logos)
+    tempHtmlPath = path.join(app.getPath('temp'), `print_${Date.now()}.html`);
+    fs.writeFileSync(tempHtmlPath, finalHtml, 'utf8');
     
-    // Wait for content to render
-    await new Promise(resolve => setTimeout(resolve, 500));
+    await pdfWindow.loadURL(pathToFileURL(tempHtmlPath).toString());
+    
+    // Wait for content to render (Base64 images take a moment)
+    await new Promise(resolve => setTimeout(resolve, 1000));
 
     const options = {
       margins: { top: 0, bottom: 0, left: 0, right: 0 },
@@ -431,15 +676,18 @@ ipcMain.handle('pdf:generate', async (_, html) => {
     };
 
     const data = await pdfWindow.webContents.printToPDF(options);
-    const tempPath = path.join(app.getPath('temp'), `invoice_${Date.now()}.pdf`);
-    fs.writeFileSync(tempPath, data);
+    const tempPdfPath = path.join(app.getPath('temp'), `invoice_${Date.now()}.pdf`);
+    fs.writeFileSync(tempPdfPath, data);
     
-    return { success: true, filePath: tempPath, buffer: data.toString('base64') };
+    return { success: true, filePath: tempPdfPath, buffer: data.toString('base64') };
   } catch (err) {
-    console.error('PDF Gen Error:', err);
+    console.error('❌ PDF Gen Error:', err);
     return { success: false, error: err.message };
   } finally {
     if (pdfWindow) pdfWindow.destroy();
+    if (tempHtmlPath && fs.existsSync(tempHtmlPath)) {
+      try { fs.unlinkSync(tempHtmlPath); } catch (e) {}
+    }
   }
 });
 
@@ -460,31 +708,44 @@ ipcMain.handle('pdf:saveAs', async (_, base64Data, fileName) => {
 /* ───────── Native Printing IPC ───────── */
 ipcMain.handle('ai:printInvoice', async (_, html) => {
   let printWindow = new BrowserWindow({
-    show: false,
+    show: false, // Hide the auxiliary window
     webPreferences: {
       nodeIntegration: false
     }
   });
 
+  let tempHtmlPath = null;
   try {
-    // Load HTML content
-    printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    let finalHtml = html;
+    try {
+      finalHtml = await resolveLocalImages(html);
+    } catch (resolveErr) {
+      console.error('⚠️ resolveLocalImages failed for print, using original HTML:', resolveErr);
+    }
+
+    tempHtmlPath = path.join(app.getPath('temp'), `print_job_${Date.now()}.html`);
+    fs.writeFileSync(tempHtmlPath, finalHtml, 'utf8');
+    
+    await printWindow.loadURL(pathToFileURL(tempHtmlPath).toString());
     
     printWindow.webContents.on('did-finish-load', () => {
-      // Small extra buffer for heavy images/gradients
+      // Small delay to ensure images are rendered before dialog pops up
       setTimeout(() => {
         printWindow.webContents.print({
-          silent: false,
+          silent: false, // Show system dialog for preview and settings
           printBackground: true,
           margins: { marginType: 'default' },
           pageSize: 'A4'
         }, (success, errorType) => {
-          if (!success && errorType !== 'cancelled') {
-            console.error('Print Error:', errorType);
+          if (success || errorType === 'cancelled') {
+            printWindow.close();
           }
-          printWindow.destroy();
+          // Clean up temp file
+          if (tempHtmlPath && fs.existsSync(tempHtmlPath)) {
+            try { fs.unlinkSync(tempHtmlPath); } catch (e) {}
+          }
         });
-      }, 300);
+      }, 800);
     });
 
     return { success: true };
@@ -495,5 +756,54 @@ ipcMain.handle('ai:printInvoice', async (_, html) => {
   }
 });
 
+/* ───────── WhatsApp Integration IPC ───────── */
+ipcMain.handle('whatsapp:sendMessage', async (_, { phone, message }) => {
+  try {
+    const profile = businessProfileOps.get();
+    let settings = {};
+    try {
+      settings = typeof profile.whatsapp_settings === 'string' 
+        ? JSON.parse(profile.whatsapp_settings || '{}') 
+        : (profile.whatsapp_settings || {});
+    } catch(e) { settings = {}; }
 
+    if (!settings.enabled || !settings.access_token || !settings.phone_number_id) {
+      return { success: false, error: 'WhatsApp API is not configured or enabled.' };
+    }
 
+    // Clean phone number (remove +, spaces, etc.)
+    let cleanPhone = (phone || '').replace(/\D/g, '');
+    if (!cleanPhone) return { success: false, error: 'Invalid phone number' };
+    
+    // If it's a 10-digit number (common in India), prepend 91
+    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
+    const url = `https://graph.facebook.com/v21.0/${settings.phone_number_id}/messages`;
+    
+    const response = await net.fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${settings.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: cleanPhone,
+        type: 'text',
+        text: { body: message }
+      })
+    });
+
+    const data = await response.json();
+    if (response.ok) {
+      return { success: true, data };
+    } else {
+      console.error('WhatsApp API Error:', data);
+      return { success: false, error: data.error?.message || 'Failed to send message' };
+    }
+  } catch (err) {
+    console.error('WhatsApp Handler Error:', err);
+    return { success: false, error: err.message };
+  }
+});

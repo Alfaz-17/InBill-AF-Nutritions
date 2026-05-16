@@ -1,0 +1,17 @@
+{
+  "status": "init",
+  "type": "frontend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3456/",
+  "executionArgs": {
+    "projectName": "in+bill",
+    "projectPath": "c:\\Users\\alfaz\\OneDrive\\Desktop\\MY_PROJECTS\\in+bill",
+    "testIds": [],
+    "additionalInstruction": "Test the Reports tab. Verify that clicking on Sales, Purchases, and Stats tabs does not throw any errors. Verify that the new Quick Action buttons (WhatsApp, PDF, Print) are rendered in the Sales table history. Verify that the Customer Details input fields in Billing are correctly aligned.",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-NUAWf2qZuNrLrhPRErfXOrCYR7DfRYkycgslTSZgNyFV6TpIyTgUMxJrmZdvWSs4M8M22l9nBcHivkoYrD3PFmiAO5PpwBlUgZyQpk67d-MP_JKpikmFhT8BnYkqMRtBbCU"
+    }
+  },
+  "serverPort": 51463
+}

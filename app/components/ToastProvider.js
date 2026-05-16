@@ -1,5 +1,5 @@
 'use client';
-import { createContext, useContext, useState, useCallback, useRef } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
 import { Check, X, AlertTriangle, Info, ShieldAlert, Trash2 } from 'lucide-react';
 
 const ToastContext = createContext(null);
@@ -58,7 +58,7 @@ export default function ToastProvider({ children }) {
   const confirmResolve = useRef(null);
 
   // ── Toast API ──
-  const toast = useCallback((message, type = 'success', duration = 3500) => {
+  const baseToast = useCallback((message, type = 'success', duration = 3500) => {
     const id = ++toastId.current;
     setToasts(prev => [...prev, { id, message, type, removing: false }]);
     setTimeout(() => {
@@ -68,6 +68,15 @@ export default function ToastProvider({ children }) {
       }, 350);
     }, duration);
   }, []);
+
+  const toast = useMemo(() => {
+    const t = (msg, type, dur) => baseToast(msg, type, dur);
+    t.success = (msg, dur) => baseToast(msg, 'success', dur);
+    t.error = (msg, dur) => baseToast(msg, 'error', dur);
+    t.warning = (msg, dur) => baseToast(msg, 'warning', dur);
+    t.info = (msg, dur) => baseToast(msg, 'info', dur);
+    return t;
+  }, [baseToast]);
 
   const dismissToast = useCallback((id) => {
     setToasts(prev => prev.map(t => t.id === id ? { ...t, removing: true } : t));
@@ -94,12 +103,19 @@ export default function ToastProvider({ children }) {
     });
   }, []);
 
-  const handleConfirm = useCallback(() => {
+  const handleConfirm = useCallback((e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    console.log('[ToastProvider] handleConfirm triggered');
     if (confirmState?.requiredPin && confirmInput !== confirmState.requiredPin) {
+      console.warn('[ToastProvider] PIN mismatch');
       setConfirmError(true);
       toast('Incorrect Security PIN', 'error');
       return;
     }
+    console.log('[ToastProvider] Resolving confirm with true');
     if (confirmResolve.current) confirmResolve.current(true);
     setConfirmState(null);
     setConfirmInput('');
@@ -107,7 +123,12 @@ export default function ToastProvider({ children }) {
     confirmResolve.current = null;
   }, [confirmState, confirmInput, toast]);
 
-  const handleCancel = useCallback(() => {
+  const handleCancel = useCallback((e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    console.log('[ToastProvider] handleCancel triggered');
     if (confirmResolve.current) confirmResolve.current(false);
     setConfirmState(null);
     setConfirmInput('');
@@ -363,6 +384,7 @@ export default function ToastProvider({ children }) {
               borderTop: '1px solid var(--border, #e2e8f0)',
             }}>
               <button
+                type="button"
                 onClick={handleCancel}
                 style={{
                   flex: 1,
@@ -375,6 +397,7 @@ export default function ToastProvider({ children }) {
                   fontWeight: 600,
                   cursor: 'pointer',
                   transition: 'all 0.2s',
+                  pointerEvents: 'auto',
                 }}
                 onMouseEnter={e => { e.target.style.background = 'var(--bg-primary, #f8fafc)'; e.target.style.transform = 'translateY(-1px)'; }}
                 onMouseLeave={e => { e.target.style.background = 'var(--bg-card, #fff)'; e.target.style.transform = 'none'; }}
@@ -382,8 +405,8 @@ export default function ToastProvider({ children }) {
                 {confirmState.cancelText}
               </button>
               <button
+                type="button"
                 onClick={handleConfirm}
-                autoFocus
                 style={{
                   flex: 1,
                   padding: '13px 20px',
@@ -396,6 +419,7 @@ export default function ToastProvider({ children }) {
                   cursor: 'pointer',
                   transition: 'all 0.2s',
                   boxShadow: '0 4px 14px rgba(0,0,0,0.15)',
+                  pointerEvents: 'auto',
                 }}
                 onMouseEnter={e => { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = '0 8px 24px rgba(0,0,0,0.2)'; }}
                 onMouseLeave={e => { e.target.style.transform = 'none'; e.target.style.boxShadow = '0 4px 14px rgba(0,0,0,0.15)'; }}

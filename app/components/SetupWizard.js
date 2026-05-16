@@ -204,7 +204,7 @@ export default function SetupWizard({ onComplete }) {
       // 1. Update Business Profile
       await window.electronAPI.business.updateProfile({
         ...formData,
-        business_short: formData.business_name.substring(0, 2).toUpperCase(),
+        business_short: formData.business_short || formData.business_name.substring(0, 2).toUpperCase(),
         invoice_prefix: 'INV',
         invoice_footer: 'Thank you for your business!',
         currency_symbol: '₹',
@@ -268,15 +268,27 @@ export default function SetupWizard({ onComplete }) {
             </div>
 
             <div className="setup-form">
-              <div className="form-group">
-                <label className="form-label">Business Name *</label>
-                <input 
-                  className="form-input lg" 
-                  placeholder="Enter your business name" 
-                  autoFocus
-                  value={formData.business_name}
-                  onChange={e => setFormData({...formData, business_name: e.target.value})}
-                />
+              <div className="grid-2">
+                <div className="form-group">
+                  <label className="form-label">Business Name *</label>
+                  <input 
+                    className="form-input" 
+                    placeholder="e.g. My Shop" 
+                    autoFocus
+                    value={formData.business_name}
+                    onChange={e => setFormData({...formData, business_name: e.target.value})}
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Short Code (e.g. MS)</label>
+                  <input 
+                    className="form-input font-black uppercase" 
+                    placeholder="Short ID"
+                    maxLength={3}
+                    value={formData.business_short}
+                    onChange={e => setFormData({...formData, business_short: e.target.value.toUpperCase()})}
+                  />
+                </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Tagline (Optional)</label>

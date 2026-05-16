@@ -38,7 +38,12 @@ export default function Parties({ profile }) {
   const [selectedParty, setSelectedParty] = useState(null);
   const [ledgerData, setLedgerData] = useState([]);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
-  const [paymentData, setPaymentData] = useState({ amount: 0, note: '', date: new Date().toISOString().split('T')[0] });
+  const getToday = () => {
+    const now = new Date();
+    return now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+  };
+
+  const [paymentData, setPaymentData] = useState({ amount: 0, payment_mode: 'Cash', note: '', date: getToday() });
   const [savingPayment, setSavingPayment] = useState(false);
 
   const CURRENCY = profile?.currency_symbol || '₹';
@@ -117,7 +122,7 @@ export default function Parties({ profile }) {
 
   const handleOpenPayment = (party) => {
     setSelectedParty(party);
-    setPaymentData({ amount: 0, note: '', date: new Date().toISOString().split('T')[0] });
+    setPaymentData({ amount: 0, payment_mode: 'Cash', note: '', date: getToday() });
     setShowPaymentModal(true);
   };
 
@@ -128,6 +133,7 @@ export default function Parties({ profile }) {
       await window.electronAPI.parties.recordPayment({
         party_id: selectedParty.id,
         amount: paymentData.amount,
+        payment_mode: paymentData.payment_mode,
         note: paymentData.note,
         date: paymentData.date
       });
@@ -407,32 +413,63 @@ export default function Parties({ profile }) {
                   <thead className="bg-slate-50 border-b">
                     <tr>
                       <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Date</th>
-                      <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Type</th>
+                      <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Reference & Type</th>
                       <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Total</th>
-                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Paid</th>
-                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Balance</th>
+                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Amount Settled</th>
+                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Balance Impact</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y">
-                    {ledgerData.map((tx) => (
-                      <tr key={tx.id} className="bg-white">
-                        <td className="p-4 font-bold text-slate-600">
-                          {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                        </td>
-                        <td className="p-4">
-                          <Badge className={`rounded-lg font-black text-[10px] ${
-                            tx.type === 'Sale' ? 'bg-blue-50 text-blue-600' : 
-                            tx.type === 'Purchase' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
-                          }`}>
-                            {tx.type.toUpperCase()}
-                          </Badge>
-                          {tx.note && <p className="text-[10px] text-slate-400 mt-1">{tx.note}</p>}
-                        </td>
-                        <td className="p-4 text-right font-bold text-slate-900">{tx.total_amount ? `${CURRENCY}${tx.total_amount.toLocaleString()}` : '-'}</td>
-                        <td className="p-4 text-right font-bold text-emerald-600">{CURRENCY}{tx.paid_amount.toLocaleString()}</td>
-                        <td className="p-4 text-right font-black text-slate-900">{CURRENCY}{tx.due_amount.toLocaleString()}</td>
-                      </tr>
-                    ))}
+                    {ledgerData.map((tx) => {
+                      const isPositive = ['Sale', 'Purchase Return'].includes(tx.type) && selectedParty.type === 'Customer';
+                      const isNegative = ['Payment', 'Sales Return'].includes(tx.type);
+                      
+                      return (
+                        <tr key={tx.id} className="bg-white hover:bg-slate-50/50 transition-colors">
+                          <td className="p-4 font-bold text-slate-600 whitespace-nowrap">
+                            {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </td>
+                          <td className="p-4">
+                            <div className="flex flex-col">
+                              <Badge className={`w-fit rounded-lg font-black text-[10px] px-2 py-0.5 ${
+                                tx.type === 'Sale' ? 'bg-blue-50 text-blue-600' : 
+                                tx.type === 'Purchase' ? 'bg-amber-50 text-amber-600' : 
+                                tx.type === 'Payment' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                              }`}>
+                                {tx.type.toUpperCase()}
+                              </Badge>
+                              {tx.note ? (
+                                <p className="text-[10px] text-slate-400 mt-1 font-medium">{tx.note}</p>
+                              ) : tx.reference_id ? (
+                                <p className="text-[10px] text-slate-400 mt-1 font-medium">Ref #{tx.reference_id}</p>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="p-4 text-right font-bold text-slate-900">
+                            {tx.total_amount ? `${CURRENCY}${tx.total_amount.toLocaleString()}` : '-'}
+                          </td>
+                          <td className="p-4 text-right">
+                            <span className={`font-bold ${tx.type === 'Payment' ? 'text-emerald-600' : 'text-slate-600'}`}>
+                              {tx.paid_amount > 0 ? `${CURRENCY}${tx.paid_amount.toLocaleString()}` : '-'}
+                            </span>
+                            {tx.payment_mode && <p className="text-[9px] text-slate-400 font-black uppercase mt-0.5">{tx.payment_mode}</p>}
+                          </td>
+                          <td className="p-4 text-right">
+                            <div className={`font-black ${
+                              (['Sale', 'Purchase'].includes(tx.type)) ? 'text-rose-600' : 'text-emerald-600'
+                            }`}>
+                              {(tx.type === 'Sale' || tx.type === 'Purchase') 
+                                ? (tx.due_amount > 0 ? `+${CURRENCY}${tx.due_amount.toLocaleString()}` : 'SETTLED')
+                                : `-${CURRENCY}${tx.paid_amount.toLocaleString()}`
+                              }
+                            </div>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
+                              {(['Sale', 'Purchase'].includes(tx.type)) ? 'Increase Due' : 'Decrease Due'}
+                            </p>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -484,6 +521,18 @@ export default function Parties({ profile }) {
                 value={paymentData.date} 
                 onChange={(e) => setPaymentData({...paymentData, date: e.target.value})}
               />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payment Mode</label>
+              <Select value={paymentData.payment_mode} onValueChange={(v) => setPaymentData({...paymentData, payment_mode: v})}>
+                <SelectTrigger className="h-14 rounded-2xl border-slate-200 font-bold">
+                  <SelectValue placeholder="Select Mode" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Cash" className="font-bold">💵 Cash</SelectItem>
+                  <SelectItem value="Digital" className="font-bold">📱 Digital (UPI/Bank)</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="form-group">
               <label className="form-label">Internal Note</label>

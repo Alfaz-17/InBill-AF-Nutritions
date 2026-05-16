@@ -1,0 +1,569 @@
+[
+  {
+    "id": "TC001",
+    "title": "Create and finalize a walk-in sale",
+    "description": "This test verifies that a walk-in invoice can be created from the billing screen with products, payment mode, and finalization, resulting in a saved sale.",
+    "category": "Billing & Invoicing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /billing"
+      },
+      {
+        "type": "action",
+        "description": "Select a walk-in sale"
+      },
+      {
+        "type": "action",
+        "description": "Add multiple products to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Set the payment mode"
+      },
+      {
+        "type": "action",
+        "description": "Finalize the sale"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the sale is saved"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the invoice is available for review"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC002",
+    "title": "Calculate totals and GST on an invoice",
+    "description": "This test verifies that adding products on the billing screen updates invoice totals and GST correctly before finalization.",
+    "category": "Billing & Invoicing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /billing"
+      },
+      {
+        "type": "action",
+        "description": "Select a customer or choose a walk-in sale"
+      },
+      {
+        "type": "action",
+        "description": "Add multiple products to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Review the calculated totals and GST"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated totals are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify GST is included in the invoice summary"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC003",
+    "title": "Print-ready invoice can be reached after sale creation",
+    "description": "This test verifies that a finalized billing transaction reaches the invoice view that supports printing from the app.",
+    "category": "Billing & Invoicing",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /billing"
+      },
+      {
+        "type": "action",
+        "description": "Select a walk-in sale"
+      },
+      {
+        "type": "action",
+        "description": "Add products to the cart"
+      },
+      {
+        "type": "action",
+        "description": "Finalize the sale"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the invoice view is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the print option is available"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC004",
+    "title": "Create a product and see it in inventory",
+    "description": "This test verifies that a new product can be added from the products screen and then appears in the inventory list.",
+    "category": "Inventory Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /products"
+      },
+      {
+        "type": "action",
+        "description": "Add a new product with its details"
+      },
+      {
+        "type": "action",
+        "description": "Save the product"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new product appears in the inventory list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the product details are available"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC005",
+    "title": "Search a product and update its stock",
+    "description": "This test verifies that a product can be found by name or barcode and its stock quantity can be edited and saved.",
+    "category": "Inventory Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /products"
+      },
+      {
+        "type": "action",
+        "description": "Search for a product by name or barcode"
+      },
+      {
+        "type": "action",
+        "description": "Open the product details"
+      },
+      {
+        "type": "action",
+        "description": "Update the stock quantity"
+      },
+      {
+        "type": "action",
+        "description": "Save the changes"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated stock quantity is shown"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the product remains available in the inventory view"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC006",
+    "title": "Create a party record",
+    "description": "This test verifies that a new customer or supplier can be created and appears in the party ledger list.",
+    "category": "Party Ledger",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parties"
+      },
+      {
+        "type": "action",
+        "description": "Create a new party"
+      },
+      {
+        "type": "action",
+        "description": "Save the party record"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new party appears in the ledger list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the party record is available for selection"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC007",
+    "title": "Record a payment or collection for a party",
+    "description": "This test verifies that a party transaction can be saved and the ledger history reflects the new payment or collection.",
+    "category": "Party Ledger",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parties"
+      },
+      {
+        "type": "action",
+        "description": "Select an existing party"
+      },
+      {
+        "type": "action",
+        "description": "Record a payment or collection"
+      },
+      {
+        "type": "action",
+        "description": "Save the transaction"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the transaction appears in the party history"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the party balance is updated"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC008",
+    "title": "Handle an empty inventory state by adding the first product",
+    "description": "This test verifies that the products screen supports creating the first catalog item when the inventory list starts empty.",
+    "category": "Inventory Management",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /products"
+      },
+      {
+        "type": "action",
+        "description": "Add a new product with its details"
+      },
+      {
+        "type": "action",
+        "description": "Save the product"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the inventory list is no longer empty"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new product is listed"
+      }
+    ],
+    "priority": "High"
+  },
+  {
+    "id": "TC009",
+    "title": "Review updated party history after a transaction",
+    "description": "This test verifies that the party ledger shows the latest transaction details after recording a payment or collection.",
+    "category": "Party Ledger",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /parties"
+      },
+      {
+        "type": "action",
+        "description": "Select an existing party"
+      },
+      {
+        "type": "action",
+        "description": "Record a payment or collection"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the updated transaction history is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the balance summary reflects the change"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC010",
+    "title": "Dashboard reflects recent financial activity",
+    "description": "This test verifies that the dashboard shows updated financial overview data after a sale or expense is recorded.",
+    "category": "Dashboard",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify financial overview data is displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify recent activity is visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC011",
+    "title": "Save a daily business expense",
+    "description": "This test verifies that an expense entry can be created and stored from the expenses screen.",
+    "category": "Daily Expenses",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /expenses"
+      },
+      {
+        "type": "action",
+        "description": "Add a new expense entry"
+      },
+      {
+        "type": "action",
+        "description": "Save the expense"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the expense appears in the expense list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the saved total is updated"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC012",
+    "title": "Reports include recorded business activity",
+    "description": "This test verifies that the reports screen shows summary data reflecting sales, stock, party payments, and expenses.",
+    "category": "Reports",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /reports"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify report summaries are displayed"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify business activity analytics are visible"
+      }
+    ],
+    "priority": "Medium"
+  },
+  {
+    "id": "TC013",
+    "title": "Maintain local changes while background sync is active",
+    "description": "A user can make a local change after enabling background sync and still see the new data reflected in the app.",
+    "category": "Cloud Synchronization",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /settings"
+      },
+      {
+        "type": "action",
+        "description": "Paste a valid Neon Cloud connection URL into the connection field"
+      },
+      {
+        "type": "action",
+        "description": "Enable background sync"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /expenses"
+      },
+      {
+        "type": "action",
+        "description": "Add a new expense entry"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the new expense is visible in the expenses list"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the app remains responsive while background sync is enabled"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC014",
+    "title": "Connect cloud sync successfully",
+    "description": "A user can enter a Neon Cloud connection URL and complete cloud synchronization from the settings screen.",
+    "category": "Cloud Synchronization",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /settings"
+      },
+      {
+        "type": "action",
+        "description": "Paste a valid Neon Cloud connection URL into the connection field"
+      },
+      {
+        "type": "action",
+        "description": "Start cloud synchronization"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a successful sync status is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the settings screen remains usable after sync completes"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC015",
+    "title": "Configure cloud sync from settings",
+    "description": "This test verifies that the settings screen accepts a cloud connection string and can start synchronization.",
+    "category": "Settings",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /settings"
+      },
+      {
+        "type": "action",
+        "description": "Enter a Neon Cloud connection URL"
+      },
+      {
+        "type": "action",
+        "description": "Start cloud synchronization"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify sync controls are available"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a synchronization status is displayed"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC016",
+    "title": "Keep local data available after sync setup",
+    "description": "A user can return to the app after configuring cloud sync and still access previously saved local data.",
+    "category": "Cloud Synchronization",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /settings"
+      },
+      {
+        "type": "action",
+        "description": "Paste a valid Neon Cloud connection URL into the connection field"
+      },
+      {
+        "type": "action",
+        "description": "Start cloud synchronization"
+      },
+      {
+        "type": "action",
+        "description": "Navigate to /"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the dashboard is displayed with local financial data"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the app continues to show saved records"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC017",
+    "title": "Enable background sync",
+    "description": "A user can turn on background sync after providing a cloud connection URL and keep using the app while sync stays active.",
+    "category": "Cloud Synchronization",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /settings"
+      },
+      {
+        "type": "action",
+        "description": "Paste a valid Neon Cloud connection URL into the connection field"
+      },
+      {
+        "type": "action",
+        "description": "Enable background sync"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify background sync is enabled"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the app remains usable while sync is active"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC018",
+    "title": "Recover from an invalid cloud connection string",
+    "description": "A user sees validation feedback when an invalid cloud connection string is entered instead of starting synchronization.",
+    "category": "Cloud Synchronization",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /settings"
+      },
+      {
+        "type": "action",
+        "description": "Paste an invalid connection string into the connection field"
+      },
+      {
+        "type": "action",
+        "description": "Start cloud synchronization"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify a connection validation error is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify synchronization does not start"
+      }
+    ],
+    "priority": "Low"
+  },
+  {
+    "id": "TC019",
+    "title": "Show an empty sync state before configuration",
+    "description": "A user sees that cloud synchronization is not yet configured when opening settings on a fresh app state.",
+    "category": "Cloud Synchronization",
+    "steps": [
+      {
+        "type": "action",
+        "description": "Navigate to /settings"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify an empty or unconfigured sync state is visible"
+      },
+      {
+        "type": "assertion",
+        "description": "Verify the cloud connection field is available for setup"
+      }
+    ],
+    "priority": "Low"
+  }
+]

@@ -1,6 +1,6 @@
 {
   "name": "inbill",
-  "version": "2.0.0",
+  "version": "2.0.3",
   "description": "InBill — Universal ERP for Billing, Inventory & Business Management",
   "author": "InBill Solutions",
   "private": true,
@@ -31,10 +31,9 @@
     "electron-is-dev": "^3.0.1",
     "lucide-react": "^1.14.0",
     "next": "^15.3.1",
-    "next-themes": "^0.4.6",
+    "postgres": "^3.4.9",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-hook-form": "^7.75.0",
     "recharts": "^3.8.1",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.6.0",
@@ -62,7 +61,7 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "build/inbill.ico"
+      "icon": "build/inbill.png"
     },
     "nsis": {
       "oneClick": false,

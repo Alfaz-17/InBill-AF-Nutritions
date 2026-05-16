@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import {
-  LayoutDashboard, ShoppingCart, Package, TruckIcon,
+  LayoutDashboard, ShoppingCart, Package, Truck,
   ScanLine, FileBarChart, Settings, Wallet, Users, RotateCcw
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
@@ -26,7 +26,7 @@ const navSections = [
     label: 'Manage',
     items: [
       { key: 'products',  label: 'Inventory',   icon: Package },
-      { key: 'purchases', label: 'Stock-In',  icon: TruckIcon },
+      { key: 'purchases', label: 'Stock-In',  icon: Truck },
       { key: 'parties',   label: 'Parties',    icon: Users },
       { key: 'expenses',  label: 'Expenses',   icon: Wallet },
     ],
@@ -41,6 +41,7 @@ const navSections = [
 ];
 
 import SetupWizard from './components/SetupWizard';
+import LockScreen from './components/LockScreen';
 
 const pages = {
   dashboard: Dashboard,
@@ -63,6 +64,8 @@ export default function Home() {
   const [hasNotified, setHasNotified] = useState(false);
   const [profile, setProfile] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
+  const [isLocked, setIsLocked] = useState(false);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   // Persistence Layer: Lifted Billing State
   const [cart, setCart] = useState([]);
@@ -71,31 +74,20 @@ export default function Home() {
 
   useEffect(() => {
     loadProfile();
+    checkAuth();
     const loadAlerts = async () => {
       if (typeof window !== 'undefined' && window.electronAPI) {
         try {
           const stats = await window.electronAPI.stats.dashboard();
           setLowStockCount(stats.lowStockCount || 0);
           
-          // Silent Update Check
-          const update = await window.electronAPI.system.checkUpdate();
-          if (update.success) {
-            const isNew = update.latestVersion !== update.currentVersion;
-            setUpdateAvailable(isNew);
-            
-            // Show Native OS Notification if new (Only once per session)
-            if (isNew && !hasNotified) {
-              new Notification("InBill Update Available", {
-                body: `Version ${update.latestVersion} is now ready! Visit Settings to upgrade.`,
-              });
-              setHasNotified(true);
-            }
-          }
+          // Note: Automatic update check disabled for manual file distribution
+          // To enable, configure a version.json server in main.js
         } catch (e) { /* silent */ }
       }
     };
     loadAlerts();
-    const interval = setInterval(loadAlerts, 30000);
+    const interval = setInterval(loadAlerts, 60000); // Check stock every minute
     return () => clearInterval(interval);
   }, []);
 
@@ -112,6 +104,23 @@ export default function Home() {
     }
   };
 
+  const checkAuth = async () => {
+    if (typeof window !== 'undefined' && window.electronAPI?.auth) {
+      try {
+        const { hasPassword } = await window.electronAPI.auth.check();
+        if (hasPassword) {
+          setIsLocked(true);
+        }
+      } catch (e) {
+        console.error('Auth check failed:', e);
+      } finally {
+        setIsAuthChecking(false);
+      }
+    } else {
+      setIsAuthChecking(false);
+    }
+  };
+
   const handleSetupComplete = () => {
     setShowWizard(false);
     loadProfile();
@@ -119,6 +128,18 @@ export default function Home() {
 
   if (showWizard) {
     return <SetupWizard onComplete={handleSetupComplete} />;
+  }
+
+  if (isAuthChecking) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    );
+  }
+
+  if (isLocked) {
+    return <LockScreen onUnlock={() => setIsLocked(false)} />;
   }
 
   const ActiveComponent = pages[activePage] || Dashboard;
