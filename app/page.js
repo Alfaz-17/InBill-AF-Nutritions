@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import {
   LayoutDashboard, ShoppingCart, Package, TruckIcon,
-  ScanLine, FileBarChart, Settings, Wallet, Users, Store, RotateCcw
+  ScanLine, FileBarChart, Settings, Wallet, Users, RotateCcw
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Billing from './components/Billing';
@@ -35,14 +35,12 @@ const navSections = [
     label: 'Insights',
     items: [
       { key: 'reports',  label: 'Reports',  icon: FileBarChart },
-      { key: 'digital-store', label: 'Online Store', icon: Store },
       { key: 'settings', label: 'Settings', icon: Settings },
     ],
   },
 ];
 
 import SetupWizard from './components/SetupWizard';
-import DigitalStore from './components/DigitalStore';
 
 const pages = {
   dashboard: Dashboard,
@@ -53,13 +51,16 @@ const pages = {
   'ai-upload': AIUpload,
   reports: Reports,
   expenses: Expenses,
-  'digital-store': DigitalStore,
   settings: SettingsPage,
 };
+
+const mobileNavItems = navSections.flatMap((section) => section.items);
 
 export default function Home() {
   const [activePage, setActivePage] = useState('dashboard');
   const [lowStockCount, setLowStockCount] = useState(0);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [hasNotified, setHasNotified] = useState(false);
   const [profile, setProfile] = useState(null);
   const [showWizard, setShowWizard] = useState(false);
 
@@ -75,6 +76,21 @@ export default function Home() {
         try {
           const stats = await window.electronAPI.stats.dashboard();
           setLowStockCount(stats.lowStockCount || 0);
+          
+          // Silent Update Check
+          const update = await window.electronAPI.system.checkUpdate();
+          if (update.success) {
+            const isNew = update.latestVersion !== update.currentVersion;
+            setUpdateAvailable(isNew);
+            
+            // Show Native OS Notification if new (Only once per session)
+            if (isNew && !hasNotified) {
+              new Notification("InBill Update Available", {
+                body: `Version ${update.latestVersion} is now ready! Visit Settings to upgrade.`,
+              });
+              setHasNotified(true);
+            }
+          }
         } catch (e) { /* silent */ }
       }
     };
@@ -109,6 +125,14 @@ export default function Home() {
 
   return (
     <div className="app-shell">
+      <header className="mobile-app-header">
+        <div className="sidebar-brand-icon">{profile?.business_short || 'IB'}</div>
+        <div className="mobile-app-title">
+          <h1>{profile?.business_name || 'InBill'}</h1>
+          <span>{navSections.flatMap((section) => section.items).find((item) => item.key === activePage)?.label || 'Dashboard'}</span>
+        </div>
+      </header>
+
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-brand">
@@ -135,6 +159,9 @@ export default function Home() {
                     <span>{item.label}</span>
                     {item.key === 'products' && lowStockCount > 0 && (
                       <span className="nav-badge">{lowStockCount}</span>
+                    )}
+                    {item.key === 'settings' && updateAvailable && (
+                      <span className="nav-badge animate-pulse" style={{ background: '#059669', color: 'white', fontSize: '9px', padding: '2px 6px' }}>NEW</span>
                     )}
                   </div>
                 );
@@ -173,6 +200,32 @@ export default function Home() {
           paymentData={paymentData} setPaymentData={setPaymentData}
         />
       </main>
+
+      <nav className="mobile-bottom-nav" aria-label="Primary navigation">
+        {mobileNavItems.map((item) => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.key}
+              type="button"
+              className={`mobile-nav-item ${activePage === item.key ? 'active' : ''}`}
+              onClick={() => setActivePage(item.key)}
+              aria-label={item.label}
+            >
+              <span className="relative">
+                <Icon size={20} strokeWidth={2.4} />
+                {item.key === 'products' && lowStockCount > 0 && (
+                  <span className="mobile-nav-badge">{lowStockCount}</span>
+                )}
+                {item.key === 'settings' && updateAvailable && (
+                  <span className="mobile-nav-badge" style={{ background: '#059669' }}>!</span>
+                )}
+              </span>
+              <span>{item.label}</span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }

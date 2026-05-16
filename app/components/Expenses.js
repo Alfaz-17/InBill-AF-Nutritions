@@ -16,7 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 
 export default function Expenses({ profile }) {
-  const { toast } = useToast();
+  const { toast, confirm } = useToast();
+  const masterData = typeof profile?.master_data === 'string' 
+    ? (JSON.parse(profile.master_data || '{}')) 
+    : (profile?.master_data || {});
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,6 +70,14 @@ export default function Expenses({ profile }) {
   };
 
   const handleDelete = async (id) => {
+    const ok = await confirm({
+      type: 'danger',
+      title: 'Delete Expense?',
+      message: 'This expense record will be permanently removed from your ledger.',
+      confirmText: 'Delete Record',
+      requiredPin: masterData.delete_pin
+    });
+    if (!ok) return;
     try {
       await window.electronAPI.expenses.delete(id);
       toast('Expense record deleted', 'info');
@@ -175,7 +186,7 @@ export default function Expenses({ profile }) {
 
       {/* Expense Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="sm:max-w-xl p-0 overflow-hidden border-none shadow-2xl rounded-[3rem] bg-white">
+        <DialogContent className="sm:max-w-xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[3rem] bg-white">
           <DialogHeader className="p-10 bg-slate-900 text-white">
             <DialogTitle className="text-2xl font-black flex items-center gap-4">
               <div className="w-12 h-12 bg-rose-600 rounded-2xl flex items-center justify-center shadow-xl shadow-rose-600/20">
@@ -188,7 +199,7 @@ export default function Expenses({ profile }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-10 space-y-10 max-h-[70vh] overflow-y-auto bg-slate-50/30">
+          <div className="flex-1 overflow-y-auto p-10 space-y-10 bg-slate-50/30">
             <div className="space-y-6">
                <div className="form-group">
                  <label className="form-label">Expense Category</label>

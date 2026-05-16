@@ -156,6 +156,7 @@ export default function Products({ profile }) {
       title: 'Delete Product?',
       message: 'This product will be permanently removed from your inventory. This cannot be undone.',
       confirmText: 'Delete Product',
+      requiredPin: masterData.delete_pin
     });
     if (!ok) return;
     try {
@@ -187,6 +188,36 @@ export default function Products({ profile }) {
       setNewCat('');
       toast(`Category "${newCat}" added`);
     } catch (e) { console.error(e); }
+  };
+
+  const handleDeleteCategory = async (id, name) => {
+    const ok = await confirm({
+      type: 'danger',
+      title: 'Delete Category?',
+      message: `Delete "${name}"? Existing products will keep this category but it will be removed from the selection list.`,
+      confirmText: 'Delete',
+    });
+    if (!ok) return;
+    try {
+      await window.electronAPI.categories.delete(id);
+      loadCategories();
+      toast('Category removed');
+    } catch (e) { toast('Failed to delete category'); }
+  };
+
+  const handleDeleteAttribute = async (id, name) => {
+    const ok = await confirm({
+      type: 'danger',
+      title: 'Remove Field?',
+      message: `Remove "${name}" from the system? This will not delete data from existing products, but you won't be able to add this field to new products.`,
+      confirmText: 'Remove Field',
+    });
+    if (!ok) return;
+    try {
+      await window.electronAPI.attributes.delete(id);
+      loadAttributeDefs();
+      toast('Custom field removed');
+    } catch (e) { toast('Failed to remove field'); }
   };
 
   if (loading) {
@@ -344,7 +375,7 @@ export default function Products({ profile }) {
 
       {/* Product Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-w-[92vw] sm:max-w-4xl max-h-[92vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all">
+        <DialogContent className="max-w-[92vw] sm:max-w-4xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all">
           <DialogHeader className="p-10 bg-slate-900 text-white">
             <DialogTitle className="text-2xl font-black flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/20">
@@ -357,7 +388,7 @@ export default function Products({ profile }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-10 space-y-10 max-h-[70vh] overflow-y-auto bg-slate-50/30">
+          <div className="flex-1 overflow-y-auto p-10 space-y-10 bg-slate-50/30">
             {/* Essential Info */}
             <section className="space-y-6">
               <div className="flex items-center gap-3">
@@ -407,11 +438,11 @@ export default function Products({ profile }) {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                 <div className="form-group md:col-span-2">
                   <label className="form-label">Selling Price ({CURRENCY})</label>
-                  <Input type="number" value={form.selling_price} onChange={(e) => setForm({ ...form, selling_price: e.target.value })} className="form-input h-14 text-2xl font-black text-blue-600" />
+                  <Input type="number" value={form.selling_price || ''} onChange={(e) => setForm({ ...form, selling_price: e.target.value })} className="form-input h-14 text-2xl font-black text-blue-600" />
                 </div>
                 <div className="form-group md:col-span-2">
                   <label className="form-label">Cost Price ({CURRENCY})</label>
-                  <Input type="number" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} className="form-input h-14 font-black text-emerald-600" />
+                  <Input type="number" value={form.cost_price || ''} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} className="form-input h-14 font-black text-emerald-600" />
                 </div>
                 <div className="form-group md:col-span-2">
                   <label className="form-label">{TAX_LABEL} Percentage (%)</label>
@@ -427,11 +458,11 @@ export default function Products({ profile }) {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Barcode / SKU</label>
-                  <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} className="form-input h-14 font-mono" placeholder="Scan or type..." />
+                  <Input value={form.barcode || ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} className="form-input h-14 font-mono" placeholder="Scan or type..." />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Current Stock</label>
-                  <Input type="number" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="form-input h-14 font-black text-rose-600" />
+                  <Input type="number" value={form.quantity || ''} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="form-input h-14 font-black text-rose-600" />
                 </div>
               </div>
             </section>
@@ -454,7 +485,11 @@ export default function Products({ profile }) {
                     <div key={def.id} className="form-group">
                       <label className="form-label flex justify-between">
                         {def.name}
-                        <X size={12} className="cursor-pointer text-slate-300 hover:text-red-500" />
+                        <X 
+                          size={12} 
+                          className="cursor-pointer text-slate-300 hover:text-red-500 transition-colors" 
+                          onClick={() => handleDeleteAttribute(def.id, def.name)}
+                        />
                       </label>
                       <Input 
                         type={def.type === 'date' ? 'date' : def.type === 'number' ? 'number' : 'text'}
@@ -482,6 +517,78 @@ export default function Products({ profile }) {
               <Check size={20} strokeWidth={3} /> {editId ? 'Update Inventory' : 'Register Product'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Categories Modal */}
+      <Dialog open={showCatModal} onOpenChange={setShowCatModal}>
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+          <DialogHeader className="p-8 bg-slate-900 text-white">
+            <DialogTitle className="font-black text-xl flex items-center gap-3">
+              <Layers size={20} className="text-blue-400" /> Manage Categories
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-8 space-y-6 bg-white">
+            <div className="flex gap-2">
+              <Input 
+                placeholder="New category name..." 
+                value={newCat} 
+                onChange={(e) => setNewCat(e.target.value)}
+                className="h-12 font-bold rounded-xl"
+              />
+              <Button onClick={handleAddCategory} className="h-12 rounded-xl bg-blue-600">Add</Button>
+            </div>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {categories.map(c => (
+                <div key={c.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl group">
+                  <span className="font-bold text-slate-700">{c.name}</span>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-8 w-8 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-100 opacity-0 group-hover:opacity-100 transition-all"
+                    onClick={() => handleDeleteCategory(c.id, c.name)}
+                  >
+                    <Trash2 size={14} />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Attribute Definition Modal */}
+      <Dialog open={showAttrModal} onOpenChange={setShowAttrModal}>
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+          <DialogHeader className="p-8 bg-slate-900 text-white">
+            <DialogTitle className="font-black text-xl flex items-center gap-3">
+              <Barcode size={20} className="text-purple-400" /> Define New Field
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-8 space-y-6 bg-white">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Field Name</label>
+                <Input 
+                  placeholder="e.g. Serial Number, Warranty" 
+                  value={attrForm.name} 
+                  onChange={(e) => setAttrForm({...attrForm, name: e.target.value})}
+                  className="h-12 font-bold rounded-xl"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-black text-slate-400 uppercase tracking-widest">Data Type</label>
+                <Select value={attrForm.type} onValueChange={(v) => setAttrForm({...attrForm, type: v})}>
+                  <SelectTrigger className="h-12 font-bold rounded-xl"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="text" className="font-bold">Text / Alpha-numeric</SelectItem>
+                    <SelectItem value="number" className="font-bold">Numbers Only</SelectItem>
+                    <SelectItem value="date" className="font-bold">Calendar Date</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <Button onClick={commitAttributeDef} className="w-full h-12 rounded-xl bg-purple-600 font-black">Create System Field</Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

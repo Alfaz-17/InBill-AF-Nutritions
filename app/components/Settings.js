@@ -3,10 +3,9 @@ import { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon, Key, Check, Eye, EyeOff, Info, 
   ShieldCheck, AlertTriangle, Building2, Save, Trash2, 
-  ArrowDownLeft, X, Database, Smartphone, Globe, Lock, Palette, FileText, Monitor, CheckCircle2, Layout, List
+  ArrowDownLeft, X, Database, Smartphone, Globe, Lock, Palette, FileText, Monitor, CheckCircle2, Layout, List, MessageCircle, RefreshCw, Download
 } from 'lucide-react';
 import { useToast } from './ToastProvider';
-import InvoiceSettings from './InvoiceSettings';
 
 // shadcn/ui components
 import { Button } from "@/components/ui/button";
@@ -20,7 +19,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 export default function SettingsPage({ profile, onProfileUpdate }) {
   const { toast, confirm } = useToast();
-  const [showDesigner, setShowDesigner] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -29,7 +27,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
   const [error, setError] = useState('');
   
   const [profileForm, setProfileForm] = useState({
-    business_name: '', business_short: '', tagline: 'Billing & Inventory',
+    business_name: '', business_short: '', store_base_url: 'https://inbill.store', tagline: 'Billing & Inventory',
     address_line1: '', address_line2: '', city: '', state: '', pincode: '',
     phone: '', email: '', gstin: '', logo_path: '',
     invoice_prefix: 'INV', invoice_footer: 'Thank you for your business!',
@@ -38,18 +36,57 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
     master_data: { 
       tax_label: 'GST', 
       tax_rates: [0, 5, 12, 18, 28], 
-      units: ['pcs', 'box', 'kg', 'g', 'm', 'hrs', 'sqft'] 
+      units: ['pcs', 'box', 'kg', 'g', 'm', 'hrs', 'sqft'],
+      gst_enabled: true,
+      delete_pin: ''
+    },
+    whatsapp_settings: {
+      enabled: false,
+      access_token: '',
+      phone_number_id: '',
+      business_account_id: ''
     }
   });
 
   const [profileSaved, setProfileSaved] = useState(false);
   const [newTaxRate, setNewTaxRate] = useState('');
   const [newUnit, setNewUnit] = useState('');
+  const [updateInfo, setUpdateInfo] = useState({ checked: false, available: false, version: '', loading: false });
 
   useEffect(() => {
     checkKeyStatus();
     loadProfile();
   }, []);
+
+  const handleCheckUpdate = async (manual = false) => {
+    if (updateInfo.loading) return;
+    setUpdateInfo(prev => ({ ...prev, loading: true }));
+    try {
+      if (window.electronAPI?.system) {
+        const res = await window.electronAPI.system.checkUpdate();
+        if (res.success) {
+          const isNew = res.latestVersion !== res.currentVersion;
+          setUpdateInfo({ 
+            checked: true, 
+            available: isNew, 
+            version: res.latestVersion, 
+            current: res.currentVersion,
+            url: res.updateUrl,
+            loading: false 
+          });
+          if (manual) {
+            if (isNew) toast(`New version ${res.latestVersion} available!`, 'info');
+            else toast('You are on the latest version', 'success');
+          }
+        } else {
+          if (manual) toast('Could not connect to update server', 'error');
+          setUpdateInfo(prev => ({ ...prev, loading: false }));
+        }
+      }
+    } catch (e) {
+      setUpdateInfo(prev => ({ ...prev, loading: false }));
+    }
+  };
 
   const loadProfile = async () => {
     try {
@@ -63,7 +100,19 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
             tax_label: 'GST',
             tax_rates: [0, 5, 12, 18, 28],
             units: ['pcs', 'box', 'kg', 'g', 'm', 'hrs', 'sqft'],
+            gst_enabled: true,
+            delete_pin: '',
             ...p.master_data
+          };
+          if (typeof p.whatsapp_settings === 'string') {
+            try { p.whatsapp_settings = JSON.parse(p.whatsapp_settings || '{}'); } catch(e) { p.whatsapp_settings = {}; }
+          }
+          p.whatsapp_settings = {
+            enabled: false,
+            access_token: '',
+            phone_number_id: '',
+            business_account_id: '',
+            ...p.whatsapp_settings
           };
           setProfileForm(p);
         }
@@ -152,14 +201,14 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
           <TabsTrigger value="profile" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Building2 size={16} /> Profile
           </TabsTrigger>
-          <TabsTrigger value="invoice" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
-            <Palette size={16} /> Invoice Architect
-          </TabsTrigger>
           <TabsTrigger value="core" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Layout size={16} /> Standards
           </TabsTrigger>
           <TabsTrigger value="ai" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Smartphone size={16} /> AI Automation
+          </TabsTrigger>
+          <TabsTrigger value="whatsapp" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
+            <MessageCircle size={16} /> WhatsApp
           </TabsTrigger>
           <TabsTrigger value="data" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Database size={16} /> Data & Security
@@ -177,15 +226,19 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                 <div className="form-group">
                   <label className="form-label">Business Name</label>
-                  <Input value={profileForm.business_name} onChange={(e) => setProfileForm({...profileForm, business_name: e.target.value})} className="form-input" />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Short Name</label>
-                  <Input value={profileForm.business_short} onChange={(e) => setProfileForm({...profileForm, business_short: e.target.value})} className="form-input" />
+                  <Input 
+                    value={profileForm.business_name || ''} 
+                    onChange={(e) => {
+                      const name = e.target.value;
+                      const slug = name.toLowerCase().replace(/[^\w ]+/g, '').replace(/ +/g, '-');
+                      setProfileForm({...profileForm, business_name: name, business_short: slug});
+                    }} 
+                    className="form-input" 
+                  />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Business Type</label>
-                  <Select value={profileForm.business_type} onValueChange={(v) => setProfileForm({...profileForm, business_type: v})}>
+                  <Select value={profileForm.business_type || 'General'} onValueChange={(v) => setProfileForm({...profileForm, business_type: v})}>
                     <SelectTrigger className="form-input">
                       <SelectValue placeholder="Select Type" />
                     </SelectTrigger>
@@ -198,30 +251,30 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                 </div>
                 <div className="form-group lg:col-span-2">
                   <label className="form-label">Address</label>
-                  <Input value={profileForm.address_line1} onChange={(e) => setProfileForm({...profileForm, address_line1: e.target.value})} className="form-input" />
+                  <Input value={profileForm.address_line1 || ''} onChange={(e) => setProfileForm({...profileForm, address_line1: e.target.value})} className="form-input" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">GSTIN</label>
-                  <Input value={profileForm.gstin} onChange={(e) => setProfileForm({...profileForm, gstin: e.target.value.toUpperCase()})} className="form-input font-mono" />
+                  <Input value={profileForm.gstin || ''} onChange={(e) => setProfileForm({...profileForm, gstin: e.target.value.toUpperCase()})} className="form-input font-mono" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Phone</label>
-                  <Input value={profileForm.phone} onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})} className="form-input" />
+                  <Input value={profileForm.phone || ''} onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})} className="form-input" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Email</label>
-                  <Input value={profileForm.email} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className="form-input" />
+                  <Input value={profileForm.email || ''} onChange={(e) => setProfileForm({...profileForm, email: e.target.value})} className="form-input" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Tagline</label>
-                  <Input value={profileForm.tagline} onChange={(e) => setProfileForm({...profileForm, tagline: e.target.value})} className="form-input" />
+                  <Input value={profileForm.tagline || ''} onChange={(e) => setProfileForm({...profileForm, tagline: e.target.value})} className="form-input" />
                 </div>
                 <div className="form-group lg:col-span-3">
                   <label className="form-label">Company Logo</label>
                   <div className="flex items-center gap-6 p-6 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
                     {profileForm.logo_path ? (
                       <div className="relative group">
-                        <img src={`file://${profileForm.logo_path}`} className="h-20 w-20 object-contain bg-white p-2 rounded-xl border border-slate-200" />
+                        <img src={`local-file://${profileForm.logo_path}`} className="h-20 w-20 object-contain bg-white p-2 rounded-xl border border-slate-200" />
                         <button 
                           onClick={() => setProfileForm({...profileForm, logo_path: ''})}
                           className="absolute -top-2 -right-2 bg-rose-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
@@ -236,7 +289,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                     )}
                     <div className="flex-1">
                       <p className="text-sm font-black text-slate-900 mb-1">Upload Brand Logo</p>
-                      <p className="text-xs font-bold text-slate-400 mb-4">PNG, JPG or SVG (Max 500kb)</p>
+                      <p className="text-xs font-bold text-slate-400 mb-4">PNG, JPG, WebP or SVG (Max 5mb)</p>
                       <Button 
                         variant="outline" 
                         size="sm" 
@@ -263,67 +316,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
           </Card>
         </TabsContent>
 
-        {/* Invoice Architect - The NEW Big Feature */}
-        <TabsContent value="invoice" className="m-0 outline-none">
-          <Card className="rounded-[2.5rem] border-slate-100 shadow-2xl shadow-slate-200/40 overflow-hidden">
-            <div className="grid md:grid-cols-2">
-              <div className="p-12 space-y-8 bg-white">
-                <div>
-                  <Badge className="bg-blue-600/10 text-blue-600 border-none font-black text-[10px] tracking-widest px-4 py-1.5 mb-4">PREMIUM TOOL</Badge>
-                  <h3 className="text-4xl font-black text-slate-900 tracking-tight">Invoice Architect</h3>
-                  <p className="text-slate-500 font-bold text-lg mt-4 leading-relaxed">Design professional A4 and Thermal invoices with our high-fidelity visual workspace.</p>
-                </div>
 
-                <div className="space-y-6 pt-4">
-                  <div className="flex items-center gap-5 text-slate-700">
-                    <div className="w-12 h-12 rounded-2xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-sm"><Monitor size={24} /></div>
-                    <div>
-                      <p className="font-black text-sm">Live Visual Canvas</p>
-                      <p className="text-xs font-bold text-slate-400 mt-0.5">Real-time preview of your designs</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-5 text-slate-700">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-sm"><Palette size={24} /></div>
-                    <div>
-                      <p className="font-black text-sm">Brand Customization</p>
-                      <p className="text-xs font-bold text-slate-400 mt-0.5">Colors, Typography, and Logos</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-5 text-slate-700">
-                    <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm"><List size={24} /></div>
-                    <div>
-                      <p className="font-black text-sm">Field Manager</p>
-                      <p className="text-xs font-bold text-slate-400 mt-0.5">Toggle HSN, SKU, and Custom Attributes</p>
-                    </div>
-                  </div>
-                </div>
-
-                <Button onClick={() => setShowDesigner(true)} className="w-full h-20 rounded-[2.5rem] text-xl font-black gap-4 btn-primary shadow-2xl shadow-blue-600/30 hover:scale-[1.02] transition-transform">
-                  Open Layout Manager <Monitor size={28} />
-                </Button>
-              </div>
-              <div className="bg-slate-50 p-12 flex items-center justify-center relative overflow-hidden group">
-                <div className="absolute inset-0 bg-[radial-gradient(#e2e8f0_2px,transparent_2px)] [background-size:30px_30px] opacity-40" />
-                <div className="relative w-full max-w-[320px] aspect-[1/1.4] bg-white rounded-2xl shadow-2xl border border-slate-200 transform -rotate-2 group-hover:rotate-0 transition-transform duration-700 p-8 space-y-6">
-                  <div className="flex justify-between items-center">
-                    <div className="h-6 w-16 bg-blue-600 rounded-lg" />
-                    <div className="h-4 w-24 bg-slate-100 rounded-full" />
-                  </div>
-                  <div className="h-2 w-full bg-slate-50 rounded-full" />
-                  <div className="h-2 w-3/4 bg-slate-50 rounded-full" />
-                  <div className="pt-10 space-y-3">
-                    <div className="h-12 w-full bg-slate-50 rounded-xl" />
-                    <div className="h-12 w-full bg-slate-50 rounded-xl" />
-                    <div className="h-12 w-full bg-slate-50 rounded-xl" />
-                  </div>
-                  <div className="pt-16 border-t border-slate-50 flex justify-end">
-                    <div className="h-10 w-1/2 bg-blue-50 rounded-xl border border-blue-100" />
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </TabsContent>
 
         <TabsContent value="core" className="m-0 outline-none">
            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -334,10 +327,77 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
               </CardHeader>
               <CardContent className="p-10 pt-0 space-y-8">
                 <div className="grid grid-cols-2 gap-8">
-                  <div className="form-group">
-                    <label className="form-label">Tax Label</label>
-                    <Input value={profileForm.master_data?.tax_label} onChange={(e) => setProfileForm({...profileForm, master_data: { ...profileForm.master_data, tax_label: e.target.value }})} className="form-input" />
+                  <div className="form-group flex flex-col gap-4 p-6 bg-slate-50 rounded-2xl border border-slate-100 col-span-2">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-base font-black text-slate-900">Enable GST Billing</Label>
+                        <p className="text-xs font-bold text-slate-500">Turn off if your shop doesn't apply tax on invoices</p>
+                      </div>
+                      <Switch 
+                        checked={profileForm.master_data?.gst_enabled} 
+                        onCheckedChange={(v) => setProfileForm({
+                          ...profileForm, 
+                          master_data: { ...profileForm.master_data, gst_enabled: v }
+                        })} 
+                      />
+                    </div>
                   </div>
+                  {profileForm.master_data?.gst_enabled && (
+                    <div className="form-group lg:col-span-2">
+                      <label className="form-label">Tax Label (e.g. GST, VAT, TAX)</label>
+                      <Input value={profileForm.master_data?.tax_label} onChange={(e) => setProfileForm({...profileForm, master_data: { ...profileForm.master_data, tax_label: e.target.value }})} className="form-input" />
+                    </div>
+                  )}
+                  {profileForm.master_data?.gst_enabled && (
+                    <div className="form-group lg:col-span-2 p-6 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-sm">
+                      <label className="text-sm font-black text-slate-900 flex items-center gap-2">
+                        <Palette size={16} className="text-primary" /> Manage Tax Rates (%)
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {profileForm.master_data?.tax_rates?.map((rate, idx) => (
+                          <Badge key={idx} variant="secondary" className="pl-3 pr-1 py-1 h-9 rounded-full gap-2 bg-slate-100 text-slate-900 border-none font-bold">
+                            {rate}%
+                            <button 
+                              onClick={async () => {
+                                const ok = await confirm({
+                                  type: 'danger',
+                                  title: 'Remove Tax Rate?',
+                                  message: `Are you sure you want to remove ${rate}% from your standards?`,
+                                  requiredPin: profileForm.master_data?.delete_pin
+                                });
+                                if (!ok) return;
+                                const newRates = profileForm.master_data.tax_rates.filter((_, i) => i !== idx);
+                                setProfileForm({...profileForm, master_data: { ...profileForm.master_data, tax_rates: newRates }});
+                              }}
+                              className="w-6 h-6 rounded-full bg-white flex items-center justify-center hover:bg-rose-100 hover:text-rose-600 transition-colors"
+                            >
+                              <X size={12} />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <Input 
+                          type="number" 
+                          placeholder="Add new rate (e.g. 15)" 
+                          className="h-11 rounded-xl font-bold"
+                          value={newTaxRate}
+                          onChange={(e) => setNewTaxRate(e.target.value)}
+                        />
+                        <Button 
+                          onClick={() => {
+                            if (!newTaxRate || isNaN(newTaxRate)) return;
+                            const rate = parseFloat(newTaxRate);
+                            if (profileForm.master_data.tax_rates.includes(rate)) return;
+                            const newRates = [...profileForm.master_data.tax_rates, rate].sort((a,b) => a-b);
+                            setProfileForm({...profileForm, master_data: { ...profileForm.master_data, tax_rates: newRates }});
+                            setNewTaxRate('');
+                          }}
+                          className="btn-primary px-6 rounded-xl"
+                        >Add</Button>
+                      </div>
+                    </div>
+                  )}
                   <div className="form-group">
                     <label className="form-label">Currency Symbol</label>
                     <Input value={profileForm.currency_symbol} onChange={(e) => setProfileForm({...profileForm, currency_symbol: e.target.value})} className="form-input font-bold" />
@@ -351,13 +411,61 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                       placeholder="Enter Bank Name, A/c No, IFSC, etc."
                     />
                   </div>
+
+                  <div className="form-group lg:col-span-2 p-6 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-sm">
+                    <label className="text-sm font-black text-slate-900 flex items-center gap-2">
+                      <List size={16} className="text-primary" /> Manage Measurement Units
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {profileForm.master_data?.units?.map((unit, idx) => (
+                        <Badge key={idx} variant="secondary" className="pl-3 pr-1 py-1 h-9 rounded-full gap-2 bg-slate-100 text-slate-900 border-none font-bold uppercase">
+                          {unit}
+                          <button 
+                            onClick={async () => {
+                              const ok = await confirm({
+                                type: 'danger',
+                                title: 'Remove Unit?',
+                                message: `Are you sure you want to remove "${unit}" from your standards?`,
+                                requiredPin: profileForm.master_data?.delete_pin
+                              });
+                              if (!ok) return;
+                              const newUnits = profileForm.master_data.units.filter((_, i) => i !== idx);
+                              setProfileForm({...profileForm, master_data: { ...profileForm.master_data, units: newUnits }});
+                            }}
+                            className="w-6 h-6 rounded-full bg-white flex items-center justify-center hover:bg-rose-100 hover:text-rose-600 transition-colors"
+                          >
+                            <X size={12} />
+                          </button>
+                        </Badge>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <Input 
+                        placeholder="Add new unit (e.g. litre)" 
+                        className="h-11 rounded-xl font-bold"
+                        value={newUnit}
+                        onChange={(e) => setNewUnit(e.target.value)}
+                      />
+                      <Button 
+                        onClick={() => {
+                          if (!newUnit.trim()) return;
+                          const unit = newUnit.trim().toLowerCase();
+                          if (profileForm.master_data.units.includes(unit)) return;
+                          const newUnits = [...profileForm.master_data.units, unit];
+                          setProfileForm({...profileForm, master_data: { ...profileForm.master_data, units: newUnits }});
+                          setNewUnit('');
+                        }}
+                        className="btn-primary px-6 rounded-xl"
+                      >Add</Button>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
               <CardFooter className="p-10 pt-0">
                 <Button onClick={handleProfileSave} className="btn-primary w-full h-12 rounded-xl font-bold">Update Standards</Button>
               </CardFooter>
             </Card>
-           </div>
+          </div>
         </TabsContent>
 
         {/* AI & Automation */}
@@ -406,6 +514,39 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
               </CardContent>
             </Card>
 
+            <Card className="rounded-[2.5rem] border-slate-100 shadow-xl">
+              <CardHeader className="p-10">
+                <CardTitle className="text-2xl font-black flex items-center gap-3">
+                  <Lock size={22} className="text-primary" /> Operation Security
+                </CardTitle>
+                <CardDescription className="text-base font-medium">Protect sensitive actions with a PIN</CardDescription>
+              </CardHeader>
+              <CardContent className="p-10 pt-0 space-y-6">
+                <div className="form-group">
+                  <label className="form-label">System Deletion PIN</label>
+                  <div className="relative">
+                    <Input 
+                      type={showKey ? "text" : "password"} 
+                      value={profileForm.master_data?.delete_pin} 
+                      onChange={(e) => setProfileForm({
+                        ...profileForm, 
+                        master_data: { ...profileForm.master_data, delete_pin: e.target.value }
+                      })} 
+                      placeholder="e.g. 1234 (Leave blank to disable)"
+                      className="form-input h-14 pr-12 font-black text-lg tracking-[0.5em]"
+                    />
+                    <button onClick={() => setShowKey(!showKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary transition-colors">
+                      {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-400 font-bold mt-3 leading-relaxed">
+                    If set, the system will ask for this PIN whenever someone tries to delete a product, sale, or party ledger.
+                  </p>
+                </div>
+                <Button onClick={handleProfileSave} className="btn-primary w-full h-12 rounded-xl font-bold">Save Security PIN</Button>
+              </CardContent>
+            </Card>
+
             <Card className="rounded-[2.5rem] border-rose-100 bg-rose-50/10 shadow-xl shadow-rose-200/10">
               <CardHeader className="p-10">
                 <CardTitle className="text-2xl font-black text-rose-900">Danger Zone</CardTitle>
@@ -415,20 +556,151 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                 <Button className="btn-danger w-full h-14 rounded-xl font-bold" onClick={handleReset}>Wipe All App Data</Button>
               </CardContent>
             </Card>
+
+            {/* System Update Status */}
+            <Card className="rounded-[2.5rem] border-slate-100 shadow-xl overflow-hidden md:col-span-2">
+              <CardHeader className="p-10 bg-slate-900 text-white">
+                 <div className="flex items-center justify-between">
+                   <div>
+                     <CardTitle className="text-2xl font-black">System Status</CardTitle>
+                     <CardDescription className="text-slate-400 font-bold">App version and update management</CardDescription>
+                   </div>
+                   <Badge variant="outline" className="border-slate-700 text-slate-400 font-black px-4 py-1.5 rounded-xl uppercase tracking-widest text-[10px]">
+                      Internal Build
+                   </Badge>
+                 </div>
+              </CardHeader>
+              <CardContent className="p-10 space-y-8">
+                <div className="flex items-center justify-between p-8 bg-slate-50 rounded-[2rem] border border-slate-100">
+                  <div className="flex items-center gap-6">
+                    <div className={`w-16 h-16 rounded-2xl flex items-center justify-center shadow-lg ${
+                      updateInfo.available ? 'bg-emerald-500 text-white shadow-emerald-500/20' : 'bg-white text-slate-400 shadow-slate-200'
+                    }`}>
+                      {updateInfo.available ? <Download size={28} /> : <ShieldCheck size={28} />}
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Current Version</p>
+                      <h4 className="text-2xl font-black text-slate-900">v{updateInfo.current || '2.0.0'}</h4>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {updateInfo.available ? (
+                      <Button 
+                        onClick={() => window.open(updateInfo.url, '_blank')}
+                        className="btn-primary h-14 px-8 rounded-2xl gap-3 bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/20"
+                      >
+                        <Download size={20} /> Get v{updateInfo.version} Now
+                      </Button>
+                    ) : (
+                      <Button 
+                        variant="outline" 
+                        onClick={() => handleCheckUpdate(true)} 
+                        disabled={updateInfo.loading}
+                        className="h-14 px-8 rounded-2xl font-black border-slate-200 gap-3"
+                      >
+                        <RefreshCw size={20} className={updateInfo.loading ? 'animate-spin' : ''} /> 
+                        {updateInfo.loading ? 'Checking...' : 'Check for Updates'}
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                {updateInfo.available && (
+                  <div className="p-6 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-start gap-4">
+                    <Info className="text-emerald-600 mt-1" size={20} />
+                    <div>
+                      <p className="text-emerald-900 font-black text-sm uppercase tracking-tight">Security & Performance Update</p>
+                      <p className="text-emerald-700/80 font-bold text-sm mt-1">Version {updateInfo.version} contains critical optimizations for faster billing and security patches. We recommend updating immediately.</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           </div>
         </TabsContent>
-      </Tabs>
 
-      {showDesigner && (
-        <InvoiceSettings 
-          profile={profile} 
-          onClose={() => {
-            setShowDesigner(false);
-            if (onProfileUpdate) onProfileUpdate();
-          }} 
-          onProfileUpdate={onProfileUpdate}
-        />
-      )}
+        {/* WhatsApp Integration */}
+        <TabsContent value="whatsapp" className="m-0 outline-none">
+          <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+            <CardHeader className="p-10 bg-slate-900 text-white">
+              <CardTitle className="text-2xl font-black flex items-center gap-4">
+                <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center">
+                  <MessageCircle size={24} />
+                </div>
+                WhatsApp Business API
+              </CardTitle>
+              <CardDescription className="text-slate-400 font-bold mt-2">
+                Configure Meta Graph API to send automated invoices
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="p-10 space-y-8">
+              <div className="bg-emerald-50 border border-emerald-100 p-6 rounded-[2rem] flex gap-4">
+                <Info size={24} className="text-emerald-600 shrink-0" />
+                <div className="text-sm text-emerald-800 font-medium">
+                  To use this feature, you must have a <b>Verified Meta Business Account</b>. 
+                  Invoices will be sent from your official WhatsApp Business number.
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                <div className="flex items-center justify-between p-6 bg-slate-50 rounded-3xl border border-slate-100">
+                  <div className="space-y-1">
+                    <Label className="text-lg font-black text-slate-900">Enable Automated Sending</Label>
+                    <p className="text-sm text-slate-500 font-medium text-balance">Automatically send invoice PDF to customer's WhatsApp after generation</p>
+                  </div>
+                  <Switch 
+                    checked={profileForm.whatsapp_settings?.enabled} 
+                    onCheckedChange={(v) => setProfileForm({
+                      ...profileForm, 
+                      whatsapp_settings: { ...profileForm.whatsapp_settings, enabled: v }
+                    })} 
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="form-group md:col-span-2">
+                    <label className="form-label">Permanent Access Token</label>
+                    <div className="relative">
+                      <Input 
+                        type={showKey ? "text" : "password"} 
+                        value={profileForm.whatsapp_settings?.access_token} 
+                        onChange={(e) => setProfileForm({...profileForm, whatsapp_settings: { ...profileForm.whatsapp_settings, access_token: e.target.value }})} 
+                        className="form-input pr-12 font-mono" 
+                        placeholder="EAAB..."
+                      />
+                      <button onClick={() => setShowKey(!showKey)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-primary">
+                        {showKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Phone Number ID</label>
+                    <Input 
+                      value={profileForm.whatsapp_settings?.phone_number_id} 
+                      onChange={(e) => setProfileForm({...profileForm, whatsapp_settings: { ...profileForm.whatsapp_settings, phone_number_id: e.target.value }})} 
+                      className="form-input" 
+                      placeholder="1234567890..."
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Business Account ID</label>
+                    <Input 
+                      value={profileForm.whatsapp_settings?.business_account_id} 
+                      onChange={(e) => setProfileForm({...profileForm, whatsapp_settings: { ...profileForm.whatsapp_settings, business_account_id: e.target.value }})} 
+                      className="form-input" 
+                      placeholder="9876543210..."
+                    />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+            <CardFooter className="p-10 pt-0">
+              <Button onClick={handleProfileSave} className="btn-primary w-full h-12 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700">Save WhatsApp Configuration</Button>
+            </CardFooter>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

@@ -56,25 +56,9 @@ export default function Billing({
   useEffect(() => {
     loadProducts();
     loadParties();
-    loadAttributeDefs();
     if (searchRef.current) searchRef.current.focus();
   }, []);
 
-  const loadAttributeDefs = async () => {
-    if (profile?.invoice_settings) {
-      try {
-        const saved = typeof profile.invoice_settings === 'string' 
-          ? JSON.parse(profile.invoice_settings) 
-          : profile.invoice_settings;
-        
-        if (saved && saved.fields) {
-          setInvoiceFields(saved.fields);
-          setVisibleAttributes(saved.visibleAttributes || {});
-          setSelectedTemplate(saved.template || 'modern');
-        }
-      } catch (e) { console.error(e); }
-    }
-  };
 
   const loadParties = async () => {
     if (typeof window !== 'undefined' && window.electronAPI) {
@@ -159,6 +143,25 @@ export default function Billing({
     );
   };
 
+  const updateCartPrice = (productId, newPrice) => {
+    setCart((prev) =>
+      prev.map((c) =>
+        c.product_id === productId ? { ...c, price: parseFloat(newPrice) || 0 } : c
+      )
+    );
+  };
+
+  const updateCartLineTotal = (productId, newLineTotal) => {
+    setCart((prev) =>
+      prev.map((c) => {
+        if (c.product_id !== productId) return c;
+        const qty = c.quantity || 1;
+        // Use a high-precision price but handle the input total cleanly
+        return { ...c, price: (parseFloat(newLineTotal) || 0) / qty };
+      })
+    );
+  };
+
   const subtotal = cart.reduce((sum, c) => {
     const itemLineTotal = c.price * c.quantity;
     if (taxMode === 'inclusive') {
@@ -167,41 +170,105 @@ export default function Billing({
     return sum + itemLineTotal;
   }, 0);
 
-  const totalGst = cart.reduce((sum, c) => {
+  const originalSubtotal = cart.reduce((sum, c) => {
+    const itemLineTotal = c.original_price * c.quantity;
+    if (taxMode === 'inclusive') {
+      return sum + (itemLineTotal / (1 + (c.gst_rate / 100)));
+    }
+    return sum + itemLineTotal;
+  }, 0);
+
+  const gstEnabled = masterData.gst_enabled !== false;
+
+  const totalGst = gstEnabled ? cart.reduce((sum, c) => {
     const itemLineTotal = c.price * c.quantity;
     if (taxMode === 'inclusive') {
       const basePrice = itemLineTotal / (1 + (c.gst_rate / 100));
       return sum + (itemLineTotal - basePrice);
     }
     return sum + (itemLineTotal * c.gst_rate / 100);
-  }, 0);
+  }, 0) : 0;
 
   const totalDiscount = cart.reduce((sum, c) => sum + (c.original_price > c.price ? (c.original_price - c.price) * c.quantity : 0), 0);
   
-  const grandTotal = taxMode === 'inclusive' 
-    ? cart.reduce((sum, c) => sum + (c.price * c.quantity), 0)
-    : subtotal + totalGst;
+  const rawGrandTotal = (gstEnabled 
+    ? (taxMode === 'inclusive' 
+        ? cart.reduce((sum, c) => sum + (c.price * c.quantity), 0)
+        : subtotal + totalGst)
+    : subtotal);
+  const grandTotal = Math.round(rawGrandTotal);
+  const roundOff = (grandTotal - rawGrandTotal).toFixed(2);
 
   const handleSave = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0) {
+      toast("Please add at least one item to the cart", "warning");
+      return;
+    }
+
+    if (!customerName || customerName.trim() === '') {
+      toast("Customer Name is necessary to generate a bill", "error");
+      return;
+    }
+
     if (typeof window === 'undefined' || !window.electronAPI) return;
     setSaving(true);
+    let finalPartyId = selectedParty?.id;
+
+    // Auto-match party by name if not selected
+    if (!finalPartyId && customerName) {
+      const match = parties.find(p => p.name.trim().toLowerCase() === customerName.trim().toLowerCase());
+      if (match) {
+        finalPartyId = match.id;
+        toast(`Linked to existing ledger: ${match.name}`, 'info');
+      }
+    }
+
+    // Calculate due amount
+    const dueAmount = grandTotal - (paidAmount ? parseFloat(paidAmount) : grandTotal);
+
+    // If there is a balance but no party exists, create one automatically
+    if (!finalPartyId && dueAmount > 0 && customerName && customerName.toLowerCase() !== 'cash') {
+      try {
+        // Corrected API method name from 'create' to 'add'
+        const partyResult = await window.electronAPI.parties.add({
+          name: customerName,
+          phone: customerPhone,
+          address: customerAddress,
+          type: 'Customer',
+          opening_balance: 0
+        });
+        
+        // parties.add returns the result of db.run(), so it might have lastInsertRowid
+        finalPartyId = partyResult.lastInsertRowid || partyResult.id;
+        
+        toast(`Created new ledger for ${customerName}`, 'success');
+        loadParties(); // Refresh the list
+      } catch (e) {
+        console.error("Auto-party creation failed", e);
+        toast("Failed to create customer ledger automatically", "error");
+      }
+    }
+
     try {
       const result = await window.electronAPI.sales.create({
         items: cart.map((c) => ({
           product_id: c.product_id,
           product_name: c.product_name,
+          mrp: c.original_price,
           price: c.price,
           quantity: c.quantity,
           gst_rate: c.gst_rate,
         })),
-        party_id: selectedParty?.id,
+        party_id: finalPartyId,
         customer_name: customerName,
         customer_phone: customerPhone,
-        customer_address: customerAddress,
         payment_mode: paymentMode,
         paid_amount: paidAmount ? parseFloat(paidAmount) : grandTotal,
+        misc_charges: 0,
+        tax_mode: taxMode,
       });
+
+
 
       setSaleResult({ 
         ...result, 
@@ -211,9 +278,12 @@ export default function Billing({
         date: new Date().toLocaleDateString('en-IN'),
         cart: [...cart],
         subtotal,
+        originalSubtotal,
         totalGst,
         grandTotal, 
-        totalDiscount 
+        totalDiscount,
+        misc_charges: 0,
+        paid_amount: paidAmount ? parseFloat(paidAmount) : grandTotal,
       });
       setCart([]);
       setCustomerData({ name: '', phone: '', address: '' });
@@ -222,10 +292,10 @@ export default function Billing({
       setSelectedParty(null);
       setShowSuccessModal(true);
       loadProducts();
-      toast.success("Invoice generated successfully!");
+      toast("Invoice generated successfully!", "success");
     } catch (e) {
       console.error(e);
-      toast.error("Failed to save transaction");
+      toast("Failed to save transaction", "error");
     }
     setSaving(false);
   };
@@ -357,8 +427,11 @@ export default function Billing({
                 <CardContent className="p-6">
                   <div className="grid sm:grid-cols-3 gap-4">
                     <div className="relative">
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 block">
+                        Customer Name <span className="text-red-500">*</span>
+                      </label>
                       <Input 
-                        placeholder="Customer Name" 
+                        placeholder="Full Name / Business Name (Required)" 
                         value={partySearch}
                         onChange={(e) => {
                           setPartySearch(e.target.value);
@@ -414,8 +487,17 @@ export default function Billing({
                               <tr key={item.product_id} className="hover:bg-slate-50/50">
                                 <td className="p-4">
                                   <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter leading-none mb-1">{item.brand}</p>
-                                  <p className="font-bold text-slate-900">{item.product_name}</p>
-                                  <p className="text-xs font-medium text-slate-500">{CURRENCY}{item.price}</p>
+                                  <p className="font-bold text-slate-900 leading-tight">{item.product_name}</p>
+                                  <div className="flex items-center gap-1 mt-1">
+                                    <span className="text-[10px] font-bold text-slate-400">{CURRENCY}</span>
+                                    <input 
+                                      type="number"
+                                      value={item.price}
+                                      onChange={(e) => updateCartPrice(item.product_id, e.target.value)}
+                                      className="w-20 text-[11px] font-black text-blue-600 bg-blue-50/50 border-none rounded px-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <span className="text-[10px] font-bold text-slate-300">/ {item.unit}</span>
+                                  </div>
                                 </td>
                                 <td className="p-4">
                                   <div className="flex items-center justify-center gap-2">
@@ -424,8 +506,23 @@ export default function Billing({
                                     <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQty(item.product_id, 1)}><Plus size={12} /></Button>
                                   </div>
                                 </td>
-                                <td className="p-4 text-right font-black text-slate-900">
-                                  {CURRENCY}{(item.price * item.quantity).toLocaleString()}
+                                <td className="p-4 text-right">
+                                  <div className="flex flex-col items-end">
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-xs font-black text-slate-400">{CURRENCY}</span>
+                                      <input 
+                                        type="number"
+                                        value={Math.round(item.price * item.quantity)}
+                                        onChange={(e) => updateCartLineTotal(item.product_id, e.target.value)}
+                                        className="w-24 text-right font-black text-slate-900 bg-slate-50 border-none rounded px-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                      />
+                                    </div>
+                                    {item.original_price > item.price && (
+                                      <span className="text-[10px] font-bold text-emerald-600">
+                                        -{CURRENCY}{((item.original_price - item.price) * item.quantity).toLocaleString()} OFF
+                                      </span>
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="p-4">
                                   <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50" onClick={() => setCart(cart.filter(c => c.product_id !== item.product_id))}>
@@ -452,20 +549,22 @@ export default function Billing({
                 <Card className="border-slate-200 shadow-sm overflow-hidden">
                   <CardHeader className="bg-slate-900 text-white flex flex-row items-center justify-between py-4">
                     <CardTitle className="text-sm font-bold uppercase tracking-widest opacity-70">Payment Summary</CardTitle>
-                    <div className="flex bg-white/10 p-1 rounded-xl border border-white/10">
-                      <button 
-                        onClick={() => setTaxMode('exclusive')}
-                        className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${taxMode === 'exclusive' ? 'bg-white text-slate-900 shadow-lg' : 'text-white hover:bg-white/10'}`}
-                      >
-                        GST +
-                      </button>
-                      <button 
-                        onClick={() => setTaxMode('inclusive')}
-                        className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${taxMode === 'inclusive' ? 'bg-white text-slate-900 shadow-lg' : 'text-white hover:bg-white/10'}`}
-                      >
-                        GST -
-                      </button>
-                    </div>
+                    {gstEnabled && (
+                      <div className="flex bg-white/10 p-1 rounded-xl border border-white/10">
+                        <button 
+                          onClick={() => setTaxMode('exclusive')}
+                          className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${taxMode === 'exclusive' ? 'bg-white text-slate-900 shadow-lg' : 'text-white hover:bg-white/10'}`}
+                        >
+                          GST +
+                        </button>
+                        <button 
+                          onClick={() => setTaxMode('inclusive')}
+                          className={`px-3 py-1 text-[10px] font-black rounded-lg transition-all ${taxMode === 'inclusive' ? 'bg-white text-slate-900 shadow-lg' : 'text-white hover:bg-white/10'}`}
+                        >
+                          GST -
+                        </button>
+                      </div>
+                    )}
                   </CardHeader>
                   <CardContent className="p-6 space-y-4">
                     <div className="space-y-2">
@@ -473,15 +572,25 @@ export default function Billing({
                         <span>Subtotal</span>
                         <span>{CURRENCY}{subtotal.toLocaleString()}</span>
                       </div>
-                      <div className="flex justify-between text-sm font-medium text-slate-500">
-                        <div className="flex items-center gap-2">
-                          <span>{TAX_LABEL}</span>
-                          <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-black border-slate-200 text-slate-400">
-                            {taxMode === 'inclusive' ? 'INCLUDED' : 'ADDED'}
-                          </Badge>
+                      {gstEnabled && (
+                        <div className="flex justify-between text-sm font-medium text-slate-500">
+                          <div className="flex items-center gap-2">
+                            <span>{TAX_LABEL}</span>
+                            <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 font-black border-slate-200 text-slate-400">
+                              {taxMode === 'inclusive' ? 'INCLUDED' : 'ADDED'}
+                            </Badge>
+                          </div>
+                          <span>{CURRENCY}{totalGst.toLocaleString()}</span>
                         </div>
-                        <span>{CURRENCY}{totalGst.toLocaleString()}</span>
-                      </div>
+                      )}
+                      
+                      {Number(roundOff) !== 0 && (
+                        <div className="flex justify-between text-xs font-bold text-slate-400 italic">
+                          <span>Round Off</span>
+                          <span>{Number(roundOff) > 0 ? '+' : ''}{roundOff}</span>
+                        </div>
+                      )}
+                      
                       <div className="pt-4 border-t border-slate-100 flex justify-between items-end">
                         <span className="text-sm font-bold text-slate-900">Grand Total</span>
                         <span className="text-3xl font-black text-blue-600 leading-none">{CURRENCY}{grandTotal.toLocaleString()}</span>
@@ -501,6 +610,41 @@ export default function Billing({
                         </SelectContent>
                       </Select>
                     </div>
+
+                    <div className="space-y-2 pt-2">
+                      <div className="flex justify-between items-center">
+                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Amount Paid ({CURRENCY})</label>
+                        <button 
+                          onClick={() => setPaidAmount(grandTotal.toString())}
+                          className="text-[10px] font-black text-blue-600 hover:underline"
+                        >
+                          SET FULL
+                        </button>
+                      </div>
+                      <Input 
+                        type="number" 
+                        placeholder={grandTotal.toString()} 
+                        value={paidAmount} 
+                        onChange={(e) => setPaidAmount(e.target.value)}
+                        className="h-12 font-black text-slate-900 border-slate-200"
+                      />
+                    </div>
+
+                    {paidAmount !== '' && parseFloat(paidAmount || 0) < grandTotal && (
+                      <div className="p-4 bg-rose-50 rounded-2xl border border-rose-100 animate-in slide-in-from-top-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Balance Due</span>
+                          <span className="text-sm font-black text-rose-600">{CURRENCY}{(grandTotal - parseFloat(paidAmount || 0)).toLocaleString()}</span>
+                        </div>
+                        {selectedParty ? (
+                          <p className="text-[10px] font-bold text-rose-400">This balance will be added to <b>{selectedParty.name}</b>'s ledger.</p>
+                        ) : (
+                          <p className="text-[10px] font-bold text-rose-400">Select a Customer to track this balance in their ledger.</p>
+                        )}
+                      </div>
+                    )}
+
+
                   </CardContent>
                   <CardFooter className="p-6 bg-slate-50 border-t">
                     <Button 
@@ -524,6 +668,10 @@ export default function Billing({
 
       <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
         <DialogContent className="max-w-[90vw] sm:max-w-2xl max-h-[90vh] p-0 overflow-hidden border-none shadow-[0_32px_64px_-12px_rgba(0,0,0,0.2)] rounded-[2.5rem] bg-white transition-all overflow-y-auto">
+          <DialogHeader className="sr-only">
+            <DialogTitle>Sale Completed</DialogTitle>
+          </DialogHeader>
+
           <div className="relative bg-slate-900 p-8 sm:p-12 flex flex-col items-center text-white text-center overflow-hidden">
             {/* Proper Cross Button */}
             <Button 
@@ -546,12 +694,27 @@ export default function Billing({
           <div className="p-6 sm:p-10 space-y-6 sm:space-y-8 bg-white">
             <div className="bg-slate-50 rounded-[2rem] sm:rounded-[2.5rem] p-6 sm:p-10 text-center border border-slate-100 shadow-inner relative">
               <p className="text-[10px] sm:text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">Invoice Reference</p>
-              <p className="text-5xl sm:text-7xl font-black text-slate-900 tracking-tighter">#{saleResult?.invoiceNumber}</p>
+              <p className="text-5xl sm:text-7xl font-black text-slate-900 tracking-tighter">#{saleResult?.invoice_number}</p>
               
               <div className="flex flex-wrap items-center justify-center gap-3 mt-6 sm:mt-8">
-                <Badge className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2 hover:bg-emerald-100 transition-colors">
-                  <Check size={14} strokeWidth={3} /> PAID
-                </Badge>
+                {saleResult?.due_amount <= 0 ? (
+                  <Badge className="bg-emerald-50 text-emerald-600 border border-emerald-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
+                    <Check size={14} strokeWidth={3} /> FULLY PAID
+                  </Badge>
+                ) : saleResult?.paid_amount > 0 ? (
+                  <Badge className="bg-amber-50 text-amber-600 border border-amber-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
+                    <Check size={14} strokeWidth={3} /> PARTIAL PAYMENT
+                  </Badge>
+                ) : (
+                  <Badge className="bg-rose-50 text-rose-600 border border-rose-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
+                    <X size={14} strokeWidth={3} /> FULL CREDIT
+                  </Badge>
+                )}
+                {saleResult?.party_id && (
+                  <Badge className="bg-blue-50 text-blue-600 border border-blue-100 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
+                    <User size={14} /> LINKED TO LEDGER
+                  </Badge>
+                )}
                 <Badge className="bg-white text-slate-500 border border-slate-200 px-4 py-2 rounded-xl font-black text-xs sm:text-sm shadow-sm flex items-center gap-2">
                   <CreditCard size={14} /> {paymentMode}
                 </Badge>

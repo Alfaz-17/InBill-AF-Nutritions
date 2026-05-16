@@ -19,6 +19,9 @@ import { Textarea } from "@/components/ui/textarea";
 
 export default function Parties({ profile }) {
   const { toast, confirm } = useToast();
+  const masterData = typeof profile?.master_data === 'string' 
+    ? (JSON.parse(profile.master_data || '{}')) 
+    : (profile?.master_data || {});
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,6 +32,14 @@ export default function Parties({ profile }) {
   const [formData, setFormData] = useState({
     name: '', phone: '', address: '', gstin: '', type: 'Customer', opening_balance: 0
   });
+
+  // Ledger & Payment States
+  const [showLedger, setShowLedger] = useState(false);
+  const [selectedParty, setSelectedParty] = useState(null);
+  const [ledgerData, setLedgerData] = useState([]);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentData, setPaymentData] = useState({ amount: 0, note: '', date: new Date().toISOString().split('T')[0] });
+  const [savingPayment, setSavingPayment] = useState(false);
 
   const CURRENCY = profile?.currency_symbol || '₹';
 
@@ -83,6 +94,7 @@ export default function Parties({ profile }) {
       title: `Delete ${party?.name}?`,
       message: 'This contact and their transaction history will be permanently removed.',
       confirmText: 'Delete Contact',
+      requiredPin: masterData.delete_pin
     });
     if (!ok) return;
     try {
@@ -90,6 +102,40 @@ export default function Parties({ profile }) {
       toast('Contact removed from directory', 'info');
       loadParties();
     } catch (e) { toast('Failed to delete: ' + e.message, 'error'); }
+  };
+
+  const handleOpenLedger = async (party) => {
+    setSelectedParty(party);
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      try {
+        const data = await window.electronAPI.parties.getLedger(party.id);
+        setLedgerData(data || []);
+        setShowLedger(true);
+      } catch (e) { toast('Failed to load ledger', 'error'); }
+    }
+  };
+
+  const handleOpenPayment = (party) => {
+    setSelectedParty(party);
+    setPaymentData({ amount: 0, note: '', date: new Date().toISOString().split('T')[0] });
+    setShowPaymentModal(true);
+  };
+
+  const handleSavePayment = async () => {
+    if (!paymentData.amount || paymentData.amount <= 0) return;
+    setSavingPayment(true);
+    try {
+      await window.electronAPI.parties.recordPayment({
+        party_id: selectedParty.id,
+        amount: paymentData.amount,
+        note: paymentData.note,
+        date: paymentData.date
+      });
+      toast(`Payment of ${CURRENCY}${paymentData.amount} recorded for ${selectedParty.name}`);
+      setShowPaymentModal(false);
+      loadParties();
+    } catch (e) { toast('Payment failed: ' + e.message, 'error'); }
+    setSavingPayment(false);
   };
 
   const filtered = parties.filter(p => {
@@ -226,6 +272,22 @@ export default function Parties({ profile }) {
                     </td>
                     <td className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleOpenPayment(p)} 
+                          className="h-10 px-4 rounded-xl text-emerald-600 font-black gap-2 hover:bg-emerald-50"
+                        >
+                          <CreditCard size={16} /> {p.type === 'Customer' ? 'Collect' : 'Pay'}
+                        </Button>
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          onClick={() => handleOpenLedger(p)} 
+                          className="h-10 px-4 rounded-xl text-blue-600 font-black gap-2 hover:bg-blue-50"
+                        >
+                          <History size={16} /> Ledger
+                        </Button>
                         <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="h-10 w-10 rounded-xl text-slate-400 hover:text-primary hover:bg-blue-50">
                           <Edit3 size={18} />
                         </Button>
@@ -250,7 +312,7 @@ export default function Parties({ profile }) {
 
       {/* Party Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl rounded-[3rem] bg-white">
+        <DialogContent className="sm:max-w-2xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[3rem] bg-white">
           <DialogHeader className="p-10 bg-slate-900 text-white">
             <DialogTitle className="text-2xl font-black flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/20">
@@ -263,7 +325,7 @@ export default function Parties({ profile }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-10 space-y-10 max-h-[70vh] overflow-y-auto bg-slate-50/30">
+          <div className="flex-1 overflow-y-auto p-10 space-y-10 bg-slate-50/30">
             <section className="space-y-6">
               <div className="flex items-center gap-3">
                 <History size={18} className="text-blue-600" />
@@ -286,7 +348,7 @@ export default function Parties({ profile }) {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Phone Number</label>
-                  <Input value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="form-input h-14" placeholder="9876543210" />
+                  <Input value={formData.phone || ''} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="form-input h-14" placeholder="9876543210" />
                 </div>
               </div>
             </section>
@@ -299,16 +361,16 @@ export default function Parties({ profile }) {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                 <div className="form-group">
                   <label className="form-label">GSTIN / Tax ID</label>
-                  <Input value={formData.gstin} onChange={(e) => setFormData({...formData, gstin: e.target.value.toUpperCase()})} className="form-input h-14 font-mono" placeholder="22AAAAA0000A1Z5" />
+                  <Input value={formData.gstin || ''} onChange={(e) => setFormData({...formData, gstin: e.target.value.toUpperCase()})} className="form-input h-14 font-mono" placeholder="22AAAAA0000A1Z5" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Opening Balance ({CURRENCY})</label>
-                  <Input type="number" value={formData.opening_balance} onChange={(e) => setFormData({...formData, opening_balance: parseFloat(e.target.value) || 0})} className="form-input h-14 font-black" />
+                  <Input type="number" value={formData.opening_balance || 0} onChange={(e) => setFormData({...formData, opening_balance: parseFloat(e.target.value) || 0})} className="form-input h-14 font-black" />
                   <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-tight">Negative (-) means you owe them</p>
                 </div>
                 <div className="md:col-span-2 form-group">
                   <label className="form-label">Billing Address</label>
-                  <Textarea value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} className="form-input min-h-[100px] py-4" placeholder="Full street address..." />
+                  <Textarea value={formData.address || ''} onChange={(e) => setFormData({...formData, address: e.target.value})} className="form-input min-h-[100px] py-4" placeholder="Full street address..." />
                 </div>
               </div>
             </section>
@@ -318,6 +380,126 @@ export default function Parties({ profile }) {
             <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Discard</Button>
             <Button onClick={handleSave} className="btn-primary h-14 px-12 rounded-2xl gap-3">
               <Check size={20} strokeWidth={3} /> {editingParty ? 'Update Contact' : 'Register Partner'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ledger Modal */}
+      <Dialog open={showLedger} onOpenChange={setShowLedger}>
+        <DialogContent className="sm:max-w-4xl p-0 overflow-hidden border-none shadow-2xl rounded-[3rem] bg-white">
+          <DialogHeader className="p-10 bg-slate-900 text-white">
+            <DialogTitle className="text-2xl font-black flex items-center gap-4">
+              <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center">
+                <History size={24} className="text-blue-400" />
+              </div>
+              Transaction Ledger — {selectedParty?.name}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400 font-bold text-base mt-2">
+              Complete history of sales, purchases, and collections
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-10 max-h-[60vh] overflow-y-auto bg-slate-50/30">
+            {ledgerData.length > 0 ? (
+              <div className="table-wrap border-slate-200 shadow-none rounded-2xl overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 border-b">
+                    <tr>
+                      <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Date</th>
+                      <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Type</th>
+                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Total</th>
+                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Paid</th>
+                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {ledgerData.map((tx) => (
+                      <tr key={tx.id} className="bg-white">
+                        <td className="p-4 font-bold text-slate-600">
+                          {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td className="p-4">
+                          <Badge className={`rounded-lg font-black text-[10px] ${
+                            tx.type === 'Sale' ? 'bg-blue-50 text-blue-600' : 
+                            tx.type === 'Purchase' ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'
+                          }`}>
+                            {tx.type.toUpperCase()}
+                          </Badge>
+                          {tx.note && <p className="text-[10px] text-slate-400 mt-1">{tx.note}</p>}
+                        </td>
+                        <td className="p-4 text-right font-bold text-slate-900">{tx.total_amount ? `${CURRENCY}${tx.total_amount.toLocaleString()}` : '-'}</td>
+                        <td className="p-4 text-right font-bold text-emerald-600">{CURRENCY}{tx.paid_amount.toLocaleString()}</td>
+                        <td className="p-4 text-right font-black text-slate-900">{CURRENCY}{tx.due_amount.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="py-20 text-center text-slate-300 font-bold">No transaction history available</div>
+            )}
+          </div>
+
+          <DialogFooter className="p-10 bg-white border-t flex items-center justify-between">
+             <div>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Final Ledger Balance</p>
+                <p className={`text-3xl font-black ${selectedParty?.current_balance >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {CURRENCY}{Math.abs(selectedParty?.current_balance || 0).toLocaleString()}
+                  <span className="text-sm ml-2">{selectedParty?.current_balance >= 0 ? 'Receivable' : 'Payable'}</span>
+                </p>
+             </div>
+             <Button variant="outline" className="h-14 px-10 rounded-2xl font-black" onClick={() => setShowLedger(false)}>Close Ledger</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Payment Modal */}
+      <Dialog open={showPaymentModal} onOpenChange={setShowPaymentModal}>
+        <DialogContent className="sm:max-w-md p-0 overflow-hidden border-none shadow-2xl rounded-[3rem] bg-white">
+          <DialogHeader className="p-10 bg-slate-900 text-white">
+            <DialogTitle className="text-2xl font-black flex items-center gap-4">
+              <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${selectedParty?.type === 'Customer' ? 'bg-emerald-500' : 'bg-blue-500'}`}>
+                <CreditCard size={24} />
+              </div>
+              {selectedParty?.type === 'Customer' ? 'Collect Payment' : 'Record Payment'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="p-10 space-y-6">
+            <div className="form-group">
+              <label className="form-label">Payment Amount ({CURRENCY})</label>
+              <Input 
+                type="number" 
+                className="h-16 text-2xl font-black text-center rounded-2xl border-slate-200" 
+                value={paymentData.amount} 
+                onChange={(e) => setPaymentData({...paymentData, amount: parseFloat(e.target.value) || 0})}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payment Date</label>
+              <Input 
+                type="date" 
+                className="h-14 rounded-2xl border-slate-200" 
+                value={paymentData.date} 
+                onChange={(e) => setPaymentData({...paymentData, date: e.target.value})}
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Internal Note</label>
+              <Input 
+                placeholder="Reference #, Mode, etc." 
+                className="h-14 rounded-2xl border-slate-200" 
+                value={paymentData.note} 
+                onChange={(e) => setPaymentData({...paymentData, note: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="p-10 pt-0 flex gap-3">
+            <Button variant="outline" className="h-14 flex-1 rounded-2xl font-black" onClick={() => setShowPaymentModal(false)}>Cancel</Button>
+            <Button className="btn-primary h-14 flex-1 rounded-2xl gap-2" onClick={handleSavePayment} disabled={savingPayment}>
+               {savingPayment ? 'Processing...' : <><Save size={18} /> Record {selectedParty?.type === 'Customer' ? 'Receipt' : 'Payment'}</>}
             </Button>
           </DialogFooter>
         </DialogContent>

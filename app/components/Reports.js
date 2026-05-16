@@ -3,7 +3,7 @@ import { useState } from 'react';
 import {
   FileBarChart, Download, Calendar, IndianRupee,
   ShoppingCart, Package, TruckIcon, TrendingUp, ArrowRight, Check, RotateCcw, X, User, Hash, AlertCircle, RotateCcw as ReturnIcon,
-  Printer
+  Printer, Wallet
 } from 'lucide-react';
 import { toast } from "sonner";
 import { getInvoiceHTML } from './InvoiceTemplates';
@@ -266,22 +266,44 @@ export default function Reports({ profile }) {
           {data ? (
             <div className="space-y-10 animate-in">
               {/* Metrics */}
-              {(activeTab === 'sales' || activeTab === 'purchases') && (
+              {(activeTab === 'sales' || activeTab === 'purchases' || activeTab === 'stock') && (
                 <div className="metric-grid">
-                  <div className="metric-card">
-                    <div className="metric-icon teal"><IndianRupee size={24} /></div>
-                    <div>
-                      <p className="metric-sub">Total {activeTab === 'sales' ? 'Revenue' : 'Investment'}</p>
-                      <h3 className="metric-value">{CURRENCY}{(data.summary?.total || 0).toLocaleString('en-IN')}</h3>
-                    </div>
-                  </div>
-                  <div className="metric-card">
-                    <div className="metric-icon blue"><TrendingUp size={24} /></div>
-                    <div>
-                      <p className="metric-sub">Transactions</p>
-                      <h3 className="metric-value">{data.summary?.count || 0} Records</h3>
-                    </div>
-                  </div>
+                  {(activeTab === 'sales' || activeTab === 'purchases') && (
+                    <>
+                      <div className="metric-card">
+                        <div className="metric-icon teal"><IndianRupee size={24} /></div>
+                        <div>
+                          <p className="metric-sub">Total {activeTab === 'sales' ? 'Revenue' : 'Investment'}</p>
+                          <h3 className="metric-value">{CURRENCY}{(data.summary?.total || 0).toLocaleString('en-IN')}</h3>
+                        </div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="metric-icon blue"><TrendingUp size={24} /></div>
+                        <div>
+                          <p className="metric-sub">Transactions</p>
+                          <h3 className="metric-value">{data.summary?.count || 0} Records</h3>
+                        </div>
+                      </div>
+                    </>
+                  )}
+                  {activeTab === 'stock' && (
+                    <>
+                      <div className="metric-card">
+                        <div className="metric-icon teal"><Wallet size={24} /></div>
+                        <div>
+                          <p className="metric-sub">Total Stock (at Cost)</p>
+                          <h3 className="metric-value">{CURRENCY}{(data.reduce((sum, p) => sum + (p.quantity * (p.cost_price || 0)), 0)).toLocaleString('en-IN')}</h3>
+                        </div>
+                      </div>
+                      <div className="metric-card">
+                        <div className="metric-icon green"><IndianRupee size={24} /></div>
+                        <div>
+                          <p className="metric-sub">Potential Revenue (at Sale Price)</p>
+                          <h3 className="metric-value text-emerald-600">{CURRENCY}{(data.reduce((sum, p) => sum + (p.quantity * (p.selling_price || 0)), 0)).toLocaleString('en-IN')}</h3>
+                        </div>
+                      </div>
+                    </>
+                  )}
                   {activeTab === 'sales' && (
                     <>
                       <div className="metric-card">

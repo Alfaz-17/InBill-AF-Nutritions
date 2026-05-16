@@ -52,6 +52,8 @@ const CONFIRM_PRESETS = {
 export default function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
+  const [confirmInput, setConfirmInput] = useState('');
+  const [confirmError, setConfirmError] = useState(false);
   const toastId = useRef(0);
   const confirmResolve = useRef(null);
 
@@ -84,20 +86,32 @@ export default function ToastProvider({ children }) {
         message: options.message || '',
         confirmText: options.confirmText || preset.confirmText,
         cancelText: options.cancelText || 'Cancel',
+        requiredPin: options.requiredPin || null,
         preset,
       });
+      setConfirmInput('');
+      setConfirmError(false);
     });
   }, []);
 
   const handleConfirm = useCallback(() => {
+    if (confirmState?.requiredPin && confirmInput !== confirmState.requiredPin) {
+      setConfirmError(true);
+      toast('Incorrect Security PIN', 'error');
+      return;
+    }
     if (confirmResolve.current) confirmResolve.current(true);
     setConfirmState(null);
+    setConfirmInput('');
+    setConfirmError(false);
     confirmResolve.current = null;
-  }, []);
+  }, [confirmState, confirmInput, toast]);
 
   const handleCancel = useCallback(() => {
     if (confirmResolve.current) confirmResolve.current(false);
     setConfirmState(null);
+    setConfirmInput('');
+    setConfirmError(false);
     confirmResolve.current = null;
   }, []);
 
@@ -291,6 +305,54 @@ export default function ToastProvider({ children }) {
                 {confirmState.message}
               </p>
             </div>
+
+            {/* PIN Input */}
+            {confirmState.requiredPin && (
+              <div style={{ padding: '0 32px 24px' }}>
+                <label style={{ 
+                  display: 'block', 
+                  fontSize: 10, 
+                  fontWeight: 900, 
+                  color: '#94a3b8', 
+                  textTransform: 'uppercase', 
+                  letterSpacing: '0.1em',
+                  marginBottom: 8,
+                  textAlign: 'center'
+                }}>
+                  Enter Security PIN to Confirm
+                </label>
+                <input 
+                  type="password"
+                  autoFocus
+                  value={confirmInput}
+                  onChange={(e) => {
+                    setConfirmInput(e.target.value);
+                    setConfirmError(false);
+                  }}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleConfirm(); }}
+                  style={{
+                    width: '100%',
+                    height: 52,
+                    borderRadius: 14,
+                    border: `2px solid ${confirmError ? '#ef4444' : '#e2e8f0'}`,
+                    background: confirmError ? '#fffafb' : '#f8fafc',
+                    textAlign: 'center',
+                    fontSize: 24,
+                    fontWeight: 900,
+                    letterSpacing: '0.4em',
+                    outline: 'none',
+                    transition: 'all 0.2s',
+                    color: '#0f172a'
+                  }}
+                  placeholder="••••"
+                />
+                {confirmError && (
+                  <p style={{ fontSize: 11, color: '#ef4444', fontWeight: 700, textAlign: 'center', marginTop: 8 }}>
+                    PIN mismatch. Access denied.
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Actions */}
             <div style={{

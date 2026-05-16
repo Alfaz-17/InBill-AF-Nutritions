@@ -1,9 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
+const { pathToFileURL } = require('url');
 const { GoogleGenAI } = require('@google/genai');
 const path = require('path');
 const fs = require('fs');
 const isDev = require('electron-is-dev');
-const { initDB, resetDB, productOps, saleOps, purchaseOps, returnOps, purchaseReturnOps, statsOps, reportOps, expenseOps, partyOps, businessProfileOps, categoryOps, expenseCategoryOps, attributeOps, storageOps } = require('./db');
+const { initDB, resetDB, productOps, saleOps, purchaseOps, statsOps, reportOps, expenseOps, partyOps, businessProfileOps, categoryOps, expenseCategoryOps, attributeOps, storageOps } = require('./db');
 
 let mainWindow;
 
@@ -37,7 +38,21 @@ function createWindow() {
   mainWindow.on('closed', () => (mainWindow = null));
 }
 
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'local-file', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true } }
+]);
+
 app.whenReady().then(() => {
+  // Register local-file protocol to handle local asset loading
+  protocol.handle('local-file', (request) => {
+    try {
+      const url = request.url.replace('local-file://', '');
+      return net.fetch(pathToFileURL(decodeURIComponent(url)).toString());
+    } catch (e) {
+      console.error('Protocol Error:', e);
+    }
+  });
+
   initDB();
   createWindow();
   app.on('activate', () => {
@@ -79,14 +94,24 @@ ipcMain.handle('purchases:create', async (_, data) => {
 ipcMain.handle('purchases:getAll', () => purchaseOps.getAll());
 ipcMain.handle('purchases:getById', (_, id) => purchaseOps.getById(id));
 
-/* ───────── Returns IPC ───────── */
-ipcMain.handle('returns:create', (_, data) => returnOps.create(data));
-ipcMain.handle('returns:getAll', () => returnOps.getAll());
-
-/* ───────── Purchase Returns IPC ───────── */
-ipcMain.handle('purchaseReturns:create', (_, data) => purchaseReturnOps.create(data));
-ipcMain.handle('purchaseReturns:getAll', () => purchaseReturnOps.getAll());
-ipcMain.handle('purchaseReturns:getById', (_, id) => purchaseReturnOps.getById(id));
+/* ───────── Updates IPC ───────── */
+ipcMain.handle('app:checkUpdate', async () => {
+  try {
+    // You can replace this with your actual GitHub or website version.json URL
+    const UPDATE_URL = 'https://raw.githubusercontent.com/alfaz/inbill/main/version.json';
+    const response = await net.fetch(UPDATE_URL);
+    if (!response.ok) return { success: false };
+    const data = await response.json();
+    return { 
+      success: true, 
+      latestVersion: data.version,
+      currentVersion: app.getVersion(),
+      updateUrl: data.downloadUrl || 'https://inbill.store/download'
+    };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
 
 /* ───────── Expenses IPC ───────── */
 ipcMain.handle('expenses:getAll', () => expenseOps.getAll());
@@ -109,8 +134,11 @@ ipcMain.handle('parties:add', (_, data) => partyOps.add(data));
 ipcMain.handle('parties:update', (_, id, data) => partyOps.update(id, data));
 ipcMain.handle('parties:delete', (_, id) => partyOps.delete(id));
 ipcMain.handle('parties:updateBalance', (_, id, amount) => partyOps.updateBalance(id, amount));
+ipcMain.handle('parties:getLedger', (_, id) => partyOps.getLedger(id));
+ipcMain.handle('parties:recordPayment', (_, data) => partyOps.recordPayment(data));
 
 /* ───────── Business Profile IPC ───────── */
+
 ipcMain.handle('business:getProfile', () => businessProfileOps.get());
 ipcMain.handle('business:updateProfile', (_, data) => businessProfileOps.update(data));
 ipcMain.handle('business:pickLogo', async () => {
@@ -118,9 +146,35 @@ ipcMain.handle('business:pickLogo', async () => {
     properties: ['openFile'],
     filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'webp'] }],
   });
+  
   if (result.canceled || result.filePaths.length === 0) return null;
-  return result.filePaths[0];
+  
+  const sourcePath = result.filePaths[0];
+  const stats = fs.statSync(sourcePath);
+  
+  // 5MB Limit Check
+  if (stats.size > 5 * 1024 * 1024) {
+    dialog.showErrorBox('File Too Large', 'Please select a logo smaller than 5MB.');
+    return null;
+  }
+
+  try {
+    const assetsDir = path.join(app.getPath('userData'), 'assets');
+    if (!fs.existsSync(assetsDir)) fs.mkdirSync(assetsDir, { recursive: true });
+    
+    const ext = path.extname(sourcePath);
+    const destName = `logo_${Date.now()}${ext}`;
+    const destPath = path.join(assetsDir, destName);
+    
+    fs.copyFileSync(sourcePath, destPath);
+    return destPath;
+  } catch (err) {
+    console.error('Logo Copy Error:', err);
+    dialog.showErrorBox('Upload Error', 'Failed to save the logo. Please try again.');
+    return null;
+  }
 });
+
 
 /* ───────── Categories IPC ───────── */
 ipcMain.handle('categories:getAll', () => categoryOps.getAll());
@@ -440,4 +494,6 @@ ipcMain.handle('ai:printInvoice', async (_, html) => {
     return { success: false, error: err.message };
   }
 });
+
+
 

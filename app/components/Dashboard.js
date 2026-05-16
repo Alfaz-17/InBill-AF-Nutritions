@@ -66,35 +66,35 @@ export default function Dashboard({ onNavigate, profile }) {
       {/* Primary Metrics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="metric-card group">
+          <div className="metric-icon green group-hover:scale-110 transition-transform duration-500">
+            <IndianRupee size={28} />
+          </div>
+          <div>
+            <p className="metric-sub">Today's Sales</p>
+            <h3 className="metric-value text-emerald-600">{CURRENCY}{(s.todaySalesTotal || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Daily Performance</div>
+          </div>
+        </div>
+
+        <div className="metric-card group">
           <div className="metric-icon blue group-hover:scale-110 transition-transform duration-500">
             <Target size={28} />
           </div>
           <div>
             <p className="metric-sub">Total Revenue</p>
-            <h3 className="metric-value">{CURRENCY}{(s.totalRevenue || 0).toLocaleString('en-IN')}</h3>
-            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Full invoice values</div>
-          </div>
-        </div>
-
-        <div className="metric-card group">
-          <div className="metric-icon green group-hover:scale-110 transition-transform duration-500">
-            <TrendingUp size={28} />
-          </div>
-          <div>
-            <p className="metric-sub">Net Profit</p>
-            <h3 className="metric-value text-emerald-600">{CURRENCY}{(s.totalProfit || 0).toLocaleString('en-IN')}</h3>
-            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Margin - Expenses</div>
+            <h3 className="metric-value text-slate-900">{CURRENCY}{(s.totalRevenue || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">All-time Sales</div>
           </div>
         </div>
 
         <div className="metric-card group">
           <div className="metric-icon teal group-hover:scale-110 transition-transform duration-500">
-            <Wallet size={28} />
+            <ShoppingCart size={28} />
           </div>
           <div>
-            <p className="metric-sub">Cash Received</p>
-            <h3 className="metric-value text-blue-600">{CURRENCY}{(s.totalCashReceived || 0).toLocaleString('en-IN')}</h3>
-            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Actual money in hand</div>
+            <p className="metric-sub">Bills Today</p>
+            <h3 className="metric-value text-blue-600">{s.todaySalesCount || 0}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Flow</div>
           </div>
         </div>
 
@@ -105,7 +105,38 @@ export default function Dashboard({ onNavigate, profile }) {
           <div>
             <p className="metric-sub">Pending Due</p>
             <h3 className="metric-value text-rose-600">{CURRENCY}{(s.receivable || 0).toLocaleString('en-IN')}</h3>
-            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer outstandings</div>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Outstandings</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Daily Cashflow Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 -mt-4">
+        <div className="bg-emerald-50/50 border border-emerald-100 rounded-[2rem] p-6 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1">Today's Cash</p>
+            <h4 className="text-2xl font-black text-slate-900">{CURRENCY}{(s.todayCash || 0).toLocaleString('en-IN')}</h4>
+          </div>
+          <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-emerald-100">
+            <Wallet size={20} className="text-emerald-600" />
+          </div>
+        </div>
+        <div className="bg-blue-50/50 border border-blue-100 rounded-[2rem] p-6 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black text-blue-600 uppercase tracking-[0.2em] mb-1">Today's Digital (UPI)</p>
+            <h4 className="text-2xl font-black text-slate-900">{CURRENCY}{(s.todayDigital || 0).toLocaleString('en-IN')}</h4>
+          </div>
+          <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-blue-100">
+            <ScanLine size={20} className="text-blue-600" />
+          </div>
+        </div>
+        <div className="bg-amber-50/50 border border-amber-100 rounded-[2rem] p-6 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black text-amber-600 uppercase tracking-[0.2em] mb-1">Today's Credit</p>
+            <h4 className="text-2xl font-black text-slate-900">{CURRENCY}{(s.todayCredit || 0).toLocaleString('en-IN')}</h4>
+          </div>
+          <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-amber-100">
+            <TrendingUp size={20} className="text-amber-600" />
           </div>
         </div>
       </div>

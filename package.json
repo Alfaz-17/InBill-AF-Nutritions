@@ -61,7 +61,8 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/inbill.ico"
     },
     "nsis": {
       "oneClick": false,

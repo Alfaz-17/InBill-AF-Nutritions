@@ -31,17 +31,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getById: (id) => ipcRenderer.invoke('purchases:getById', id),
   },
 
-  /* ── Returns ── */
-  returns: {
-    create: (data) => ipcRenderer.invoke('returns:create', data),
-    getAll: () => ipcRenderer.invoke('returns:getAll'),
-  },
-
-  /* ── Purchase Returns ── */
-  purchaseReturns: {
-    create: (data) => ipcRenderer.invoke('purchaseReturns:create', data),
-    getAll: () => ipcRenderer.invoke('purchaseReturns:getAll'),
-    getById: (id) => ipcRenderer.invoke('purchaseReturns:getById', id),
+  /* ── Purchases ── */
+  purchases: {
+    create: (data) => ipcRenderer.invoke('purchases:create', data),
+    getAll: () => ipcRenderer.invoke('purchases:getAll'),
+    getById: (id) => ipcRenderer.invoke('purchases:getById', id),
   },
 
   /* ── Expenses ── */
@@ -72,6 +66,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     update: (id, data) => ipcRenderer.invoke('parties:update', id, data),
     delete: (id) => ipcRenderer.invoke('parties:delete', id),
     updateBalance: (id, amount) => ipcRenderer.invoke('parties:updateBalance', id, amount),
+    getLedger: (id) => ipcRenderer.invoke('parties:getLedger', id),
+    recordPayment: (data) => ipcRenderer.invoke('parties:recordPayment', data),
   },
 
   /* ── AI ── */
@@ -128,4 +124,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exportData: () => ipcRenderer.invoke('storage:export'),
     importData: () => ipcRenderer.invoke('storage:import'),
   },
+
+  /* ── System ── */
+  system: {
+    checkUpdate: () => ipcRenderer.invoke('app:checkUpdate'),
+  }
 });

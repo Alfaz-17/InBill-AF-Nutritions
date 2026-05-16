@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogTrigger } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 import AIUpload from './AIUpload';
@@ -38,7 +38,6 @@ export default function Purchases({ profile }) {
   const [items, setItems] = useState([{ ...emptyItem }]);
   const [attributeDefs, setAttributeDefs] = useState([]);
   const [showAttrPopover, setShowAttrPopover] = useState(null); // {index}
-  const [otherCharges, setOtherCharges] = useState('');
   const [saving, setSaving] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
   const [details, setDetails] = useState({});
@@ -140,7 +139,7 @@ export default function Purchases({ profile }) {
       const payload = {
         party_id: selectedSupplier?.id,
         supplier_name: supplierName,
-        other_charges: parseFloat(otherCharges) || 0,
+        other_charges: 0,
         items: validItems.map(i => ({
           product_name: i.product_name,
           product_size: i.product_size,
@@ -171,7 +170,6 @@ export default function Purchases({ profile }) {
     setSupplierName('');
     setSupplierSearch('');
     setSelectedSupplier(null);
-    setOtherCharges('');
     setItems([{ ...emptyItem }]);
   };
 
@@ -364,7 +362,7 @@ export default function Purchases({ profile }) {
 
       {/* New Purchase Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-w-[94vw] sm:max-w-6xl max-h-[94vh] p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all">
+        <DialogContent className="max-w-[94vw] sm:max-w-6xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all">
           <DialogHeader className="p-10 bg-slate-900 text-white">
             <DialogTitle className="text-2xl font-black flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/20">
@@ -377,7 +375,7 @@ export default function Purchases({ profile }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="p-10 space-y-10 max-h-[70vh] overflow-y-auto bg-slate-50/30">
+          <div className="flex-1 overflow-y-auto p-10 space-y-10 bg-slate-50/30">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
               <div className="lg:col-span-2 space-y-10">
                 {/* Supplier Info */}
@@ -416,19 +414,7 @@ export default function Purchases({ profile }) {
                         )}
                       </div>
                     </div>
-                    <div className="form-group mb-0">
-                      <label className="form-label">Bill / Misc Charges ({CURRENCY})</label>
-                      <div className="relative">
-                        <IndianRupee className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                        <Input 
-                          type="number" 
-                          placeholder="0.00" 
-                          className="form-input h-14 pl-12 font-black"
-                          value={otherCharges}
-                          onChange={(e) => setOtherCharges(e.target.value)}
-                        />
-                      </div>
-                    </div>
+
                   </CardContent>
                 </Card>
 
@@ -616,7 +602,7 @@ export default function Purchases({ profile }) {
                <div>
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Payable</p>
                   <p className="text-3xl font-black text-emerald-600 tracking-tight">
-                    {CURRENCY}{(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0) + (parseFloat(otherCharges) || 0)).toLocaleString()}
+                    {CURRENCY}{(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0)).toLocaleString()}
                   </p>
                </div>
             </div>
