@@ -2,7 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, Package,
-  User, CreditCard, Printer, X, Check, FileText, ExternalLink, Wallet, ScanLine, Settings2, IndianRupee, MessageCircle
+  User, CreditCard, Printer, X, Check, FileText, ExternalLink, Wallet, ScanLine, Settings2, IndianRupee, MessageCircle, CalendarClock
 } from 'lucide-react';
 import { useToast } from './ToastProvider';
 import { getInvoiceHTML as generateInvoiceHTML } from './InvoiceTemplates';
@@ -28,7 +28,7 @@ export default function Billing({
   
   // Destructure for internal use
   const { name: customerName, phone: customerPhone, address: customerAddress } = customerData;
-  const { mode: paymentMode, paid: paidAmount } = paymentData;
+  const { mode: paymentMode, paid: paidAmount, creditDays = '7' } = paymentData;
 
   // Setters for internal use
   const setCustomerName = (val) => setCustomerData(prev => ({ ...prev, name: val }));
@@ -36,11 +36,13 @@ export default function Billing({
   const setCustomerAddress = (val) => setCustomerData(prev => ({ ...prev, address: val }));
   const setPaymentMode = (val) => setPaymentData(prev => ({ ...prev, mode: val }));
   const setPaidAmount = (val) => setPaymentData(prev => ({ ...prev, paid: val }));
+  const setCreditDays = (val) => setPaymentData(prev => ({ ...prev, creditDays: val }));
   const [saleResult, setSaleResult] = useState(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [taxMode, setTaxMode] = useState('exclusive'); // 'exclusive' or 'inclusive'
   const [saving, setSaving] = useState(false);
   const [pdfGenerating, setPdfGenerating] = useState(false);
+  const [whatsappSending, setWhatsappSending] = useState(false);
   const [parties, setParties] = useState([]);
   const [selectedParty, setSelectedParty] = useState(null);
   const [partySearch, setPartySearch] = useState('');
@@ -202,6 +204,11 @@ export default function Billing({
     : subtotal);
   const grandTotal = Math.round(rawGrandTotal);
   const roundOff = (grandTotal - rawGrandTotal).toFixed(2);
+  const balanceDue = Math.max(0, grandTotal - parseFloat(paidAmount || grandTotal));
+  const parsedCreditDays = Math.max(0, Math.floor(parseFloat(creditDays) || 0));
+  const promisedDate = new Date();
+  promisedDate.setDate(promisedDate.getDate() + parsedCreditDays);
+  const promisedDateLabel = promisedDate.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 
   const handleSave = async () => {
     if (cart.length === 0) {
@@ -227,8 +234,9 @@ export default function Billing({
       }
     }
 
-    // Calculate due amount
-    const dueAmount = grandTotal - (paidAmount ? parseFloat(paidAmount) : grandTotal);
+    // Calculate due amount with fallback for empty strings to prevent NaN leakage
+    const parsedPaid = parseFloat(paidAmount) || 0;
+    const dueAmount = grandTotal - (paidAmount === '' ? grandTotal : parsedPaid);
 
     // If there is a balance but no party exists, create one automatically
     if (!finalPartyId && dueAmount > 0 && customerName && customerName.toLowerCase() !== 'cash') {
@@ -268,6 +276,7 @@ export default function Billing({
         customer_phone: customerPhone,
         payment_mode: paymentMode,
         paid_amount: paidAmount ? parseFloat(paidAmount) : grandTotal,
+        credit_days: dueAmount > 0 ? parsedCreditDays : 0,
         misc_charges: 0,
         tax_mode: taxMode,
       });
@@ -288,10 +297,11 @@ export default function Billing({
         totalDiscount,
         misc_charges: 0,
         paid_amount: paidAmount ? parseFloat(paidAmount) : grandTotal,
+        credit_days: dueAmount > 0 ? parsedCreditDays : 0,
       });
       setCart([]);
       setCustomerData({ name: '', phone: '', address: '' });
-      setPaymentData({ mode: 'Cash', paid: '' });
+      setPaymentData({ mode: 'Cash', paid: '', creditDays: '7' });
       setPartySearch('');
       setSelectedParty(null);
       setShowSuccessModal(true);
@@ -333,6 +343,90 @@ export default function Billing({
       console.error(e);
       toast.error("Print failed");
     }
+  };
+
+  const handleWhatsAppInvoice = async () => {
+    if (!saleResult || whatsappSending) return;
+    
+    const phone = saleResult.customer_phone || '';
+    if (!phone) {
+      toast.error("Customer phone number is missing");
+      return;
+    }
+
+    const whatsappSettings = typeof profile?.whatsapp_settings === 'string' 
+      ? JSON.parse(profile.whatsapp_settings || '{}') 
+      : (profile?.whatsapp_settings || {});
+
+    if (!whatsappSettings.enabled) {
+      toast.warning("WhatsApp API is not enabled in Settings");
+      return;
+    }
+
+    setWhatsappSending(true);
+    try {
+      const html = generateInvoiceHTML(saleResult, profile);
+      const pdfRes = await window.electronAPI.pdf.generate(html);
+      
+      if (pdfRes.success) {
+        const res = await window.electronAPI.whatsapp.sendInvoice({
+          phone: phone,
+          pdfBuffer: pdfRes.buffer,
+          fileName: `Invoice_${saleResult.invoice_number}.pdf`,
+          message: `Hello ${saleResult.customer_name},\nYour invoice from ${profile?.business_name || 'InBill'} is attached below.`
+        });
+
+        if (res.success) {
+          toast.success("Invoice sent to WhatsApp!");
+        } else {
+          toast.error(res.error || "Failed to send WhatsApp");
+        }
+      } else {
+        toast.error("Failed to generate PDF for WhatsApp");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("WhatsApp delivery error");
+    }
+    setWhatsappSending(false);
+  };
+
+  const handleManualPDFShare = async () => {
+    if (!saleResult || pdfGenerating) return;
+    
+    const phone = (saleResult.customer_phone || '').replace(/\D/g, '');
+    if (!phone) {
+      toast.error("Customer phone number is missing");
+      return;
+    }
+
+    setPdfGenerating(true);
+    try {
+      const html = generateInvoiceHTML(saleResult, profile);
+      const res = await window.electronAPI.pdf.generate(html);
+      
+      if (res.success) {
+        const fileName = `Invoice_${saleResult.invoice_number || saleResult.invoiceNumber}.pdf`;
+        const saveRes = await window.electronAPI.pdf.saveDirect(res.buffer, fileName);
+        
+        if (saveRes.success) {
+          toast.success("Invoice ready! Just press Ctrl+V in WhatsApp.");
+          
+          // Open WhatsApp Chat
+          const wpUrl = `https://wa.me/${phone.length === 10 ? '91' + phone : phone}`;
+          window.open(wpUrl, '_blank');
+          
+          // Instruction Toast
+          setTimeout(() => {
+            toast("The file is copied. Simply PASTE (Ctrl+V) it into the chat.", "info");
+          }, 2000);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Manual share failed");
+    }
+    setPdfGenerating(false);
   };
 
   return (
@@ -641,7 +735,10 @@ export default function Billing({
 
                     <div className="space-y-2 pt-4">
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Payment Mode</label>
-                      <Select value={paymentMode} onValueChange={setPaymentMode}>
+                      <Select value={paymentMode} onValueChange={(v) => {
+                        setPaymentMode(v);
+                        if (v === 'Credit') setPaidAmount('0');
+                      }}>
                         <SelectTrigger className="h-12 font-bold border-slate-200">
                           <SelectValue placeholder="Select Mode" />
                         </SelectTrigger>
@@ -649,6 +746,7 @@ export default function Billing({
                           <SelectItem value="Cash" className="font-bold">Cash</SelectItem>
                           <SelectItem value="UPI" className="font-bold">UPI / GPay</SelectItem>
                           <SelectItem value="Card" className="font-bold">Card Payment</SelectItem>
+                          <SelectItem value="Credit" className="font-bold">Credit (Due All)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -656,12 +754,23 @@ export default function Billing({
                     <div className="space-y-2 pt-2">
                       <div className="flex justify-between items-center">
                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Amount Paid ({CURRENCY})</label>
-                        <button 
-                          onClick={() => setPaidAmount(grandTotal.toString())}
-                          className="text-[10px] font-black text-blue-600 hover:underline"
-                        >
-                          SET FULL
-                        </button>
+                        <div className="flex gap-3">
+                          <button 
+                            onClick={() => {
+                              setPaidAmount('0');
+                              setPaymentMode('Credit');
+                            }}
+                            className="text-[10px] font-black text-rose-600 hover:underline"
+                          >
+                            SET CREDIT
+                          </button>
+                          <button 
+                            onClick={() => setPaidAmount(grandTotal.toString())}
+                            className="text-[10px] font-black text-blue-600 hover:underline"
+                          >
+                            SET FULL
+                          </button>
+                        </div>
                       </div>
                       <Input 
                         type="number" 
@@ -672,17 +781,55 @@ export default function Billing({
                       />
                     </div>
 
-                    {paidAmount !== '' && parseFloat(paidAmount || 0) < grandTotal && (
+                    {balanceDue > 0 && (
                       <div className="p-4 bg-rose-50 rounded-2xl border border-rose-100 animate-in slide-in-from-top-2">
                         <div className="flex justify-between items-center mb-1">
                           <span className="text-[10px] font-black text-rose-500 uppercase tracking-widest">Balance Due</span>
-                          <span className="text-sm font-black text-rose-600">{CURRENCY}{(grandTotal - parseFloat(paidAmount || 0)).toLocaleString()}</span>
+                          <span className="text-sm font-black text-rose-600">{CURRENCY}{balanceDue.toLocaleString()}</span>
                         </div>
                         {selectedParty ? (
                           <p className="text-[10px] font-bold text-rose-400">This balance will be added to <b>{selectedParty.name}</b>'s ledger.</p>
                         ) : (
                           <p className="text-[10px] font-bold text-rose-400">Select a Customer to track this balance in their ledger.</p>
                         )}
+                        <div className="mt-4 rounded-xl bg-white border border-rose-100 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                              <CalendarClock size={14} /> Payment Promise
+                            </label>
+                            <span className="text-[10px] font-black text-slate-400 uppercase">{promisedDateLabel}</span>
+                          </div>
+                          <div className="mt-3 grid grid-cols-3 gap-2">
+                            {['7', '15', '30'].map((days) => (
+                              <button
+                                key={days}
+                                type="button"
+                                onClick={() => setCreditDays(days)}
+                                className={`h-9 rounded-xl text-xs font-black border transition-colors ${
+                                  String(creditDays) === days
+                                    ? 'bg-slate-900 text-white border-slate-900'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                }`}
+                              >
+                                {days}D
+                              </button>
+                            ))}
+                          </div>
+                          <div className="mt-3">
+                            <label className="mb-1 block text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                              Custom Days
+                            </label>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={creditDays}
+                              onChange={(e) => setCreditDays(e.target.value)}
+                              placeholder="Enter days"
+                              className="h-10 rounded-xl border-slate-200 text-center text-sm font-black"
+                              aria-label="Custom credit days"
+                            />
+                          </div>
+                        </div>
                       </div>
                     )}
 
@@ -740,6 +887,13 @@ export default function Billing({
               </div>
             </div>
 
+            {saleResult?.due_amount > 0 && saleResult?.credit_days > 0 && (
+              <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3 flex items-center justify-between">
+                <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">Payment Promise</span>
+                <span className="text-xs font-black text-slate-800">After {saleResult.credit_days} days</span>
+              </div>
+            )}
+
             <div className="flex flex-col gap-2">
               <div className="grid grid-cols-2 gap-2">
                 <Button 
@@ -758,22 +912,70 @@ export default function Billing({
                 </Button>
               </div>
               
+              {(() => {
+                const whatsappSettings = typeof profile?.whatsapp_settings === 'string' 
+                  ? JSON.parse(profile.whatsapp_settings || '{}') 
+                  : (profile?.whatsapp_settings || {});
+                
+                if (whatsappSettings.enabled) {
+                  return (
+                    <Button 
+                      variant="outline"
+                      className={`h-12 gap-2 rounded-xl border-emerald-100 bg-emerald-50/50 font-black text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200 ${whatsappSending ? 'animate-pulse' : ''}`} 
+                      onClick={handleWhatsAppInvoice}
+                      disabled={whatsappSending}
+                    >
+                      {whatsappSending ? (
+                        <>Sending PDF...</>
+                      ) : (
+                        <><MessageCircle size={18} className="text-emerald-500" /> Share on WhatsApp</>
+                      )}
+                    </Button>
+                  );
+                }
+                return (
+                  <Button 
+                    variant="outline"
+                    className="h-12 gap-2 rounded-xl border-blue-100 bg-blue-50/50 font-black text-blue-700 hover:bg-blue-50 hover:border-blue-200" 
+                    onClick={handleManualPDFShare}
+                    disabled={pdfGenerating}
+                  >
+                    <FileText size={18} className="text-blue-500" /> Save & Share PDF (Manual)
+                  </Button>
+                );
+              })()}
+
               <Button 
-                variant="outline"
-                className="h-12 gap-2 rounded-xl border-emerald-100 bg-emerald-50/50 font-black text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200" 
+                variant="link"
+                className="text-[10px] font-black text-slate-400 hover:text-emerald-600 h-6" 
                 onClick={() => {
                   if (!saleResult) return;
-                  const phone = saleResult.customer_phone || '';
+                  const phone = (saleResult.customer_phone || '').replace(/\D/g, '');
                   if (!phone) {
-                    toast.info("No phone number found for this customer");
+                    toast.info("Customer phone is required for WhatsApp");
                     return;
                   }
-                  const total = saleResult.grandTotal || 0;
-                  const msg = `Hello ${saleResult.customer_name || 'Customer'},\nYour invoice #${saleResult.invoice_number} for ${CURRENCY}${total.toLocaleString()} from ${profile?.business_name || 'InBill'} is ready. Thank you!`;
-                  window.open(`https://wa.me/${phone.length === 10 ? '91' + phone : phone}?text=${encodeURIComponent(msg)}`, '_blank');
+
+                  // Build Professional Text Invoice
+                  let itemLines = (saleResult.cart || []).map(item => 
+                    `• ${item.product_name} (${item.quantity} x ${item.price}) = ${CURRENCY}${item.price * item.quantity}`
+                  ).join('\n');
+
+                  const msg = `*${(profile?.business_name || 'INVOICE').toUpperCase()}*\n` +
+                              `Invoice #${saleResult.invoice_number}\n` +
+                              `Date: ${saleResult.date}\n` +
+                              `--------------------------------\n` +
+                              `*ITEMS:*\n${itemLines}\n` +
+                              `--------------------------------\n` +
+                              `*TOTAL: ${CURRENCY}${saleResult.grandTotal?.toLocaleString()}*\n` +
+                              `--------------------------------\n` +
+                              `Thank you for your business!`;
+
+                  const wpUrl = `https://wa.me/${phone.length === 10 ? '91' + phone : phone}?text=${encodeURIComponent(msg)}`;
+                  window.open(wpUrl, '_blank');
                 }}
               >
-                <MessageCircle size={18} className="text-emerald-500" /> Share on WhatsApp
+                Alternative: Send Text Invoice
               </Button>
             </div>
 
@@ -785,7 +987,7 @@ export default function Billing({
                 setViewMode('browse'); 
                 setCart([]);
                 setCustomerData({ name: '', phone: '', address: '' });
-                setPaymentData({ mode: 'Cash', paid: '' });
+                setPaymentData({ mode: 'Cash', paid: '', creditDays: '7' });
               }}
             >
               Done & New Sale

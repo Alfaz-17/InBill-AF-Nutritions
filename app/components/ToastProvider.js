@@ -60,7 +60,12 @@ export default function ToastProvider({ children }) {
   // ── Toast API ──
   const baseToast = useCallback((message, type = 'success', duration = 3500) => {
     const id = ++toastId.current;
-    setToasts(prev => [...prev, { id, message, type, removing: false }]);
+    const safeMessage = typeof message === 'string'
+      ? message
+      : message?.message
+        ? message.message
+        : String(message ?? '');
+    setToasts(prev => [...prev, { id, message: safeMessage, type, removing: false }]);
     setTimeout(() => {
       setToasts(prev => prev.map(t => t.id === id ? { ...t, removing: true } : t));
       setTimeout(() => {

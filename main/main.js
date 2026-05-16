@@ -705,6 +705,41 @@ ipcMain.handle('pdf:saveAs', async (_, base64Data, fileName) => {
   return { success: false };
 });
 
+ipcMain.handle('pdf:saveDirect', async (_, base64Data, fileName) => {
+  try {
+    const documentsPath = app.getPath('documents');
+    const targetDir = path.join(documentsPath, 'InBill_Invoices');
+    
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const filePath = path.join(targetDir, fileName || `Invoice_${Date.now()}.pdf`);
+    const buffer = Buffer.from(base64Data, 'base64');
+    fs.writeFileSync(filePath, buffer);
+    
+    // 🔥 MAGIC PASTE: Copy the actual file to clipboard using PowerShell
+    const { exec } = require('child_process');
+    // Using -LiteralPath to handle all characters correctly
+    const psCommand = `powershell -Command "Set-Clipboard -LiteralPath \\"${filePath}\\""`;
+    exec(psCommand, (error) => {
+      if (error) {
+        console.error('❌ Magic Paste failed:', error);
+      } else {
+        console.log('✅ MAGIC PASTE READY:', filePath);
+      }
+    });
+
+    // Also reveal it just in case Magic Paste is blocked by security
+    shell.showItemInFolder(filePath);
+    
+    return { success: true, filePath };
+  } catch (err) {
+    console.error('Direct Save Error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('pdf:share', async () => {
   return { success: false, error: 'Native PDF sharing is not available on this platform.' };
 });
@@ -761,6 +796,101 @@ ipcMain.handle('ai:printInvoice', async (_, html) => {
 });
 
 /* ───────── WhatsApp Integration IPC ───────── */
+ipcMain.handle('whatsapp:sendInvoice', async (_, { phone, pdfBuffer, fileName, message }) => {
+  try {
+    const profile = businessProfileOps.get();
+    let settings = {};
+    try {
+      settings = typeof profile.whatsapp_settings === 'string' 
+        ? JSON.parse(profile.whatsapp_settings || '{}') 
+        : (profile.whatsapp_settings || {});
+    } catch(e) { settings = {}; }
+
+    if (!settings.enabled || !settings.access_token || !settings.phone_number_id) {
+      return { success: false, error: 'WhatsApp API is not configured.' };
+    }
+
+    let cleanPhone = (phone || '').replace(/\D/g, '');
+    if (cleanPhone.length === 10) cleanPhone = '91' + cleanPhone;
+
+    // 1. Upload Media
+    const uploadUrl = `https://graph.facebook.com/v21.0/${settings.phone_number_id}/media`;
+    
+    // Create FormData for media upload
+    // Since net.fetch in Electron might not support direct FormData easily with buffers, 
+    // we use a multipart body.
+    const boundary = '----WebKitFormBoundary' + Math.random().toString(36).substring(2);
+    const pdfData = Buffer.from(pdfBuffer, 'base64');
+    
+    const parts = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="messaging_product"',
+      '',
+      'whatsapp',
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="type"',
+      '',
+      'application/pdf',
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="file"; filename="${fileName || 'invoice.pdf'}"`,
+      'Content-Type: application/pdf',
+      '',
+      pdfData,
+      `--${boundary}--`,
+      ''
+    ];
+
+    // Combine parts into a single buffer
+    const bodyBuffer = Buffer.concat(parts.map(p => typeof p === 'string' ? Buffer.from(p + '\r\n') : p));
+
+    const uploadResponse = await net.fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${settings.access_token}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`
+      },
+      body: bodyBuffer
+    });
+
+    const uploadData = await uploadResponse.json();
+    if (!uploadResponse.ok) {
+      return { success: false, error: `Media upload failed: ${uploadData.error?.message || 'Unknown error'}` };
+    }
+
+    const mediaId = uploadData.id;
+
+    // 2. Send Message
+    const msgUrl = `https://graph.facebook.com/v21.0/${settings.phone_number_id}/messages`;
+    const msgResponse = await net.fetch(msgUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${settings.access_token}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: cleanPhone,
+        type: 'document',
+        document: {
+          id: mediaId,
+          filename: fileName || 'Invoice.pdf',
+          caption: message || 'Your invoice from ' + (profile.business_name || 'InBill')
+        }
+      })
+    });
+
+    const msgData = await msgResponse.json();
+    if (msgResponse.ok) {
+      return { success: true, data: msgData };
+    } else {
+      return { success: false, error: `Message failed: ${msgData.error?.message || 'Unknown error'}` };
+    }
+  } catch (err) {
+    console.error('WhatsApp Invoice Error:', err);
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('whatsapp:sendMessage', async (_, { phone, message }) => {
   try {
     const profile = businessProfileOps.get();

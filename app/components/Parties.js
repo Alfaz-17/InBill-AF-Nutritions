@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react';
 import { 
   Plus, Search, Phone, User, Users, Trash2, Edit3, 
   ArrowUpRight, ArrowDownLeft, X, Check, Save, MapPin, 
-  CreditCard, Building2, PhoneCall, History
+  CreditCard, Building2, PhoneCall, History, AlertTriangle, CalendarClock
 } from 'lucide-react';
 import { useToast } from './ToastProvider';
 
@@ -152,6 +152,23 @@ export default function Parties({ profile }) {
 
   const receivable = parties.filter(p => p.current_balance > 0).reduce((sum, p) => sum + p.current_balance, 0);
   const payable = Math.abs(parties.filter(p => p.current_balance < 0).reduce((sum, p) => sum + p.current_balance, 0));
+  const creditAlerts = parties.filter(p => p.type === 'Customer' && p.current_balance > 0 && p.due_alert_count > 0);
+
+  const formatDueDate = (date) => {
+    if (!date) return '';
+    return new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  };
+
+  const getDueLabel = (date) => {
+    if (!date) return '';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(`${date}T00:00:00`);
+    const diffDays = Math.floor((due - today) / 86400000);
+    if (diffDays < 0) return `${Math.abs(diffDays)} days late`;
+    if (diffDays === 0) return 'Due today';
+    return `Due in ${diffDays} days`;
+  };
 
   if (loading) {
     return (
@@ -206,6 +223,28 @@ export default function Parties({ profile }) {
           </div>
         </div>
       </div>
+
+      {creditAlerts.length > 0 && (
+        <div className="rounded-[2rem] border border-amber-200 bg-amber-50 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-white border border-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+              <AlertTriangle size={22} />
+            </div>
+            <div>
+              <p className="text-[10px] font-black text-amber-600 uppercase tracking-[0.2em]">Credit Follow-up Alert</p>
+              <h3 className="text-lg font-black text-slate-900 mt-1">{creditAlerts.length} customer{creditAlerts.length > 1 ? 's' : ''} need collection follow-up</h3>
+              <p className="text-xs font-bold text-slate-500 mt-1">Promised payment date is today or already crossed.</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {creditAlerts.slice(0, 3).map((p) => (
+              <Badge key={p.id} className="bg-white text-amber-700 border-amber-200 rounded-xl px-3 py-2 font-black">
+                {p.name} - {getDueLabel(p.next_due_date)}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Filter & Search */}
       <div className="flex flex-col md:flex-row items-center gap-4">
@@ -275,6 +314,14 @@ export default function Parties({ profile }) {
                       <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                         {p.current_balance > 0 ? 'Receivable' : p.current_balance < 0 ? 'Payable' : 'Settled'}
                       </div>
+                      {p.type === 'Customer' && p.current_balance > 0 && p.next_due_date && (
+                        <div className={`mt-2 inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[10px] font-black uppercase ${
+                          p.due_alert_count > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'
+                        }`}>
+                          <CalendarClock size={12} />
+                          {getDueLabel(p.next_due_date)} ({formatDueDate(p.next_due_date)})
+                        </div>
+                      )}
                     </td>
                     <td className="text-right">
                       <div className="flex justify-end gap-2">
@@ -372,7 +419,11 @@ export default function Parties({ profile }) {
                 <div className="form-group">
                   <label className="form-label">Opening Balance ({CURRENCY})</label>
                   <Input type="number" value={formData.opening_balance || 0} onChange={(e) => setFormData({...formData, opening_balance: parseFloat(e.target.value) || 0})} className="form-input h-14 font-black" />
-                  <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-tight">Negative (-) means you owe them</p>
+                  <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-tight">
+                    {formData.type === 'Supplier' 
+                      ? "Amounts here will be treated as debt (Payable) automatically" 
+                      : "Negative (-) means you owe them, Positive (+) means they owe you"}
+                  </p>
                 </div>
                 <div className="md:col-span-2 form-group">
                   <label className="form-label">Billing Address</label>
@@ -443,6 +494,11 @@ export default function Parties({ profile }) {
                               ) : tx.reference_id ? (
                                 <p className="text-[10px] text-slate-400 mt-1 font-medium">Ref #{tx.reference_id}</p>
                               ) : null}
+                              {tx.due_date && tx.due_amount > 0 && (
+                                <p className="text-[10px] text-amber-600 mt-1 font-black uppercase">
+                                  {getDueLabel(tx.due_date)} ({formatDueDate(tx.due_date)})
+                                </p>
+                              )}
                             </div>
                           </td>
                           <td className="p-4 text-right font-bold text-slate-900">

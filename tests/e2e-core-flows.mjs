@@ -18,6 +18,10 @@ function byName(products, productName) {
   return products.find((product) => product.product_name === productName);
 }
 
+function stockValue(products) {
+  return products.reduce((sum, product) => sum + (Number(product.quantity || 0) * Number(product.cost_price || 0)), 0);
+}
+
 let db;
 
 try {
@@ -131,7 +135,7 @@ try {
   assert.equal(JSON.parse(whey.custom_fields).Size, '2kg', 'custom Size attribute persists');
 
   let dashboard = statsOps.getDashboard();
-  assert.equal(dashboard.inventoryValue, 5000, 'dashboard inventory value uses stock at cost');
+  assert.equal(stockValue(reportOps.stockReport()), 5000, 'stock report inventory value uses stock at cost');
   assert.equal(dashboard.lowStock.some((item) => item.id === wheyId), true, 'Restock Radar receives low-stock rows');
 
   productOps.update(wheyId, {
@@ -140,7 +144,7 @@ try {
     min_stock_alert: 10,
     custom_fields: whey.custom_fields,
   });
-  assert.equal(statsOps.getDashboard().inventoryValue, 2500, 'manual stock adjustment updates dashboard inventory value');
+  assert.equal(stockValue(reportOps.stockReport()), 2500, 'manual stock adjustment updates report inventory value');
 
   await assert.rejects(
     () => saleOps.create({
@@ -192,7 +196,8 @@ try {
   assert.equal(productOps.getById(wheyId).quantity, 3, 'sales return rolls stock back');
   assert.equal(partyOps.getById(customerId).current_balance, 50, 'credit return reduces customer balance');
   assert.equal(saleOps.getById(creditSale.id).returned_total, 750, 'sale tracks returned total');
-  assert.equal(statsOps.getDashboard().totalProfit, 500, 'sales return reduces dashboard profit before undo');
+  const today = new Date().toISOString().slice(0, 10);
+  assert.equal(reportOps.salesReport(today, today).summary.profit, 500, 'sales return reduces report profit before undo');
 
   expectThrows(
     () => returnOps.createSaleReturn({
@@ -263,9 +268,8 @@ try {
   assert.equal(dashboard.todayDigital, 300, 'today digital includes UPI party collection');
   assert.equal(dashboard.receivable, 800, 'dashboard receivable reflects current customer balance');
   assert.equal(dashboard.payable, 400, 'dashboard payable reflects current supplier balance');
-  assert.equal(dashboard.totalProfit, 700, 'profit uses sales margin, undone returns, and expenses');
+  assert.equal(reportOps.salesReport(today, today).summary.profit, 700, 'report profit uses sales margin, undone returns, and expenses');
 
-  const today = new Date().toISOString().slice(0, 10);
   const salesReport = reportOps.salesReport(today, today);
   const purchaseReport = reportOps.purchaseReport(today, today);
   const stockReport = reportOps.stockReport();

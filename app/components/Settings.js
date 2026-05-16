@@ -52,7 +52,11 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
       access_token: '',
       phone_number_id: '',
       business_account_id: ''
-    }
+    },
+    whatsapp_number: '',
+    instagram_id: '',
+    pan_number: '',
+    terms_and_conditions: ''
   });
 
   const [profileSaved, setProfileSaved] = useState(false);
@@ -244,7 +248,9 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
           <TabsTrigger value="data" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Database size={16} /> Data & Security
           </TabsTrigger>
-
+          <TabsTrigger value="safety" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-rose-600 data-[state=active]:shadow-lg transition-all text-xs">
+            <AlertTriangle size={16} /> Safety Guide
+          </TabsTrigger>
         </TabsList>
 
         {/* Business Profile */}
@@ -299,6 +305,10 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                   <Input value={profileForm.gstin || ''} onChange={(e) => setProfileForm({...profileForm, gstin: e.target.value.toUpperCase()})} className="form-input font-mono" />
                 </div>
                 <div className="form-group">
+                  <label className="form-label">PAN Number</label>
+                  <Input value={profileForm.pan_number || ''} onChange={(e) => setProfileForm({...profileForm, pan_number: e.target.value.toUpperCase()})} className="form-input font-mono" placeholder="ABCDE1234F" />
+                </div>
+                <div className="form-group">
                   <label className="form-label">Phone</label>
                   <Input value={profileForm.phone || ''} onChange={(e) => setProfileForm({...profileForm, phone: e.target.value})} className="form-input" />
                 </div>
@@ -309,6 +319,14 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                 <div className="form-group">
                   <label className="form-label">Tagline</label>
                   <Input value={profileForm.tagline || ''} onChange={(e) => setProfileForm({...profileForm, tagline: e.target.value})} className="form-input" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">WhatsApp Number</label>
+                  <Input value={profileForm.whatsapp_number || ''} onChange={(e) => setProfileForm({...profileForm, whatsapp_number: e.target.value})} className="form-input" placeholder="e.g. 919876543210" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Instagram ID</label>
+                  <Input value={profileForm.instagram_id || ''} onChange={(e) => setProfileForm({...profileForm, instagram_id: e.target.value})} className="form-input" placeholder="e.g. your_handle" />
                 </div>
                 <div className="form-group lg:col-span-3">
                   <label className="form-label">Company Logo</label>
@@ -486,6 +504,15 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                       placeholder="Enter Bank Name, A/c No, IFSC, etc."
                     />
                   </div>
+                  <div className="form-group lg:col-span-2">
+                    <label className="form-label">Terms and Conditions</label>
+                    <textarea 
+                      value={profileForm.terms_and_conditions || ''} 
+                      onChange={(e) => setProfileForm({...profileForm, terms_and_conditions: e.target.value})} 
+                      className="form-input min-h-[100px] py-3 text-xs"
+                      placeholder="Enter your business terms, return policy, etc."
+                    />
+                  </div>
 
                   <div className="form-group lg:col-span-2 p-6 bg-white border border-slate-200 rounded-3xl space-y-4 shadow-sm">
                     <label className="text-sm font-black text-slate-900 flex items-center gap-2">
@@ -606,6 +633,25 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                       toast('Import failed: ' + res.error, 'error');
                     }
                   }}>Import Backup (.json)</Button>
+
+                  <Button variant="ghost" className="h-14 rounded-xl font-bold text-rose-600 hover:bg-rose-50 hover:text-rose-700 col-span-2 border border-dashed border-rose-100" onClick={async () => {
+                    const ok = await confirm({
+                      type: 'danger',
+                      title: 'HARD RESET SYSTEM?',
+                      message: 'This will PERMANENTLY DELETE all products, invoices, and ledgers. The app will restart as a fresh installation.',
+                      confirmText: 'YES, WIPE EVERYTHING',
+                      requiredPin: profileForm.master_data?.delete_pin
+                    });
+                    if (!ok) return;
+                    
+                    const res = await window.electronAPI.storage.resetData();
+                    if (res.success) {
+                      toast('System wiped! Restarting...', 'success');
+                      setTimeout(() => location.reload(), 1500);
+                    } else {
+                      toast('Reset failed: ' + res.error, 'error');
+                    }
+                  }}>🔥 Hard Reset System (Wipe All)</Button>
                 </div>
                 <div className="pt-6 mt-6 border-t border-slate-100 space-y-6">
                   <div className="flex items-center justify-between">
@@ -798,6 +844,108 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
               <Button onClick={handleProfileSave} className="btn-primary w-full h-12 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700">Save WhatsApp Configuration</Button>
             </CardFooter>
           </Card>
+        </TabsContent>
+
+        {/* System Safety & Logic Guide */}
+        <TabsContent value="safety" className="m-0 outline-none">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <Card className="rounded-[2.5rem] border-rose-100 shadow-xl shadow-rose-200/20 bg-white overflow-hidden">
+              <CardHeader className="p-10 bg-rose-50 border-b border-rose-100">
+                <CardTitle className="text-2xl font-black text-rose-900 flex items-center gap-4">
+                  <AlertTriangle className="text-rose-600" size={28} /> Product & Data Integrity
+                </CardTitle>
+                <CardDescription className="text-rose-800/70 font-bold mt-2">
+                  Critical warnings about changing your master records
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-10 space-y-8">
+                <div className="space-y-6">
+                  <div className="flex gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm">
+                      <Zap size={18} className="text-amber-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm mb-1">Changing Product Prices</h4>
+                      <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                        If you update a product's price, it will <b>only apply to new bills</b>. 
+                        All old invoices will keep their original price for financial audit stability.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm">
+                      <Trash2 size={18} className="text-rose-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm mb-1">The "Soft Delete" Rule</h4>
+                      <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                        Deleting a Customer or Supplier doesn't wipe them from history. They are <b>Archived</b> to protect old invoices. 
+                        They disappear from active lists but their name remains on old records.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center shrink-0 shadow-sm">
+                      <FileText size={18} className="text-blue-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm mb-1">Permanent Records</h4>
+                      <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                        Sales and Returns are <b>Permanent</b>. There is no "Undo" button in the Reports section to prevent accidental financial leakage. 
+                        Correction must be done via a reverse transaction.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="rounded-[2.5rem] border-slate-100 shadow-xl bg-white overflow-hidden">
+              <CardHeader className="p-10 bg-slate-900 text-white">
+                <CardTitle className="text-2xl font-black flex items-center gap-4">
+                  <ShieldCheck className="text-emerald-400" size={28} /> Smart Financial Logic
+                </CardTitle>
+                <CardDescription className="text-slate-400 font-bold mt-2">
+                  How InBill manages your money accurately
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-10 space-y-8">
+                <div className="space-y-6">
+                  <div className="p-6 rounded-[2rem] bg-emerald-50 border border-emerald-100">
+                    <h4 className="font-black text-emerald-900 text-sm mb-3 flex items-center gap-2">
+                      <ArrowDownLeft size={16} /> Debt-First Reconciliation
+                    </h4>
+                    <p className="text-xs text-emerald-800/80 font-bold leading-relaxed">
+                      When a customer returns an item, the system automatically checks if they owe you money (Credit). 
+                      <br/><br/>
+                      It will <b>Clear their Debt first</b> before allowing a Cash Refund. This prevents scenarios where you pay a customer cash while they still owe you for a bill.
+                    </p>
+                  </div>
+
+                  <div className="p-6 rounded-[2rem] bg-indigo-50 border border-indigo-100">
+                    <h4 className="font-black text-indigo-900 text-sm mb-3 flex items-center gap-2">
+                      <Database size={16} /> Stable Reporting
+                    </h4>
+                    <p className="text-xs text-indigo-800/80 font-bold leading-relaxed">
+                      Your Dashboard metrics use <b>Gross Records</b>. Even if a sale is returned, the original transaction count stays the same. 
+                      This allows you to track total business volume and net profits separately with 100% precision.
+                    </p>
+                  </div>
+
+                  <div className="p-6 rounded-[2rem] border border-slate-200">
+                    <h4 className="font-black text-slate-900 text-sm mb-3 flex items-center gap-2">
+                      <RefreshCw size={16} className="text-primary" /> Multi-Year Performance
+                    </h4>
+                    <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                      The system handles 5+ years of data by indexing every record. Your search speed will remain fast whether you have 100 records or 100,000.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
       </Tabs>

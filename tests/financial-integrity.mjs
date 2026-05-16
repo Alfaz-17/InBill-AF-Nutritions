@@ -38,6 +38,10 @@ function addProduct(product_name, quantity, selling_price, cost_price) {
   }).lastInsertRowid);
 }
 
+function stockValue(products) {
+  return money(products.reduce((sum, product) => sum + (Number(product.quantity || 0) * Number(product.cost_price || 0)), 0));
+}
+
 try {
   process.env.INBILL_DB_PATH = path.join(tempRoot, 'store.db');
   dbModule = require(path.join(root, 'main/db.js'));
@@ -91,9 +95,12 @@ try {
     assert.equal(money(returnRow.debt_cleared_amount), 600, 'return clears unpaid sale debt first');
     assert.equal(money(returnRow.refund_amount), 400, 'cash refund is limited to the amount actually paid');
     assert.equal(money(partyOps.getById(customerId).current_balance), 0, 'customer debt disappears after full return');
+    assert.equal(money(dashboard.todaySalesTotal), 0, 'today sales revenue rolls back after a full same-day return');
     assert.equal(money(dashboard.todayCash), 0, 'today cash only reverses the paid portion of the sale');
+    assert.equal(money(dashboard.todayCredit), 0, 'today credit rolls back after a full same-day return');
     assert.equal(productOps.getById(productId).quantity, 1, 'sales return restores one unit to stock');
     assert.equal(dashboard.todaySalesCount, 1, 'bill count remains stable after a sales return');
+    assert.equal(money(reportOps.salesReport(today, today).summary.total), 0, 'sales report total revenue is net of same-day returns');
   }
 
   setupFresh();
@@ -107,7 +114,7 @@ try {
     });
     const product = productOps.getAll().find((item) => item.product_name === 'Integrity Purchase Item');
 
-    assert.equal(money(statsOps.getDashboard().inventoryValue), 1000, 'purchase investment is tracked at cost');
+    assert.equal(stockValue(reportOps.stockReport()), 1000, 'purchase investment is tracked at cost in reports');
     assert.equal(money(partyOps.getById(supplierId).current_balance), -1000, 'supplier credit purchase creates payable balance');
 
     returnOps.createPurchaseReturn({
@@ -172,6 +179,7 @@ try {
     });
 
     const todayReport = reportOps.salesReport(today, today);
+    assert.equal(money(todayReport.summary.total), -1000, 'today report revenue includes returns made today even when the sale was last month');
     assert.equal(money(todayReport.summary.gross_margin), -350, 'today profit decreases by today return margin even when original sale is last month');
     assert.equal(productOps.getById(productId).quantity, 1, 'cross-month return increases stock today');
     assert.equal(money(partyOps.getById(customerId).current_balance), 0, 'cross-month return clears current party balance today');

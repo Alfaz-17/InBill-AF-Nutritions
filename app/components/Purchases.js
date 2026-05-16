@@ -636,9 +636,14 @@ export default function Purchases({ profile }) {
                       value={paidAmount}
                       onChange={(e) => setPaidAmount(parseFloat(e.target.value) || 0)}
                     />
-                    <Button variant="ghost" size="sm" className="h-10 text-[10px] font-black uppercase text-blue-600 bg-blue-50" onClick={() => setPaidAmount(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0))}>
-                      Full Pay
-                    </Button>
+                     <div className="flex flex-col gap-1">
+                        <Button variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase text-rose-600 bg-rose-50" onClick={() => setPaidAmount(0)}>
+                          Credit Pay
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase text-blue-600 bg-blue-50" onClick={() => setPaidAmount(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0))}>
+                          Full Pay
+                        </Button>
+                      </div>
                   </div>
                </div>
                {items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0) - paidAmount > 0 && (

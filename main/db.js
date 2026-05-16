@@ -120,7 +120,9 @@ const initDB = () => {
       total_amount   REAL    DEFAULT 0,
       payment_mode   TEXT    DEFAULT 'Cash',
       paid_amount    REAL    DEFAULT 0,
-      due_amount     REAL    DEFAULT 0
+      due_amount     REAL    DEFAULT 0,
+      credit_days    INTEGER DEFAULT 0,
+      due_date       TEXT    DEFAULT ''
     );
 
     CREATE TABLE IF NOT EXISTS sale_items (
@@ -183,6 +185,8 @@ const initDB = () => {
       paid_amount   REAL    DEFAULT 0,
       due_amount    REAL    DEFAULT 0,
       payment_mode  TEXT    DEFAULT 'Cash',
+      credit_days   INTEGER DEFAULT 0,
+      due_date      TEXT    DEFAULT '',
       note          TEXT,
       date          TEXT    DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (party_id) REFERENCES parties(id)
@@ -272,6 +276,10 @@ const initDB = () => {
       currency_symbol TEXT    DEFAULT '₹',
       business_type   TEXT    DEFAULT 'General',
       invoice_settings TEXT    DEFAULT '{}',
+      terms_and_conditions TEXT    DEFAULT '',
+      whatsapp_number   TEXT    DEFAULT '',
+      instagram_id      TEXT    DEFAULT '',
+      pan_number       TEXT    DEFAULT '',
       master_data      TEXT    DEFAULT '{}',
       created_at      TEXT    DEFAULT (datetime('now','localtime')),
       mobile_secret     TEXT    DEFAULT '',
@@ -291,6 +299,10 @@ const initDB = () => {
   try { db.exec("ALTER TABLE business_profile ADD COLUMN neon_db_url TEXT DEFAULT ''"); } catch(e){}
   try { db.exec("ALTER TABLE business_profile ADD COLUMN use_cloud INTEGER DEFAULT 0"); } catch(e){}
   try { db.exec("ALTER TABLE business_profile ADD COLUMN software_password TEXT DEFAULT ''"); } catch(e){}
+  try { db.exec("ALTER TABLE business_profile ADD COLUMN terms_and_conditions TEXT DEFAULT ''"); } catch(e) {}
+  try { db.exec("ALTER TABLE business_profile ADD COLUMN whatsapp_number TEXT DEFAULT ''"); } catch(e) {}
+  try { db.exec("ALTER TABLE business_profile ADD COLUMN instagram_id TEXT DEFAULT ''"); } catch(e) {}
+  try { db.exec("ALTER TABLE business_profile ADD COLUMN pan_number TEXT DEFAULT ''"); } catch(e) {}
   // Performance Indexes for long-term data growth (Decade-Proofing)
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sales_date ON sales(date)"); } catch(e){}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_sales_party ON sales(party_id)"); } catch(e){}
@@ -376,6 +388,12 @@ const initDB = () => {
   if (!saleColumns.includes('due_amount')) {
     db.exec("ALTER TABLE sales ADD COLUMN due_amount REAL DEFAULT 0");
   }
+  if (!saleColumns.includes('credit_days')) {
+    db.exec("ALTER TABLE sales ADD COLUMN credit_days INTEGER DEFAULT 0");
+  }
+  if (!saleColumns.includes('due_date')) {
+    db.exec("ALTER TABLE sales ADD COLUMN due_date TEXT DEFAULT ''");
+  }
 
   const saleItemInfo = db.prepare("PRAGMA table_info(sale_items)").all();
   const itemColumns = saleItemInfo.map(c => c.name);
@@ -420,6 +438,12 @@ const initDB = () => {
   const partyTxColumns = partyTxInfo.map(c => c.name);
   if (!partyTxColumns.includes('payment_mode')) {
     db.exec("ALTER TABLE party_transactions ADD COLUMN payment_mode TEXT DEFAULT 'Cash'");
+  }
+  if (!partyTxColumns.includes('credit_days')) {
+    db.exec("ALTER TABLE party_transactions ADD COLUMN credit_days INTEGER DEFAULT 0");
+  }
+  if (!partyTxColumns.includes('due_date')) {
+    db.exec("ALTER TABLE party_transactions ADD COLUMN due_date TEXT DEFAULT ''");
   }
 
   // Returns migration
@@ -520,24 +544,64 @@ const generateInvoiceNumber = () => {
 /* ───────── Party Ops ───────── */
 const partyOps = {
   getAll: (type) => {
-    if (type) return db.prepare('SELECT * FROM parties WHERE type = ? AND is_deleted = 0 ORDER BY name ASC').all(type);
-    return db.prepare('SELECT * FROM parties WHERE is_deleted = 0 ORDER BY name ASC').all();
+    const baseSelect = `
+      SELECT p.*,
+        (
+          SELECT COUNT(*)
+          FROM party_transactions pt
+          WHERE pt.party_id = p.id
+            AND pt.type IN ('Sale', 'Purchase')
+            AND pt.due_amount > 0.1
+            AND COALESCE(pt.due_date, '') != ''
+            AND date(pt.due_date) <= date('now', 'localtime')
+        ) as due_alert_count,
+        (
+          SELECT MIN(pt.due_date)
+          FROM party_transactions pt
+          WHERE pt.party_id = p.id
+            AND pt.type IN ('Sale', 'Purchase')
+            AND pt.due_amount > 0.1
+            AND COALESCE(pt.due_date, '') != ''
+        ) as next_due_date
+      FROM parties p
+      WHERE p.is_deleted = 0
+    `;
+    if (type) return db.prepare(`${baseSelect} AND p.type = ? ORDER BY p.name ASC`).all(type);
+    return db.prepare(`${baseSelect} ORDER BY p.name ASC`).all();
   },
   getById: (id) => db.prepare('SELECT * FROM parties WHERE id = ?').get(id),
   add: (p) => {
+    let openingBalance = parseFloat(p.opening_balance) || 0;
+    // For Suppliers, positive opening balance is treated as debt (Payable)
+    if (p.type === 'Supplier' && openingBalance > 0) {
+      openingBalance = -openingBalance;
+    }
+
     const res = db.prepare(`
       INSERT INTO parties (name, phone, address, gstin, type, opening_balance, current_balance)
       VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(p.name, p.phone || '', p.address || '', p.gstin || '', p.type || 'Customer', p.opening_balance || 0, p.opening_balance || 0);
+    `).run(p.name, p.phone || '', p.address || '', p.gstin || '', p.type || 'Customer', openingBalance, openingBalance);
     const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return { ...res, id: Number(res.lastInsertRowid) };
   },
   update: (id, p) => {
+    const oldParty = db.prepare('SELECT opening_balance, current_balance FROM parties WHERE id = ?').get(id);
+    let openingBalance = parseFloat(p.opening_balance) || 0;
+    
+    // For Suppliers, positive opening balance is treated as debt (Payable)
+    if (p.type === 'Supplier' && openingBalance > 0) {
+      openingBalance = -openingBalance;
+    }
+
+    // Calculate balance delta if opening balance changed
+    const delta = openingBalance - (oldParty?.opening_balance || 0);
+    
     const res = db.prepare(`
-      UPDATE parties SET name=?, phone=?, address=?, gstin=?, type=?, opening_balance=?
+      UPDATE parties SET name=?, phone=?, address=?, gstin=?, type=?, opening_balance=?, current_balance = current_balance + ?
       WHERE id=?
-    `).run(p.name, p.phone || '', p.address || '', p.gstin || '', p.type || 'Customer', p.opening_balance || 0, id);
+    `).run(p.name, p.phone || '', p.address || '', p.gstin || '', p.type || 'Customer', openingBalance, delta, id);
+    
     const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
@@ -554,7 +618,7 @@ const partyOps = {
   getLedger: (partyId) => db.prepare(`
     SELECT * FROM party_transactions 
     WHERE party_id = ? 
-    ORDER BY date DESC
+    ORDER BY date DESC, id DESC
   `).all(partyId),
 
   recordPayment: (data) => {
@@ -592,6 +656,31 @@ const partyOps = {
       
       db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
         .run(amount * direction, data.party_id);
+
+      let remaining = amount;
+      const openDues = db.prepare(`
+        SELECT id, reference_id, type, due_amount
+        FROM party_transactions
+        WHERE party_id = ?
+          AND type IN ('Sale', 'Purchase')
+          AND due_amount > 0.1
+        ORDER BY COALESCE(NULLIF(due_date, ''), date) ASC, id ASC
+      `).all(data.party_id);
+
+      for (const due of openDues) {
+        if (remaining <= 0) break;
+        const applied = Math.min(remaining, Number(due.due_amount || 0));
+        db.prepare('UPDATE party_transactions SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+          .run(applied, due.id);
+        if (due.type === 'Sale' && due.reference_id) {
+          db.prepare('UPDATE sales SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+            .run(applied, due.reference_id);
+        } else if (due.type === 'Purchase' && due.reference_id) {
+          db.prepare('UPDATE purchases SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+            .run(applied, due.reference_id);
+        }
+        remaining -= applied;
+      }
 
       return { success: true };
     });
@@ -774,20 +863,27 @@ const saleOps = {
       const totalAmount = Math.round(rawTotalAmount);
       const paid_amount = saleData.paid_amount !== undefined ? Number(saleData.paid_amount) : totalAmount;
       const dueAmount = Math.max(0, totalAmount - paid_amount);
+      const creditDays = dueAmount > 0 ? Math.max(0, Math.floor(Number(saleData.credit_days || 0))) : 0;
+      let dueDate = '';
+      if (dueAmount > 0 && creditDays > 0) {
+        const promised = new Date();
+        promised.setDate(promised.getDate() + creditDays);
+        dueDate = promised.getFullYear() + '-' + String(promised.getMonth() + 1).padStart(2, '0') + '-' + String(promised.getDate()).padStart(2, '0');
+      }
 
       const saleInfo = db.prepare(`
-        INSERT INTO sales (invoice_number, party_id, customer_name, customer_phone, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(invoiceNumber, saleData.party_id || null, saleData.customer_name || '', saleData.customer_phone || '', Number(subtotal.toFixed(2)), Number(totalGst.toFixed(2)), saleData.misc_charges || 0, totalAmount, totalDiscount, saleData.payment_mode || 'Cash', paid_amount, dueAmount);
+        INSERT INTO sales (invoice_number, party_id, customer_name, customer_phone, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(invoiceNumber, saleData.party_id || null, saleData.customer_name || '', saleData.customer_phone || '', Number(subtotal.toFixed(2)), Number(totalGst.toFixed(2)), saleData.misc_charges || 0, totalAmount, totalDiscount, saleData.payment_mode || 'Cash', paid_amount, dueAmount, creditDays, dueDate);
 
       const saleId = saleInfo.lastInsertRowid;
 
       if (saleData.party_id) {
         db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(dueAmount, saleData.party_id);
         db.prepare(`
-          INSERT INTO party_transactions (party_id, type, reference_id, total_amount, paid_amount, due_amount, date)
-          VALUES (?, 'Sale', ?, ?, ?, ?, datetime('now','localtime'))
-        `).run(saleData.party_id, saleId, totalAmount, saleData.paid_amount || 0, dueAmount);
+          INSERT INTO party_transactions (party_id, type, reference_id, total_amount, paid_amount, due_amount, credit_days, due_date, date)
+          VALUES (?, 'Sale', ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
+        `).run(saleData.party_id, saleId, totalAmount, saleData.paid_amount || 0, dueAmount, creditDays, dueDate);
       }
 
       const insertItem = db.prepare(`
@@ -873,7 +969,7 @@ const saleOps = {
   },
 
   getAll: () => db.prepare(`
-    SELECT s.*, p.name as customer_name, p.phone as customer_phone,
+    SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name, COALESCE(p.phone, s.customer_phone) as customer_phone,
            (s.total_amount - s.returned_total) as net_amount
     FROM sales s
     LEFT JOIN parties p ON s.party_id = p.id
@@ -882,7 +978,7 @@ const saleOps = {
 
   getById: (id) => {
     const sale = db.prepare(`
-      SELECT s.*, p.name as customer_name, p.phone as customer_phone, p.address as customer_address, p.gstin as customer_gstin
+      SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name, COALESCE(p.phone, s.customer_phone) as customer_phone, p.address as customer_address, p.gstin as customer_gstin
       FROM sales s
       LEFT JOIN parties p ON s.party_id = p.id
       WHERE s.id = ?
@@ -909,7 +1005,7 @@ const saleOps = {
 
   getByInvoice: (invoiceNumber) => {
     const sale = db.prepare(`
-      SELECT s.*, p.name as customer_name, p.phone as customer_phone, p.address as customer_address, p.gstin as customer_gstin
+      SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name, COALESCE(p.phone, s.customer_phone) as customer_phone, p.address as customer_address, p.gstin as customer_gstin
       FROM sales s
       LEFT JOIN parties p ON s.party_id = p.id
       WHERE s.invoice_number = ?
@@ -935,7 +1031,7 @@ const saleOps = {
   },
 
   getByDateRange: (from, to) => db.prepare(`
-    SELECT s.*, p.name as customer_name
+    SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name
     FROM sales s
     LEFT JOIN parties p ON s.party_id = p.id
     WHERE date(s.date) BETWEEN ? AND ? 
@@ -1192,16 +1288,28 @@ const statsOps = {
       WHERE date(pt.date) = date('now', 'localtime') AND pt.type = 'Payment' AND p.type = 'Customer'
     `).get();
 
-    // Consolidated Metrics (Stable Gross Records)
-    const todaySalesTotal = salesStats.gross_total;
+    const creditStats = db.prepare(`
+      SELECT COALESCE(SUM(
+        CASE 
+          WHEN pt.type = 'Sale' THEN pt.due_amount
+          WHEN pt.type = 'Payment' THEN -pt.paid_amount
+          WHEN pt.type = 'Sales Return' THEN -pt.total_amount
+          ELSE 0
+        END
+      ), 0) as net_change
+      FROM party_transactions pt
+      JOIN parties p ON pt.party_id = p.id
+      WHERE date(pt.date) = date('now', 'localtime') AND p.type = 'Customer'
+    `).get();
+
+    // Consolidated Metrics. Money values are net of returns; bill count remains stable.
+    const todaySalesTotal = salesStats.gross_total - returnStats.total_returned;
     const todaySalesCount = salesStats.total_count;
     
     const todayCash = (salesStats.cash_from_sales + partyStats.cash_payments) - returnStats.cash_refunded;
     const todayDigital = (salesStats.digital_from_sales + partyStats.digital_payments) - returnStats.digital_refunded;
     
-    // Today's Credit: Represents NEW credit business generated today.
-    // We don't subtract returns or payments here as per user preference for a gross metric.
-    const todayCredit = salesStats.credit_from_sales;
+    const todayCredit = Math.max(0, creditStats.net_change);
 
     const totalProducts = db.prepare('SELECT COUNT(*) as count FROM products WHERE is_deleted = 0').get().count;
     const lowStockItems = db.prepare(`
@@ -1224,22 +1332,27 @@ const statsOps = {
     const payable = Math.abs(db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance < -0.1 AND is_deleted = 0').get().total);
 
     const totalRevenue = db.prepare('SELECT COALESCE(SUM(total_amount - returned_total), 0) as total FROM sales').get().total;
-
-    // Profit Calculations (All-time)
-    const salesMargin = db.prepare(`
-      SELECT COALESCE(SUM((COALESCE(si.price, 0) - COALESCE(p.cost_price, 0)) * COALESCE(si.quantity, 0)), 0) as profit 
-      FROM sale_items si
-      JOIN products p ON si.product_id = p.id
-    `).get().profit;
-
-    const returnMargin = db.prepare(`
-      SELECT COALESCE(SUM((COALESCE(ri.price, 0) - COALESCE(p.cost_price, 0)) * COALESCE(ri.quantity, 0)), 0) as margin
-      FROM return_items ri
-      JOIN products p ON ri.product_id = p.id
-    `).get().margin;
-
-    const totalExpenses = db.prepare('SELECT COALESCE(SUM(amount), 0) as total FROM expenses').get().total;
-    const inventoryValue = db.prepare('SELECT COALESCE(SUM(quantity * cost_price), 0) as total FROM products WHERE is_deleted = 0').get().total;
+    const paymentReminders = db.prepare(`
+      SELECT 
+        p.id as party_id,
+        p.name,
+        p.phone,
+        MIN(pt.due_date) as due_date,
+        COALESCE(SUM(pt.due_amount), 0) as due_amount,
+        COUNT(*) as invoice_count,
+        CAST(julianday(date('now', 'localtime')) - julianday(MIN(pt.due_date)) AS INTEGER) as days_overdue
+      FROM party_transactions pt
+      JOIN parties p ON pt.party_id = p.id
+      WHERE p.type = 'Customer'
+        AND p.is_deleted = 0
+        AND pt.type = 'Sale'
+        AND pt.due_amount > 0.1
+        AND COALESCE(pt.due_date, '') != ''
+        AND date(pt.due_date) <= date('now', 'localtime')
+      GROUP BY p.id
+      ORDER BY date(due_date) ASC, due_amount DESC
+      LIMIT 5
+    `).all();
 
     return {
       todaySalesTotal,
@@ -1254,11 +1367,9 @@ const statsOps = {
       todayCash,
       todayDigital,
       todayCredit,
-      totalProfit: (salesMargin - returnMargin) - totalExpenses,
-      totalExpenses,
-      inventoryValue,
+      paymentReminders,
       recentSales: db.prepare(`
-        SELECT s.*, p.name as customer_name,
+        SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name,
                (SELECT COALESCE(SUM(total_amount), 0) FROM returns WHERE sale_id = s.id) as returned_total
         FROM sales s
         LEFT JOIN parties p ON s.party_id = p.id
@@ -1277,23 +1388,40 @@ const statsOps = {
     const sales = db.prepare(`
       SELECT 
         strftime('%m', date) as month,
-        (
-          COALESCE(SUM(total_amount), 0) - 
-          COALESCE((SELECT SUM(total_amount) FROM returns WHERE strftime('%m', date) = strftime('%m', sales.date) AND strftime('%Y', date) = ?), 0)
-        ) as total_sales,
+        COALESCE(SUM(total_amount), 0) as gross_sales,
         COUNT(*) as count
       FROM sales 
       WHERE strftime('%Y', date) = ?
       GROUP BY month
       ORDER BY month ASC
-    `).all(currentYear, currentYear);
+    `).all(currentYear);
+
+    const returns = db.prepare(`
+      SELECT 
+        strftime('%m', date) as month,
+        COALESCE(SUM(total_amount), 0) as total_returns
+      FROM returns
+      WHERE strftime('%Y', date) = ?
+      GROUP BY month
+      ORDER BY month ASC
+    `).all(currentYear);
 
     // Monthly Purchases
     const purchases = db.prepare(`
       SELECT 
         strftime('%m', date) as month,
-        SUM(total_amount) as total_purchases
+        COALESCE(SUM(total_amount), 0) as gross_purchases
       FROM purchases 
+      WHERE strftime('%Y', date) = ?
+      GROUP BY month
+      ORDER BY month ASC
+    `).all(currentYear);
+
+    const purchaseReturns = db.prepare(`
+      SELECT 
+        strftime('%m', date) as month,
+        COALESCE(SUM(total_amount), 0) as total_returns
+      FROM purchase_returns
       WHERE strftime('%Y', date) = ?
       GROUP BY month
       ORDER BY month ASC
@@ -1316,11 +1444,13 @@ const statsOps = {
     
     return months.map((m, idx) => {
       const s = sales.find(x => x.month === m);
+      const r = returns.find(x => x.month === m);
       const p = purchases.find(x => x.month === m);
+      const pr = purchaseReturns.find(x => x.month === m);
       const e = expenses.find(x => x.month === m);
 
-      const totalSales = s ? s.total_sales : 0;
-      const totalPurchases = p ? p.total_purchases : 0;
+      const totalSales = (s ? s.gross_sales : 0) - (r ? r.total_returns : 0);
+      const totalPurchases = (p ? p.gross_purchases : 0) - (pr ? pr.total_returns : 0);
       const totalExpenses = e ? e.total_expenses : 0;
 
       const salesMargin = db.prepare(`
@@ -1330,7 +1460,16 @@ const statsOps = {
         WHERE strftime('%m', s.date) = ? AND strftime('%Y', s.date) = ?
       `).get(m, currentYear).margin;
 
-      const netMargin = salesMargin;
+      const returnMargin = db.prepare(`
+        SELECT COALESCE(SUM((ri.price - COALESCE(si.cost_price, p.cost_price, 0)) * ri.quantity), 0) as margin
+        FROM return_items ri
+        JOIN returns r ON ri.return_id = r.id
+        LEFT JOIN sale_items si ON si.sale_id = r.sale_id AND si.product_id = ri.product_id
+        LEFT JOIN products p ON p.id = ri.product_id
+        WHERE strftime('%m', r.date) = ? AND strftime('%Y', r.date) = ?
+      `).get(m, currentYear).margin;
+
+      const netMargin = salesMargin - returnMargin;
 
       return {
         month: monthNames[idx],
@@ -1411,7 +1550,7 @@ const expenseOps = {
 const reportOps = {
   salesReport: (from, to) => {
     const sales = db.prepare(
-      `SELECT s.*, p.name as customer_name, p.phone as customer_phone,
+      `SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name, COALESCE(p.phone, s.customer_phone) as customer_phone,
               (SELECT COALESCE(SUM(total_amount), 0) FROM returns WHERE sale_id = s.id) as returned_total
        FROM sales s 
        LEFT JOIN parties p ON s.party_id = p.id
@@ -1465,7 +1604,8 @@ const reportOps = {
       sales, 
       summary: { 
         ...summary, 
-        total: summary.total, // Stable Gross Total
+        gross_total: summary.total,
+        total: summary.total - returnsStats.total,
         count: summary.count, // Stable Gross Count
         net_revenue: summary.total - returnsStats.total,
         returns: returnsStats.total,
@@ -1511,8 +1651,8 @@ const reportOps = {
 
   stockReport: () => {
     return db.prepare(
-      `SELECT id, product_name, brand, category, quantity, selling_price, batch_number, expiry_date
-       FROM products ORDER BY product_name ASC`
+      `SELECT id, product_name, brand, category, quantity, cost_price, selling_price, batch_number, expiry_date
+       FROM products WHERE is_deleted = 0 ORDER BY product_name ASC`
     ).all();
   },
 };
@@ -1605,6 +1745,8 @@ const returnOps = {
         // Reduce due amount by the debt cleared
         db.prepare('UPDATE sales SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
           .run(debtCleared, data.sale_id);
+        db.prepare("UPDATE party_transactions SET due_amount = MAX(0, due_amount - ?) WHERE type = 'Sale' AND reference_id = ?")
+          .run(debtCleared, data.sale_id);
         
         // Track returned total on the original sale
         db.prepare('UPDATE sales SET returned_total = returned_total + ? WHERE id = ?')
@@ -1668,6 +1810,8 @@ const returnOps = {
       // 3. Reverse Original Sale Due
       if (ret.sale_id && ret.debt_cleared_amount > 0) {
         db.prepare('UPDATE sales SET due_amount = due_amount + ? WHERE id = ?')
+          .run(ret.debt_cleared_amount, ret.sale_id);
+        db.prepare("UPDATE party_transactions SET due_amount = due_amount + ? WHERE type = 'Sale' AND reference_id = ?")
           .run(ret.debt_cleared_amount, ret.sale_id);
       }
 
@@ -1851,7 +1995,8 @@ const businessProfileOps = {
         business_name=?, business_short=?, tagline=?, address_line1=?, address_line2=?, 
         city=?, state=?, pincode=?, phone=?, email=?, gstin=?, 
         logo_path=?, invoice_prefix=?, invoice_footer=?, currency_symbol=?, business_type=?,
-        invoice_settings=?, master_data=?, bank_details=?, whatsapp_settings=?
+        invoice_settings=?, master_data=?, bank_details=?, whatsapp_settings=?,
+        terms_and_conditions=?, whatsapp_number=?, instagram_id=?, pan_number=?
       WHERE id=1
     `).run(
       p.business_name || '', p.business_short || '', p.tagline || '', p.address_line1 || '', p.address_line2 || '',
@@ -1860,7 +2005,11 @@ const businessProfileOps = {
       typeof p.invoice_settings === 'object' ? JSON.stringify(p.invoice_settings) : (p.invoice_settings || '{}'),
       typeof p.master_data === 'object' ? JSON.stringify(p.master_data) : (p.master_data || '{}'),
       p.bank_details || '',
-      typeof p.whatsapp_settings === 'object' ? JSON.stringify(p.whatsapp_settings) : (p.whatsapp_settings || '{}')
+      typeof p.whatsapp_settings === 'object' ? JSON.stringify(p.whatsapp_settings) : (p.whatsapp_settings || '{}'),
+      p.terms_and_conditions || '',
+      p.whatsapp_number || '',
+      p.instagram_id || '',
+      p.pan_number || ''
     );
 
     const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
@@ -2060,6 +2209,8 @@ const ensurePostgresSchema = async (cloud) => {
       payment_mode   TEXT DEFAULT 'Cash',
       paid_amount    DECIMAL DEFAULT 0,
       due_amount     DECIMAL DEFAULT 0,
+      credit_days    INTEGER DEFAULT 0,
+      due_date       TEXT DEFAULT '',
       party_id       INTEGER
     );
   `;
@@ -2130,6 +2281,8 @@ const ensurePostgresSchema = async (cloud) => {
       paid_amount   DECIMAL DEFAULT 0,
       due_amount    DECIMAL DEFAULT 0,
       payment_mode  TEXT DEFAULT 'Cash',
+      credit_days   INTEGER DEFAULT 0,
+      due_date      TEXT DEFAULT '',
       note          TEXT,
       date          TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -2163,7 +2316,11 @@ const ensurePostgresSchema = async (cloud) => {
       whatsapp_settings TEXT DEFAULT '{}',
       gemini_api_key    TEXT DEFAULT '',
       neon_db_url       TEXT DEFAULT '',
-      use_cloud         INTEGER DEFAULT 0
+      use_cloud         INTEGER DEFAULT 0,
+      terms_and_conditions TEXT DEFAULT '',
+      whatsapp_number   TEXT DEFAULT '',
+      instagram_id      TEXT DEFAULT '',
+      pan_number       TEXT DEFAULT ''
     );
   `;
 

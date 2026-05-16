@@ -132,6 +132,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pdf: {
     generate: (html) => ipcRenderer.invoke('pdf:generate', html),
     saveAs: (base64, name) => ipcRenderer.invoke('pdf:saveAs', base64, name),
+    saveDirect: (base64, name) => ipcRenderer.invoke('pdf:saveDirect', base64, name),
     share: (base64) => ipcRenderer.invoke('pdf:share', base64),
   },
 
@@ -156,5 +157,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /* ── WhatsApp ── */
   whatsapp: {
     sendMessage: (data) => ipcRenderer.invoke('whatsapp:sendMessage', data),
+    sendInvoice: (data) => ipcRenderer.invoke('whatsapp:sendInvoice', data),
   }
 });

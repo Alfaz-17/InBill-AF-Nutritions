@@ -1,10 +1,10 @@
 'use client';
 import { useState, useEffect } from 'react';
 import {
-  Clock, TrendingUp, Plus, ArrowRight, Wallet,
-  IndianRupee, ShoppingCart, Package, AlertTriangle, Check,
-  ArrowDownLeft, ArrowUpRight, Users, ScanLine, TruckIcon,
-  ChevronRight, ArrowUpCircle, Target, Sparkles, Brain, RefreshCw
+  Clock, TrendingUp, Plus, Wallet,
+  ShoppingCart, AlertTriangle, Check,
+  ArrowDownLeft, ArrowUpRight, ScanLine,
+  ChevronRight, RefreshCw
 } from 'lucide-react';
 
 // shadcn/ui components
@@ -32,6 +32,16 @@ export default function Dashboard({ onNavigate, profile }) {
 
   const CURRENCY = profile?.currency_symbol || '₹';
 
+  const formatReminderDate = (date) => {
+    if (!date) return '';
+    return new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' });
+  };
+  const getReminderLabel = (days) => {
+    const value = Number(days || 0);
+    if (value <= 0) return 'Due today';
+    return `${value} day${value === 1 ? '' : 's'} late`;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -46,7 +56,8 @@ export default function Dashboard({ onNavigate, profile }) {
   const s = stats || {
     todaySalesTotal: 0, todaySalesCount: 0,
     totalProducts: 0, lowStockCount: 0,
-    expiringCount: 0, recentSales: []
+    receivable: 0, payable: 0,
+    expiringCount: 0, paymentReminders: [], recentSales: []
   };
 
   return (
@@ -75,23 +86,23 @@ export default function Dashboard({ onNavigate, profile }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <div className="metric-card group">
           <div className="metric-icon green group-hover:scale-110 transition-transform duration-500">
-            <IndianRupee size={28} />
+            <ArrowDownLeft size={28} />
           </div>
           <div>
-            <p className="metric-sub">Today's Sales</p>
-            <h3 className="metric-value text-emerald-600">{CURRENCY}{(s.todaySalesTotal || 0).toLocaleString('en-IN')}</h3>
-            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Daily Performance</div>
+            <p className="metric-sub">To Receive</p>
+            <h3 className="metric-value text-emerald-600">{CURRENCY}{(s.receivable || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Customer Balances</div>
           </div>
         </div>
 
         <div className="metric-card group">
-          <div className="metric-icon blue group-hover:scale-110 transition-transform duration-500">
-            <Target size={28} />
+          <div className="metric-icon red group-hover:scale-110 transition-transform duration-500">
+            <ArrowUpRight size={28} />
           </div>
           <div>
-            <p className="metric-sub">Total Revenue</p>
-            <h3 className="metric-value text-slate-900">{CURRENCY}{(s.totalRevenue || 0).toLocaleString('en-IN')}</h3>
-            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">All-time Sales</div>
+            <p className="metric-sub">To Pay</p>
+            <h3 className="metric-value text-rose-600">{CURRENCY}{(s.payable || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Supplier Balances</div>
           </div>
         </div>
 
@@ -107,16 +118,19 @@ export default function Dashboard({ onNavigate, profile }) {
         </div>
 
         <div className="metric-card group">
-          <div className="metric-icon red group-hover:scale-110 transition-transform duration-500">
-            <ArrowDownLeft size={28} />
+          <div className="metric-icon green group-hover:scale-110 transition-transform duration-500">
+            <TrendingUp size={28} />
           </div>
           <div>
-            <p className="metric-sub">Pending Due</p>
-            <h3 className="metric-value text-rose-600">{CURRENCY}{(s.receivable || 0).toLocaleString('en-IN')}</h3>
-            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Outstandings</div>
-          </div>
-        </div>
-      </div>
+            <p className="metric-sub">Today's Sales</p>
+            <h3 className="metric-value text-emerald-600">{CURRENCY}{(s.todaySalesTotal || 0).toLocaleString('en-IN')}</h3>
+            <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Daily Performance</div>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-[10px] font-bold text-amber-700">
+                      Real reminders disappear automatically after the customer pays.
+                    </p>
+                  </div>
 
       {/* Daily Cashflow Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 -mt-4">
@@ -145,30 +159,6 @@ export default function Dashboard({ onNavigate, profile }) {
           </div>
           <div className="w-12 h-12 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-amber-100">
             <TrendingUp size={20} className="text-amber-600" />
-          </div>
-        </div>
-      </div>
-
-      {/* Business Position */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 -mt-4">
-        <div className="bg-white border border-slate-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Inventory Value</p>
-            <h4 className="text-2xl font-black text-slate-900">{CURRENCY}{(s.inventoryValue || 0).toLocaleString('en-IN')}</h4>
-          </div>
-          <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center border border-slate-100">
-            <Package size={20} className="text-slate-700" />
-          </div>
-        </div>
-        <div className="bg-white border border-slate-100 rounded-[2rem] p-6 flex items-center justify-between shadow-sm">
-          <div>
-            <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Total Profit</p>
-            <h4 className={`text-2xl font-black ${(s.totalProfit || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {CURRENCY}{(s.totalProfit || 0).toLocaleString('en-IN')}
-            </h4>
-          </div>
-          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center border border-emerald-100">
-            <ArrowUpCircle size={20} className="text-emerald-600" />
           </div>
         </div>
       </div>
@@ -231,22 +221,58 @@ export default function Dashboard({ onNavigate, profile }) {
 
         {/* Action Sidebar */}
         <div className="space-y-10">
-          <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 bg-gradient-to-br from-slate-900 to-slate-800 text-white border-none overflow-hidden relative">
-             <div className="absolute top-0 right-0 w-32 h-32 bg-white/5 rounded-full -mr-16 -mt-16 blur-2xl" />
-             <CardHeader className="p-10 pb-4">
-               <CardTitle className="text-xl font-black">Quick Actions</CardTitle>
-               <CardDescription className="text-slate-400 font-bold">Most used features</CardDescription>
+          <Card className="rounded-[2.5rem] border-amber-100 shadow-xl shadow-amber-100/30">
+             <CardHeader className="p-8 pb-2">
+               <CardTitle className="text-lg font-black flex items-center gap-2">
+                 <Clock size={18} className="text-amber-500" /> Payment Reminders
+               </CardTitle>
              </CardHeader>
-             <CardContent className="p-10 pt-0 space-y-4">
-                <Button onClick={() => onNavigate('purchases')} variant="secondary" className="w-full h-14 justify-start gap-4 rounded-2xl bg-white/10 hover:bg-white/20 border-none text-white font-black text-base">
-                  <TruckIcon size={22} className="text-blue-400" /> Stock Inflow
-                </Button>
-                <Button onClick={() => onNavigate('parties')} variant="secondary" className="w-full h-14 justify-start gap-4 rounded-2xl bg-white/10 hover:bg-white/20 border-none text-white font-black text-base">
-                  <Users size={22} className="text-emerald-400" /> Add Party
-                </Button>
-                <Button onClick={() => onNavigate('ai-upload')} variant="secondary" className="w-full h-14 justify-start gap-4 rounded-2xl bg-white/10 hover:bg-white/20 border-none text-white font-black text-base">
-                  <ScanLine size={22} className="text-purple-400" /> AI Stock-in
-                </Button>
+             <CardContent className="p-8 pt-0 space-y-4">
+                {s.paymentReminders?.length > 0 ? s.paymentReminders.map((item) => (
+                  <div key={item.party_id} className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-black text-sm text-slate-900 truncate">{item.name}</p>
+                        <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                          {getReminderLabel(item.days_overdue)} - {formatReminderDate(item.due_date)}
+                        </p>
+                        {item.phone && <p className="mt-1 text-[10px] font-bold text-slate-400">{item.phone}</p>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="font-black text-sm text-rose-600">{CURRENCY}{Number(item.due_amount || 0).toLocaleString('en-IN')}</p>
+                        <p className="text-[9px] font-black text-slate-400 uppercase">{item.invoice_count} bill{item.invoice_count === 1 ? '' : 's'}</p>
+                      </div>
+                    </div>
+                    <Button onClick={() => onNavigate('parties')} size="sm" variant="ghost" className="mt-3 h-9 w-full rounded-xl text-amber-700 font-black hover:bg-white">
+                      Open Parties
+                    </Button>
+                  </div>
+                )) : (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-amber-50/60 rounded-2xl border border-dashed border-amber-200">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <Badge className="mb-2 bg-white text-amber-700 border-amber-200 rounded-lg text-[9px] font-black">Example</Badge>
+                          <p className="font-black text-sm text-slate-900 truncate">Amit Customer</p>
+                          <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
+                            Due today - {formatReminderDate(new Date().toISOString().slice(0, 10))}
+                          </p>
+                          <p className="mt-1 text-[10px] font-bold text-slate-400">9876543210</p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="font-black text-sm text-rose-600">{CURRENCY}1,500</p>
+                          <p className="text-[9px] font-black text-slate-400 uppercase">1 bill</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="py-8 text-center">
+                      <div className="w-12 h-12 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <Check size={24} strokeWidth={3} />
+                      </div>
+                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No real payments due today</p>
+                    </div>
+                  </div>
+                )}
              </CardContent>
           </Card>
 

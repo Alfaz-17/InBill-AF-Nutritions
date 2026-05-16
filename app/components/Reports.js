@@ -182,11 +182,12 @@ export default function Reports({ profile }) {
         setShowSalesReturn(true);
       }
     } else {
-      setSelectedPurchase(record);
-      const items = (record.items || []).map(i => ({ 
+      const fullPurchase = await window.electronAPI.purchases.getById(record.id);
+      setSelectedPurchase(fullPurchase || record);
+      const items = ((fullPurchase || record).items || []).map(i => ({ 
         ...i, 
-        available_qty: i.quantity, 
-        quantity: i.quantity // Auto-select full quantity
+        available_qty: Math.max(0, (i.quantity || 0) - (i.returned_quantity || 0)), 
+        quantity: Math.max(0, (i.quantity || 0) - (i.returned_quantity || 0)) // Auto-select full remaining quantity
       }));
       setReturnItems(items);
       setShowPurchaseReturn(true);
@@ -236,6 +237,7 @@ export default function Reports({ profile }) {
         purchase_id: selectedPurchase.id,
         party_id: selectedPurchase.party_id,
         total_amount: totalAmount,
+        payment_mode: returnPaymentMode,
         items: itemsToReturn.map(i => ({
           product_id: i.product_id,
           product_name: i.product_name,
@@ -273,6 +275,9 @@ export default function Reports({ profile }) {
           </TabsTrigger>
           <TabsTrigger value="purchases" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
             <Truck size={18} /> Purchases
+          </TabsTrigger>
+          <TabsTrigger value="stock" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
+            <Package size={18} /> Inventory
           </TabsTrigger>
           <TabsTrigger value="monthly" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
             <FileBarChart size={18} /> Stats
