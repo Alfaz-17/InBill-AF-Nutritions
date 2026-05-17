@@ -161,8 +161,7 @@ export default function Home() {
         await qrScanner.start(
           { facingMode: "environment" },
           {
-            fps: 15,
-            qrbox: { width: 220, height: 220 },
+            fps: 20,
           },
           async (decodedText) => {
             try {
