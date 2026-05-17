@@ -42,7 +42,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
     business_name: '', business_short: '', store_base_url: 'https://inbill.store', tagline: 'Billing & Inventory',
     address_line1: '', address_line2: '', city: '', state: '', pincode: '',
     phone: '', email: '', gstin: '', logo_path: '',
-    invoice_prefix: 'INV', invoice_footer: 'Thank you for your business!',
+    invoice_prefix: 'INV', invoice_footer: 'Thank you for shopping with us!',
     currency_symbol: '₹', business_type: 'General',
     bank_details: '',
     master_data: { 

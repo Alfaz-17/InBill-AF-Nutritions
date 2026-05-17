@@ -549,7 +549,7 @@ export const getInvoiceHTML = (data, profile = {}) => {
               </div>
             </div>
 
-            <div class="powered-by">Thank you for your business</div>
+            <div class="powered-by">${escapeHtml(profile.invoice_footer || 'Thank you for shopping with us!')}</div>
           </div>
         </div>
       </body>
