@@ -332,10 +332,27 @@ export default function Home() {
         <input
           className="form-input code-input"
           type="text"
-          maxLength={6}
           placeholder="• • • • • •"
           value={code}
-          onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          onChange={e => {
+            const val = e.target.value;
+            // Check if user pasted the raw QR code JSON payload
+            if (val.trim().startsWith('{')) {
+              try {
+                const parsed = JSON.parse(val.trim());
+                if (parsed.code && parsed.cloud_url) {
+                  playBeep();
+                  setCode(parsed.code);
+                  setNeonUrl(parsed.cloud_url);
+                  handleScanConnect(parsed.code, parsed.cloud_url);
+                  return;
+                }
+              } catch (err) {
+                console.error("Manual paste parse error:", err);
+              }
+            }
+            setCode(val.replace(/\D/g, '').slice(0, 6));
+          }}
           inputMode="numeric"
         />
 
