@@ -41,6 +41,10 @@ export default function Home() {
   const [loginError, setLoginError] = useState('');
   const [connecting, setConnecting] = useState(false);
 
+  // QR Scanner State
+  const [scanning, setScanning] = useState(false);
+  const [qrScannerInstance, setQrScannerInstance] = useState<any>(null);
+
   // Tabs
   const [tab, setTab] = useState<'home' | 'inventory' | 'parties'>('home');
 
@@ -57,6 +61,27 @@ export default function Home() {
   const [parties, setParties] = useState<Party[]>([]);
   const [partyLoading, setPartyLoading] = useState(false);
 
+  // Audio synthesized success beep
+  const playBeep = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime); // High-pitched clean beep
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.12);
+    } catch (e) {
+      console.error('Audio beep failed:', e);
+    }
+  };
+
   // Check if already authenticated
   useEffect(() => {
     fetch('/api/dashboard').then(r => {
@@ -70,6 +95,15 @@ export default function Home() {
       setChecking(false);
     }).catch(() => setChecking(false));
   }, []);
+
+  // Clean up scanner on unmount
+  useEffect(() => {
+    return () => {
+      if (qrScannerInstance) {
+        qrScannerInstance.stop().catch(() => {});
+      }
+    };
+  }, [qrScannerInstance]);
 
   // ── Login ──
   const handleConnect = async () => {
@@ -92,6 +126,85 @@ export default function Home() {
       loadDashboard();
     } catch { setLoginError('Network error. Try again.'); }
     setConnecting(false);
+  };
+
+  const handleScanConnect = async (scannedCode: string, scannedUrl: string) => {
+    setConnecting(true);
+    try {
+      const res = await fetch('/api/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: scannedCode.trim(), neonUrl: scannedUrl.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setLoginError(data.error || 'Connection failed'); setConnecting(false); return; }
+      setBusiness(data.business);
+      setLoggedIn(true);
+      loadDashboard();
+    } catch { setLoginError('Network error. Try again.'); }
+    setConnecting(false);
+  };
+
+  const startQRScanner = async () => {
+    setLoginError('');
+    setScanning(true);
+    setTimeout(async () => {
+      try {
+        const { Html5Qrcode } = await import('html5-qrcode');
+        const qrScanner = new Html5Qrcode("qr-reader");
+        setQrScannerInstance(qrScanner);
+        
+        await qrScanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 15,
+            qrbox: { width: 220, height: 220 },
+          },
+          async (decodedText) => {
+            try {
+              const parsed = JSON.parse(decodedText);
+              if (parsed.app === 'InBill' && parsed.code && parsed.cloud_url) {
+                playBeep();
+                setCode(parsed.code);
+                setNeonUrl(parsed.cloud_url);
+                
+                // Stop scanner
+                try {
+                  await qrScanner.stop();
+                } catch (e) {}
+                setQrScannerInstance(null);
+                setScanning(false);
+
+                // Auto connect
+                handleScanConnect(parsed.code, parsed.cloud_url);
+              } else {
+                setLoginError("Invalid InBill pairing QR code. Scan Settings → Mobile QR code.");
+                stopQRScanner(qrScanner);
+              }
+            } catch (err) {
+              setLoginError("Failed to parse scanned code. Check Settings → Mobile QR code.");
+              stopQRScanner(qrScanner);
+            }
+          },
+          () => {} // scan error (silent)
+        );
+      } catch (e: any) {
+        console.error(e);
+        setLoginError("Could not start camera scanner. Enter details manually.");
+        setScanning(false);
+      }
+    }, 200);
+  };
+
+  const stopQRScanner = async (instance?: any) => {
+    const scanner = instance || qrScannerInstance;
+    if (scanner) {
+      try {
+        await scanner.stop();
+      } catch (e) {}
+    }
+    setQrScannerInstance(null);
+    setScanning(false);
   };
 
   // ── Logout ──
@@ -158,12 +271,43 @@ export default function Home() {
   // ═══════ LOGIN SCREEN ═══════
   if (!loggedIn) return (
     <div className="login-container">
+      {scanning && (
+        <div className="scanner-modal">
+          <div style={{ color: 'white', fontSize: '18px', fontWeight: 900, marginBottom: '24px' }}>Scan Pairing QR Code</div>
+          <div className="scanner-viewfinder">
+            <div className="scanner-laser" />
+            <div id="qr-reader" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          </div>
+          <p style={{ color: 'var(--slate-400)', fontSize: '13px', fontWeight: 600, marginTop: '24px', textAlign: 'center', maxWidth: '280px' }}>
+            Point your camera at your Desktop App Settings → Mobile tab QR code
+          </p>
+          <button 
+            className="btn-connect" 
+            style={{ marginTop: '32px', maxWidth: '200px', background: 'var(--slate-800)', border: '1px solid var(--slate-700)' }}
+            onClick={() => stopQRScanner()}
+          >
+            Cancel Scan
+          </button>
+        </div>
+      )}
+
       <div className="login-card">
         <div className="login-logo">IB</div>
         <h1 className="login-title">InBill Mobile</h1>
-        <p className="login-subtitle">Enter your access code from Desktop → Settings → Mobile</p>
+        <p className="login-subtitle">Connect instantly via QR or enter credentials manually</p>
 
         {loginError && <div className="login-error">{loginError}</div>}
+
+        <button className="btn-scan-qr" onClick={startQRScanner}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M7 7h.01M17 7h.01M7 17h.01M17 17h.01"/><path d="M12 7v10M7 12h10"/></svg>
+          Scan Pairing QR Code
+        </button>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 0 20px' }}>
+          <div style={{ flex: 1, height: '1px', background: 'var(--slate-100)' }} />
+          <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--slate-300)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>or enter manual</span>
+          <div style={{ flex: 1, height: '1px', background: 'var(--slate-100)' }} />
+        </div>
 
         <label className="form-label">6-Digit Access Code</label>
         <input
@@ -174,7 +318,6 @@ export default function Home() {
           value={code}
           onChange={e => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
           inputMode="numeric"
-          autoFocus
         />
 
         <label className="form-label">Neon Cloud URL</label>

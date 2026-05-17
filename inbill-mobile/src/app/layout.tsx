@@ -4,6 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "InBill Mobile — Business Dashboard",
   description: "Access your InBill business data from anywhere. View sales, inventory, and party balances on your phone.",
+  icons: {
+    icon: '/icon.svg',
+    apple: '/icon.svg',
+  },
+  manifest: '/manifest.json',
 };
 
 export const viewport: Viewport = {
