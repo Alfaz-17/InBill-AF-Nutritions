@@ -222,6 +222,8 @@ export default function Home() {
         scanner.clear();
       } catch (e) {}
     }
+    // Cleanly refresh page to release hardware locks and reset UI
+    window.location.reload();
   };
 
   // ── Logout ──
