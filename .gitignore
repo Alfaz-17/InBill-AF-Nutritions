@@ -12,6 +12,8 @@ dist/
 
 # Database
 *.db
+*.db-shm
+*.db-wal
 
 # Misc
 .DS_Store

@@ -283,6 +283,7 @@ const initDB = () => {
       master_data      TEXT    DEFAULT '{}',
       created_at      TEXT    DEFAULT (datetime('now','localtime')),
       mobile_secret     TEXT    DEFAULT '',
+      mobile_access_code TEXT   DEFAULT '',
       gemini_api_key    TEXT    DEFAULT '',
       neon_db_url       TEXT    DEFAULT '',
       use_cloud         INTEGER DEFAULT 0
@@ -295,6 +296,7 @@ const initDB = () => {
   try { db.exec("ALTER TABLE business_profile ADD COLUMN bank_details TEXT DEFAULT ''"); } catch(e){}
   try { db.exec("ALTER TABLE business_profile ADD COLUMN whatsapp_settings TEXT DEFAULT '{}'"); } catch(e){}
   try { db.exec("ALTER TABLE business_profile ADD COLUMN mobile_secret TEXT DEFAULT ''"); } catch(e){}
+  try { db.exec("ALTER TABLE business_profile ADD COLUMN mobile_access_code TEXT DEFAULT ''"); } catch(e){}
   try { db.exec("ALTER TABLE business_profile ADD COLUMN gemini_api_key TEXT DEFAULT ''"); } catch(e){}
   try { db.exec("ALTER TABLE business_profile ADD COLUMN neon_db_url TEXT DEFAULT ''"); } catch(e){}
   try { db.exec("ALTER TABLE business_profile ADD COLUMN use_cloud INTEGER DEFAULT 0"); } catch(e){}
@@ -2211,7 +2213,8 @@ const ensurePostgresSchema = async (cloud) => {
       due_amount     DECIMAL DEFAULT 0,
       credit_days    INTEGER DEFAULT 0,
       due_date       TEXT DEFAULT '',
-      party_id       INTEGER
+      party_id       INTEGER,
+      returned_total DECIMAL DEFAULT 0
     );
   `;
 
@@ -2228,7 +2231,8 @@ const ensurePostgresSchema = async (cloud) => {
       discount    DECIMAL DEFAULT 0,
       gst_rate    DECIMAL DEFAULT 0,
       gst_amount  DECIMAL DEFAULT 0,
-      total_price DECIMAL DEFAULT 0
+      total_price DECIMAL DEFAULT 0,
+      returned_quantity INTEGER DEFAULT 0
     );
   `;
 
@@ -2249,6 +2253,7 @@ const ensurePostgresSchema = async (cloud) => {
     CREATE TABLE IF NOT EXISTS purchase_items (
       id            SERIAL PRIMARY KEY,
       purchase_id   INTEGER NOT NULL,
+      product_id    INTEGER,
       product_name  TEXT NOT NULL,
       quantity      INTEGER DEFAULT 0,
       price         DECIMAL DEFAULT 0,
@@ -2267,6 +2272,7 @@ const ensurePostgresSchema = async (cloud) => {
       type         TEXT DEFAULT 'Customer',
       opening_balance DECIMAL DEFAULT 0,
       current_balance DECIMAL DEFAULT 0,
+      is_deleted   INTEGER DEFAULT 0,
       created_at   TEXT DEFAULT CURRENT_TIMESTAMP
     );
   `;
@@ -2317,6 +2323,7 @@ const ensurePostgresSchema = async (cloud) => {
       gemini_api_key    TEXT DEFAULT '',
       neon_db_url       TEXT DEFAULT '',
       use_cloud         INTEGER DEFAULT 0,
+      software_password TEXT DEFAULT '',
       terms_and_conditions TEXT DEFAULT '',
       whatsapp_number   TEXT DEFAULT '',
       instagram_id      TEXT DEFAULT '',
@@ -2353,6 +2360,9 @@ const ensurePostgresSchema = async (cloud) => {
         sale_id       INTEGER,
         party_id      INTEGER,
         total_amount  DECIMAL DEFAULT 0,
+        debt_cleared_amount DECIMAL DEFAULT 0,
+        refund_amount DECIMAL DEFAULT 0,
+        payment_mode  TEXT DEFAULT 'Credit',
         reason        TEXT
       );
     `;
@@ -2374,6 +2384,9 @@ const ensurePostgresSchema = async (cloud) => {
         purchase_id   INTEGER,
         party_id      INTEGER,
         total_amount  DECIMAL DEFAULT 0,
+        debt_cleared_amount DECIMAL DEFAULT 0,
+        refund_amount DECIMAL DEFAULT 0,
+        payment_mode  TEXT DEFAULT 'Credit',
         reason        TEXT
       );
     `;
@@ -2381,12 +2394,43 @@ const ensurePostgresSchema = async (cloud) => {
       CREATE TABLE IF NOT EXISTS purchase_return_items (
         id                 SERIAL PRIMARY KEY,
         purchase_return_id INTEGER NOT NULL,
+        product_id         INTEGER,
         product_name       TEXT NOT NULL,
         quantity           INTEGER NOT NULL,
         price              DECIMAL NOT NULL,
         total_price        DECIMAL DEFAULT 0
       );
     `;
+
+    await cloud`
+      CREATE TABLE IF NOT EXISTS expense_categories (
+        id            SERIAL PRIMARY KEY,
+        name          TEXT NOT NULL,
+        is_default    INTEGER DEFAULT 0
+      );
+    `;
+
+    // ─── Postgres Migrations for EXISTING cloud databases ───
+    // CREATE TABLE IF NOT EXISTS won't add columns to already-existing tables.
+    // These ALTER TABLE statements ensure existing Neon databases get updated.
+    // Postgres supports ADD COLUMN IF NOT EXISTS natively (unlike SQLite).
+    const pgMigrations = [
+      `ALTER TABLE sales ADD COLUMN IF NOT EXISTS returned_total DECIMAL DEFAULT 0`,
+      `ALTER TABLE sale_items ADD COLUMN IF NOT EXISTS returned_quantity INTEGER DEFAULT 0`,
+      `ALTER TABLE returns ADD COLUMN IF NOT EXISTS debt_cleared_amount DECIMAL DEFAULT 0`,
+      `ALTER TABLE returns ADD COLUMN IF NOT EXISTS refund_amount DECIMAL DEFAULT 0`,
+      `ALTER TABLE returns ADD COLUMN IF NOT EXISTS payment_mode TEXT DEFAULT 'Credit'`,
+      `ALTER TABLE purchase_returns ADD COLUMN IF NOT EXISTS debt_cleared_amount DECIMAL DEFAULT 0`,
+      `ALTER TABLE purchase_returns ADD COLUMN IF NOT EXISTS refund_amount DECIMAL DEFAULT 0`,
+      `ALTER TABLE purchase_returns ADD COLUMN IF NOT EXISTS payment_mode TEXT DEFAULT 'Credit'`,
+      `ALTER TABLE purchase_items ADD COLUMN IF NOT EXISTS product_id INTEGER`,
+      `ALTER TABLE purchase_return_items ADD COLUMN IF NOT EXISTS product_id INTEGER`,
+      `ALTER TABLE parties ADD COLUMN IF NOT EXISTS is_deleted INTEGER DEFAULT 0`,
+      `ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS software_password TEXT DEFAULT ''`,
+    ];
+    for (const migration of pgMigrations) {
+      try { await cloud.unsafe(migration); } catch (e) { /* column already exists — safe to ignore */ }
+    }
   };
 
 let isSyncing = false;
@@ -2416,6 +2460,7 @@ const syncToCloud = async () => {
 
       const tables = [
         'business_profile', 'custom_categories', 'product_attribute_defs', 
+        'expense_categories',
         'products', 'parties', 'expenses', 'sales', 'sale_items', 
         'purchases', 'purchase_items', 'party_transactions',
         'returns', 'return_items', 'purchase_returns', 'purchase_return_items'
@@ -2458,11 +2503,13 @@ const syncToCloud = async () => {
       });
       
       console.log("☁️ Cloud Sync Completed Successfully.");
+      return { success: true };
     } finally {
       await cloud`SELECT pg_advisory_unlock(123456789)`;
     }
   } catch (err) {
     console.error("❌ Cloud Sync Error (Handled):", err.message);
+    return { success: false, error: err.message };
   } finally {
     isSyncing = false;
     if (syncQueued) {
@@ -2480,11 +2527,17 @@ module.exports = {
   attributeOps, storageOps, syncToCloud, authOps,
   mobileAccessOps: {
     get: () => {
-      const row = db.prepare('SELECT mobile_access_code, mobile_secret FROM business_profile WHERE id = 1').get();
-      return {
-        mobile_access_code: row?.mobile_access_code || '',
-        mobile_secret: row?.mobile_secret || ''
-      };
+      try {
+        const row = db.prepare('SELECT mobile_access_code, mobile_secret FROM business_profile WHERE id = 1').get();
+        return {
+          mobile_access_code: row?.mobile_access_code || '',
+          mobile_secret: row?.mobile_secret || ''
+        };
+      } catch (e) {
+        // Column may not exist yet if migration hasn't run
+        console.warn('Mobile config read fallback:', e.message);
+        return { mobile_access_code: '', mobile_secret: '' };
+      }
     },
     generate: () => {
       const code = Math.floor(100000 + Math.random() * 900000).toString();

@@ -3,8 +3,9 @@ import { useState, useEffect } from 'react';
 import { 
   Settings as SettingsIcon, Key, Check, Eye, EyeOff, Info, 
   ShieldCheck, AlertTriangle, Building2, Save, Trash2, 
-  ArrowDownLeft, X, Database, Globe, Lock, Palette, FileText, Monitor, CheckCircle2, Layout, List, MessageCircle, RefreshCw, Download, Zap
+  ArrowDownLeft, X, Database, Globe, Lock, Palette, FileText, Monitor, CheckCircle2, Layout, List, MessageCircle, RefreshCw, Download, Zap, Smartphone, QrCode, Copy, Unlink
 } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { useToast } from './ToastProvider';
 
 // shadcn/ui components
@@ -31,6 +32,10 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
   const [softwarePassword, setSoftwarePassword] = useState('');
   const [hasSoftwarePassword, setHasSoftwarePassword] = useState(false);
 
+  // Mobile Access State
+  const [mobileConfig, setMobileConfig] = useState(null);
+  const [mobileLoading, setMobileLoading] = useState(false);
+  const [qrCopied, setQrCopied] = useState(false);
 
   
   const [profileForm, setProfileForm] = useState({
@@ -69,7 +74,69 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
     loadProfile();
     loadNeonConfig();
     checkSoftwarePasswordStatus();
+    loadMobileConfig();
   }, []);
+
+  const loadMobileConfig = async () => {
+    try {
+      if (window.electronAPI?.mobile) {
+        const config = await window.electronAPI.mobile.getConfig();
+        setMobileConfig(config);
+      }
+    } catch (e) { console.error('Mobile config load error:', e); }
+  };
+
+  const handleGenerateMobileAccess = async () => {
+    if (!neonConfig.url || !neonConfig.useCloud) {
+      toast('Please enable Neon Cloud Sync first (Data & Security tab)', 'error');
+      return;
+    }
+    setMobileLoading(true);
+    try {
+      const config = await window.electronAPI.mobile.generate();
+      setMobileConfig(config);
+      toast('Mobile access code generated!', 'success');
+    } catch (e) { toast('Failed to generate: ' + e.message, 'error'); }
+    setMobileLoading(false);
+  };
+
+  const handleRevokeMobileAccess = async () => {
+    const ok = await confirm({
+      type: 'danger',
+      title: 'Revoke Mobile Access?',
+      message: 'This will disconnect any mobile device linked to this account. You can generate a new code anytime.',
+      confirmText: 'Yes, Revoke',
+    });
+    if (!ok) return;
+    setMobileLoading(true);
+    try {
+      await window.electronAPI.mobile.revoke();
+      setMobileConfig({ mobile_access_code: '', mobile_secret: '' });
+      toast('Mobile access revoked', 'success');
+    } catch (e) { toast('Failed: ' + e.message, 'error'); }
+    setMobileLoading(false);
+  };
+
+  const getMobileQRPayload = () => {
+    if (!mobileConfig?.mobile_access_code || !neonConfig.url) return '';
+    return JSON.stringify({
+      app: 'InBill',
+      version: 1,
+      code: mobileConfig.mobile_access_code,
+      secret: mobileConfig.mobile_secret,
+      cloud_url: neonConfig.url,
+      business: profileForm.business_name || 'My Business',
+    });
+  };
+
+  const handleCopyCode = () => {
+    if (mobileConfig?.mobile_access_code) {
+      navigator.clipboard.writeText(mobileConfig.mobile_access_code);
+      setQrCopied(true);
+      toast('Access code copied!', 'success');
+      setTimeout(() => setQrCopied(false), 2000);
+    }
+  };
 
 
 
@@ -247,6 +314,9 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
           </TabsTrigger>
           <TabsTrigger value="data" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Database size={16} /> Data & Security
+          </TabsTrigger>
+          <TabsTrigger value="mobile" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-indigo-600 data-[state=active]:shadow-lg transition-all text-xs">
+            <Smartphone size={16} /> Mobile
           </TabsTrigger>
           <TabsTrigger value="safety" className="flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-rose-600 data-[state=active]:shadow-lg transition-all text-xs">
             <AlertTriangle size={16} /> Safety Guide
@@ -844,6 +914,168 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
               <Button onClick={handleProfileSave} className="btn-primary w-full h-12 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-700">Save WhatsApp Configuration</Button>
             </CardFooter>
           </Card>
+        </TabsContent>
+
+        {/* Mobile Access */}
+        <TabsContent value="mobile" className="m-0 outline-none">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* QR Code Card */}
+            <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-indigo-200/20 overflow-hidden">
+              <CardHeader className="p-10 bg-gradient-to-br from-indigo-600 via-violet-600 to-purple-700 text-white">
+                <CardTitle className="text-2xl font-black flex items-center gap-4">
+                  <div className="w-12 h-12 bg-white/20 backdrop-blur rounded-2xl flex items-center justify-center">
+                    <QrCode size={24} />
+                  </div>
+                  Mobile Access
+                </CardTitle>
+                <CardDescription className="text-indigo-100 font-bold mt-2">
+                  Scan QR code from your phone to connect
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-10 flex flex-col items-center">
+                {mobileConfig?.mobile_access_code ? (
+                  <div className="space-y-8 w-full flex flex-col items-center">
+                    {/* QR Code */}
+                    <div className="relative p-6 bg-white rounded-[2rem] shadow-xl shadow-indigo-100 border-2 border-indigo-50">
+                      <div className="absolute -top-3 -right-3 bg-emerald-500 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg">ACTIVE</div>
+                      <QRCodeSVG 
+                        value={getMobileQRPayload()}
+                        size={220}
+                        level="H"
+                        includeMargin={true}
+                        bgColor="#ffffff"
+                        fgColor="#1e1b4b"
+                        imageSettings={{
+                          src: '',
+                          height: 0,
+                          width: 0,
+                          excavate: false,
+                        }}
+                      />
+                    </div>
+
+                    {/* Access Code Display */}
+                    <div className="w-full max-w-xs">
+                      <p className="text-xs font-bold text-slate-400 text-center mb-2">ACCESS CODE</p>
+                      <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                        <code className="flex-1 text-center text-2xl font-black tracking-[0.4em] text-indigo-700">
+                          {mobileConfig.mobile_access_code}
+                        </code>
+                        <button
+                          onClick={handleCopyCode}
+                          className="p-2 rounded-xl hover:bg-white transition-colors text-slate-400 hover:text-indigo-600"
+                          title="Copy code"
+                        >
+                          {qrCopied ? <Check size={18} className="text-emerald-500" /> : <Copy size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Revoke Button */}
+                    <Button
+                      variant="outline"
+                      onClick={handleRevokeMobileAccess}
+                      disabled={mobileLoading}
+                      className="w-full max-w-xs h-12 rounded-xl font-bold border-rose-200 text-rose-600 hover:bg-rose-50 hover:border-rose-300 gap-2"
+                    >
+                      <Unlink size={16} />
+                      {mobileLoading ? 'Revoking...' : 'Revoke Mobile Access'}
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-8 w-full flex flex-col items-center py-6">
+                    {/* Placeholder */}
+                    <div className="w-[220px] h-[220px] bg-slate-50 border-2 border-dashed border-slate-200 rounded-[2rem] flex flex-col items-center justify-center gap-4">
+                      <Smartphone size={48} className="text-slate-300" />
+                      <p className="text-xs font-bold text-slate-400 text-center px-6">Generate a code to connect your mobile device</p>
+                    </div>
+
+                    <Button
+                      onClick={handleGenerateMobileAccess}
+                      disabled={mobileLoading}
+                      className="w-full max-w-xs h-14 rounded-2xl font-black text-base gap-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white shadow-lg shadow-indigo-200"
+                    >
+                      <QrCode size={20} />
+                      {mobileLoading ? 'Generating...' : 'Generate Mobile Access'}
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Info Card */}
+            <Card className="rounded-[2.5rem] border-slate-100 shadow-xl">
+              <CardHeader className="p-10">
+                <CardTitle className="text-2xl font-black flex items-center gap-3">
+                  <Smartphone size={22} className="text-indigo-600" /> How It Works
+                </CardTitle>
+                <CardDescription className="text-base font-medium">
+                  Connect your phone in 3 steps
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="p-10 pt-0 space-y-6">
+                <div className="space-y-4">
+                  {[
+                    { step: '1', title: 'Enable Cloud Sync', desc: 'Go to Data & Security tab and configure your Neon Cloud URL. This is required for mobile access.' },
+                    { step: '2', title: 'Generate QR Code', desc: 'Click "Generate Mobile Access" to create a unique, encrypted pairing code for your device.' },
+                    { step: '3', title: 'Scan from Phone', desc: 'Open the InBill Mobile app on your phone and scan the QR code. Your data will sync instantly via Cloud.' },
+                  ].map((item) => (
+                    <div key={item.step} className="flex gap-4 p-5 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 font-black text-sm">
+                        {item.step}
+                      </div>
+                      <div>
+                        <h4 className="font-black text-slate-900 text-sm mb-1">{item.title}</h4>
+                        <p className="text-xs text-slate-500 font-bold leading-relaxed">{item.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-6 bg-amber-50 border border-amber-100 rounded-[2rem]">
+                  <div className="flex gap-3">
+                    <AlertTriangle size={20} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-black text-amber-900 text-sm mb-2">Security Notice</h4>
+                      <ul className="text-xs text-amber-800 font-bold leading-relaxed space-y-2">
+                        <li>• The QR code contains your encrypted cloud credentials</li>
+                        <li>• Never share the QR screenshot with anyone</li>
+                        <li>• If a phone is lost, click <b>"Revoke"</b> immediately</li>
+                        <li>• You can regenerate a new code anytime</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-6 bg-indigo-50 border border-indigo-100 rounded-[2rem]">
+                  <div className="flex gap-3">
+                    <Info size={20} className="text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="font-black text-indigo-900 text-sm mb-2">How Sync Works</h4>
+                      <p className="text-xs text-indigo-800/80 font-bold leading-relaxed">
+                        Your phone does <b>NOT</b> connect directly to this computer. Both devices independently sync to your <b>Neon Cloud</b> database. 
+                        This means your phone works even when this PC is turned off.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {!neonConfig.useCloud && (
+                  <div className="p-6 bg-rose-50 border border-rose-100 rounded-[2rem]">
+                    <div className="flex gap-3">
+                      <AlertTriangle size={20} className="text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="font-black text-rose-900 text-sm mb-1">Cloud Sync Required</h4>
+                        <p className="text-xs text-rose-700 font-bold leading-relaxed">
+                          Mobile Access requires Neon Cloud Sync to be enabled. Go to the <b>"Data & Security"</b> tab to set it up first.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* System Safety & Logic Guide */}
