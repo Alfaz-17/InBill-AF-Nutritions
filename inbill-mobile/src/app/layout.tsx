@@ -5,8 +5,8 @@ export const metadata: Metadata = {
   title: "InBill Mobile — Business Dashboard",
   description: "Access your InBill business data from anywhere. View sales, inventory, and party balances on your phone.",
   icons: {
-    icon: '/icon.svg',
-    apple: '/icon.svg',
+    icon: '/icon.png',
+    apple: '/icon.png',
   },
   manifest: '/manifest.json',
 };
