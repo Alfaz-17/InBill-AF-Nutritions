@@ -13,6 +13,7 @@ export async function POST(req: NextRequest) {
 
     const payload = await req.json();
     const { items } = payload;
+    const taxMode = payload.tax_mode || 'exclusive';
 
     if (!items || items.length === 0) {
       return NextResponse.json({ error: 'Sale must have at least one item.' }, { status: 400 });
@@ -63,9 +64,17 @@ export async function POST(req: NextRequest) {
       }
 
       const itemLineTotal = itemPrice * itemQty;
-      const gstAmount = (itemLineTotal * itemGstRate) / 100;
-      const basePrice = itemPrice;
-      const itemTotal = itemLineTotal + gstAmount;
+      let gstAmount = 0;
+      let basePrice = itemPrice;
+
+      if (taxMode === 'inclusive') {
+        basePrice = itemPrice / (1 + (itemGstRate / 100));
+        gstAmount = itemLineTotal - (basePrice * itemQty);
+      } else {
+        gstAmount = (itemLineTotal * itemGstRate) / 100;
+      }
+
+      const itemTotal = taxMode === 'inclusive' ? itemLineTotal : itemLineTotal + gstAmount;
       const discount = itemMRP > itemPrice ? (itemMRP - itemPrice) * itemQty : 0;
 
       subtotal += basePrice * itemQty;
@@ -101,10 +110,34 @@ export async function POST(req: NextRequest) {
 
     const nowStr = new Date().toISOString().replace('T', ' ').slice(0, 19);
 
-    // 4. Insert Sale
+    // 4. Party Auto-Matching & Ledger Registration
+    let finalPartyId = payload.party_id || null;
+
+    if (!finalPartyId && payload.customer_name && payload.customer_name.trim() !== '') {
+      const trimmedName = payload.customer_name.trim();
+      const matchedParties = await sql`
+        SELECT id FROM parties 
+        WHERE LOWER(TRIM(name)) = ${trimmedName.toLowerCase()} 
+        AND type = 'Customer' 
+        AND (is_deleted = 0 OR is_deleted IS NULL)
+        LIMIT 1
+      `;
+      if (matchedParties.length > 0) {
+        finalPartyId = matchedParties[0].id;
+      } else if (dueAmount > 0 && trimmedName.toLowerCase() !== 'cash') {
+        const createdParty = await sql`
+          INSERT INTO parties (name, phone, address, type, current_balance, opening_balance, is_deleted)
+          VALUES (${trimmedName}, ${payload.customer_phone || ''}, ${payload.customer_address || ''}, 'Customer', 0, 0, 0)
+          RETURNING id
+        `;
+        finalPartyId = createdParty[0].id;
+      }
+    }
+
+    // 4.5 Insert Sale
     const salesInsertResult = await sql`
-      INSERT INTO sales (invoice_number, date, party_id, customer_name, customer_phone, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date)
-      VALUES (${invoiceNumber}, ${nowStr}, ${payload.party_id || null}, ${payload.customer_name || ''}, ${payload.customer_phone || ''}, ${Number(subtotal.toFixed(2))}, ${Number(totalGst.toFixed(2))}, ${miscCharges}, ${totalAmount}, ${totalDiscount}, ${payload.payment_mode || 'Cash'}, ${paidAmount}, ${dueAmount}, ${creditDays}, ${dueDate})
+      INSERT INTO sales (invoice_number, date, party_id, customer_name, customer_phone, customer_address, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date, tax_mode)
+      VALUES (${invoiceNumber}, ${nowStr}, ${finalPartyId}, ${payload.customer_name || ''}, ${payload.customer_phone || ''}, ${payload.customer_address || ''}, ${Number(subtotal.toFixed(2))}, ${Number(totalGst.toFixed(2))}, ${miscCharges}, ${totalAmount}, ${totalDiscount}, ${payload.payment_mode || 'Cash'}, ${paidAmount}, ${dueAmount}, ${creditDays}, ${dueDate}, ${taxMode})
       RETURNING id
     `;
     const saleId = salesInsertResult[0].id;
@@ -122,14 +155,14 @@ export async function POST(req: NextRequest) {
     }
 
     // 6. Update ledger and party transactions if linked to customer
-    if (payload.party_id) {
+    if (finalPartyId) {
       await sql`
-        UPDATE parties SET current_balance = current_balance + ${dueAmount} WHERE id = ${payload.party_id}
+        UPDATE parties SET current_balance = current_balance + ${dueAmount} WHERE id = ${finalPartyId}
       `;
 
       await sql`
         INSERT INTO party_transactions (party_id, type, reference_id, total_amount, paid_amount, due_amount, payment_mode, credit_days, due_date, date)
-        VALUES (${payload.party_id}, 'Sale', ${saleId}, ${totalAmount}, ${paidAmount}, ${dueAmount}, ${payload.payment_mode || 'Cash'}, ${creditDays}, ${dueDate}, ${nowStr})
+        VALUES (${finalPartyId}, 'Sale', ${saleId}, ${totalAmount}, ${paidAmount}, ${dueAmount}, ${payload.payment_mode || 'Cash'}, ${creditDays}, ${dueDate}, ${nowStr})
       `;
     }
 

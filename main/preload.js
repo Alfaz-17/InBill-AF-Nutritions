@@ -158,5 +158,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   whatsapp: {
     sendMessage: (data) => ipcRenderer.invoke('whatsapp:sendMessage', data),
     sendInvoice: (data) => ipcRenderer.invoke('whatsapp:sendInvoice', data),
+  },
+
+  /* ── Events ── */
+  onAutoPulled: (callback) => {
+    ipcRenderer.on('db:auto-pulled', () => callback());
   }
 });

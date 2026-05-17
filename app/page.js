@@ -60,6 +60,7 @@ const mobileNavItems = navSections.flatMap((section) => section.items);
 export default function Home() {
   const [activePage, setActivePage] = useState('dashboard');
   const [lowStockCount, setLowStockCount] = useState(0);
+  const [syncTrigger, setSyncTrigger] = useState(0);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [hasNotified, setHasNotified] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -80,13 +81,20 @@ export default function Home() {
         try {
           const stats = await window.electronAPI.stats.dashboard();
           setLowStockCount(stats.lowStockCount || 0);
-          
-          // Note: Automatic update check disabled for manual file distribution
-          // To enable, configure a version.json server in main.js
         } catch (e) { /* silent */ }
       }
     };
     loadAlerts();
+
+    // Register auto-pull callback to refresh dashboard and force state reload
+    if (typeof window !== 'undefined' && window.electronAPI && window.electronAPI.onAutoPulled) {
+      window.electronAPI.onAutoPulled(() => {
+        console.log("📥 Desktop: Received auto-pull signal from main process. Refreshing UI.");
+        setSyncTrigger(prev => prev + 1);
+        loadAlerts();
+      });
+    }
+
     const interval = setInterval(loadAlerts, 60000); // Check stock every minute
     return () => clearInterval(interval);
   }, []);
@@ -212,6 +220,7 @@ export default function Home() {
       {/* Main Content */}
       <main className="main-content">
         <ActiveComponent 
+          key={activePage + '_' + syncTrigger}
           onNavigate={setActivePage} 
           profile={profile} 
           onProfileUpdate={loadProfile}

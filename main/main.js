@@ -146,6 +146,23 @@ app.whenReady().then(() => {
 
   initDB();
   createWindow();
+
+  // Set up background auto-sync/auto-pull polling timer every 30 seconds
+  setInterval(async () => {
+    try {
+      const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+      if (config?.use_cloud) {
+        console.log("⏰ Background Auto-Pull: Syncing with Neon Postgres...");
+        const result = await syncToCloud();
+        if (result && result.success && mainWindow) {
+          mainWindow.webContents.send('db:auto-pulled');
+        }
+      }
+    } catch (e) {
+      console.error("Background sync failed:", e.message);
+    }
+  }, 30000); // 30 seconds
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

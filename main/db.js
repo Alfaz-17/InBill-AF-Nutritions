@@ -396,6 +396,12 @@ const initDB = () => {
   if (!saleColumns.includes('due_date')) {
     db.exec("ALTER TABLE sales ADD COLUMN due_date TEXT DEFAULT ''");
   }
+  if (!saleColumns.includes('tax_mode')) {
+    db.exec("ALTER TABLE sales ADD COLUMN tax_mode TEXT DEFAULT 'exclusive'");
+  }
+  if (!saleColumns.includes('customer_address')) {
+    db.exec("ALTER TABLE sales ADD COLUMN customer_address TEXT DEFAULT ''");
+  }
 
   const saleItemInfo = db.prepare("PRAGMA table_info(sale_items)").all();
   const itemColumns = saleItemInfo.map(c => c.name);
@@ -874,9 +880,13 @@ const saleOps = {
       }
 
       const saleInfo = db.prepare(`
-        INSERT INTO sales (invoice_number, party_id, customer_name, customer_phone, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(invoiceNumber, saleData.party_id || null, saleData.customer_name || '', saleData.customer_phone || '', Number(subtotal.toFixed(2)), Number(totalGst.toFixed(2)), saleData.misc_charges || 0, totalAmount, totalDiscount, saleData.payment_mode || 'Cash', paid_amount, dueAmount, creditDays, dueDate);
+        INSERT INTO sales (invoice_number, party_id, customer_name, customer_phone, customer_address, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date, tax_mode)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        invoiceNumber, saleData.party_id || null, saleData.customer_name || '', saleData.customer_phone || '', saleData.customer_address || '',
+        Number(subtotal.toFixed(2)), Number(totalGst.toFixed(2)), saleData.misc_charges || 0, totalAmount, totalDiscount,
+        saleData.payment_mode || 'Cash', paid_amount, dueAmount, creditDays, dueDate, taxMode
+      );
 
       const saleId = saleInfo.lastInsertRowid;
 
@@ -2214,7 +2224,8 @@ const ensurePostgresSchema = async (cloud) => {
       credit_days    INTEGER DEFAULT 0,
       due_date       TEXT DEFAULT '',
       party_id       INTEGER,
-      returned_total DECIMAL DEFAULT 0
+      returned_total DECIMAL DEFAULT 0,
+      tax_mode       TEXT DEFAULT 'exclusive'
     );
   `;
 
@@ -2427,6 +2438,8 @@ const ensurePostgresSchema = async (cloud) => {
       `ALTER TABLE purchase_return_items ADD COLUMN IF NOT EXISTS product_id INTEGER`,
       `ALTER TABLE parties ADD COLUMN IF NOT EXISTS is_deleted INTEGER DEFAULT 0`,
       `ALTER TABLE business_profile ADD COLUMN IF NOT EXISTS software_password TEXT DEFAULT ''`,
+      `ALTER TABLE sales ADD COLUMN IF NOT EXISTS tax_mode TEXT DEFAULT 'exclusive'`,
+      `ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_address TEXT DEFAULT ''`,
     ];
     for (const migration of pgMigrations) {
       try { await cloud.unsafe(migration); } catch (e) { /* column already exists — safe to ignore */ }
@@ -2469,12 +2482,12 @@ const syncToCloud = async () => {
             
             // Insert sale locally inside SQLite
             const saleInfo = db.prepare(`
-              INSERT INTO sales (invoice_number, date, party_id, customer_name, customer_phone, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              INSERT INTO sales (invoice_number, date, party_id, customer_name, customer_phone, customer_address, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date, tax_mode)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
-              pgs.invoice_number, pgs.date, pgs.party_id, pgs.customer_name, pgs.customer_phone,
+              pgs.invoice_number, pgs.date, pgs.party_id, pgs.customer_name, pgs.customer_phone, pgs.customer_address || '',
               pgs.subtotal, pgs.total_gst, pgs.misc_charges, pgs.total_amount, pgs.total_discount,
-              pgs.payment_mode, pgs.paid_amount, pgs.due_amount, pgs.credit_days, pgs.due_date
+              pgs.payment_mode, pgs.paid_amount, pgs.due_amount, pgs.credit_days, pgs.due_date, pgs.tax_mode || 'exclusive'
             );
             const localSaleId = saleInfo.lastInsertRowid;
 

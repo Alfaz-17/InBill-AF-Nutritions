@@ -27,7 +27,7 @@ type DashboardData = {
   totalProducts: number;
 };
 type Product = { id: number; product_name: string; brand: string; category: string; selling_price: number; mrp: number; cost_price: number; quantity: number; unit: string; barcode: string; min_stock_alert: number; gst_rate: number };
-type Party = { id: number; name: string; phone: string; type: string; current_balance: number; opening_balance: number };
+type Party = { id: number; name: string; phone: string; type: string; current_balance: number; opening_balance: number; address?: string };
 
 const fmt = (n: number, c: string) => `${c}${Number(n || 0).toLocaleString('en-IN')}`;
 
@@ -45,6 +45,7 @@ export default function Home() {
   // QR Scanner State
   const [scanning, setScanning] = useState(false);
   const [qrScannerInstance, setQrScannerInstance] = useState<any>(null);
+  const [scannerFeedback, setScannerFeedback] = useState('');
 
   // Tabs
   const [tab, setTab] = useState<'home' | 'inventory' | 'sale' | 'parties'>('home');
@@ -54,6 +55,7 @@ export default function Home() {
   const [salePartyId, setSalePartyId] = useState<number | null>(null);
   const [saleCustomerName, setSaleCustomerName] = useState('');
   const [saleCustomerPhone, setSaleCustomerPhone] = useState('');
+  const [saleCustomerAddress, setSaleCustomerAddress] = useState('');
   const [saleCart, setSaleCart] = useState<{ product_id: number; product_name: string; price: number; mrp: number; gst_rate: number; quantity: number; unit: string }[]>([]);
   const [salePaymentMode, setSalePaymentMode] = useState<'Cash' | 'UPI' | 'Credit'>('Cash');
   const [salePaidAmount, setSalePaidAmount] = useState('');
@@ -62,18 +64,28 @@ export default function Home() {
   const [saleError, setSaleError] = useState('');
   const [saleSuccessData, setSaleSuccessData] = useState<{ invoice_number: string; total_amount: number } | null>(null);
   const [saleProductSearch, setSaleProductSearch] = useState('');
+  const [saleTaxMode, setSaleTaxMode] = useState<'exclusive' | 'inclusive'>('exclusive');
 
   const getCartTotals = () => {
     let subtotal = 0;
     let totalGst = 0;
     saleCart.forEach(item => {
       const lineTotal = item.price * item.quantity;
-      const gst = (lineTotal * item.gst_rate) / 100;
-      subtotal += lineTotal;
-      totalGst += gst;
+      if (saleTaxMode === 'inclusive') {
+        const basePrice = lineTotal / (1 + (item.gst_rate / 100));
+        const gst = lineTotal - basePrice;
+        subtotal += basePrice;
+        totalGst += gst;
+      } else {
+        const gst = (lineTotal * item.gst_rate) / 100;
+        subtotal += lineTotal;
+        totalGst += gst;
+      }
     });
-    const total = Math.round(subtotal + totalGst);
-    return { subtotal, totalGst, total };
+    const rawTotal = subtotal + totalGst;
+    const total = Math.round(rawTotal);
+    const roundOff = (total - rawTotal).toFixed(2);
+    return { subtotal, totalGst, total, roundOff };
   };
 
   const addToCart = (product: Product) => {
@@ -155,10 +167,12 @@ export default function Home() {
           party_id: saleCustomerType === 'linked' ? salePartyId : null,
           customer_name: customerName,
           customer_phone: customerPhone,
+          customer_address: saleCustomerAddress.trim(),
           payment_mode: salePaymentMode,
           paid_amount: paid,
           credit_days: salePaymentMode === 'Credit' ? Number(saleCreditDays || 0) : 0,
-          items: saleCart
+          items: saleCart,
+          tax_mode: saleTaxMode
         })
       });
       const data = await res.json();
@@ -173,7 +187,9 @@ export default function Home() {
         setSaleCart([]);
         setSaleCustomerName('');
         setSaleCustomerPhone('');
+        setSaleCustomerAddress('');
         setSalePaidAmount('');
+        setSaleTaxMode('exclusive');
       }
     } catch {
       setSaleError('Network error. Failed to save sale.');
@@ -307,12 +323,16 @@ export default function Home() {
         const qrScanner = new Html5Qrcode("qr-reader");
         setQrScannerInstance(qrScanner);
         
+        let lastScanTime = 0;
         await qrScanner.start(
           { facingMode: "environment" },
           {
             fps: 20,
           },
           async (decodedText) => {
+            const now = Date.now();
+            if (now - lastScanTime < 3000) return; // 3 seconds scan cooldown
+
             try {
               let parsedCode = '';
               let parsedUrl = '';
@@ -348,15 +368,18 @@ export default function Home() {
                 } catch (e) {}
                 setQrScannerInstance(null);
                 setScanning(false);
+                setScannerFeedback('');
 
                 handleScanConnect(parsedCode, parsedUrl);
               } else {
-                setLoginError("Invalid InBill pairing QR code. Scan Settings → Mobile QR code.");
-                stopQRScanner(qrScanner, false);
+                lastScanTime = now;
+                setScannerFeedback("Invalid InBill QR code. Aim at Settings → Mobile tab QR code.");
+                setTimeout(() => setScannerFeedback(''), 3000);
               }
             } catch (err) {
-              setLoginError("Failed to parse scanned code. Check Settings → Mobile QR code.");
-              stopQRScanner(qrScanner, false);
+              lastScanTime = now;
+              setScannerFeedback("Failed to parse scanned code. Check Settings → Mobile QR code.");
+              setTimeout(() => setScannerFeedback(''), 3000);
             }
           },
           () => {} // scan error (silent)
@@ -466,9 +489,30 @@ export default function Home() {
             <div className="scanner-laser" />
             <div id="qr-reader" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </div>
-          <p style={{ color: 'var(--slate-400)', fontSize: '13px', fontWeight: 600, marginTop: '24px', textAlign: 'center', maxWidth: '280px' }}>
-            Point your camera at your Desktop App Settings → Mobile tab QR code
-          </p>
+          
+          {scannerFeedback ? (
+            <div style={{
+              background: 'rgba(239, 68, 68, 0.95)',
+              color: 'white',
+              fontSize: '12px',
+              fontWeight: 700,
+              padding: '10px 16px',
+              borderRadius: '8px',
+              marginTop: '20px',
+              textAlign: 'center',
+              maxWidth: '280px',
+              boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              animation: 'pulse 1.5s infinite'
+            }}>
+              ⚠️ {scannerFeedback}
+            </div>
+          ) : (
+            <p style={{ color: 'var(--slate-400)', fontSize: '13px', fontWeight: 600, marginTop: '24px', textAlign: 'center', maxWidth: '280px' }}>
+              Point your camera at your Desktop App Settings → Mobile tab QR code
+            </p>
+          )}
+
           <button 
             className="btn-connect" 
             style={{ marginTop: '32px', maxWidth: '200px', background: 'var(--slate-800)', border: '1px solid var(--slate-700)' }}
@@ -743,6 +787,14 @@ export default function Home() {
                     value={saleCustomerPhone} 
                     onChange={e => setSaleCustomerPhone(e.target.value)} 
                   />
+                  <input 
+                    type="text" 
+                    placeholder="Customer Address (Optional)" 
+                    className="search-input" 
+                    style={{ margin: 0 }}
+                    value={saleCustomerAddress} 
+                    onChange={e => setSaleCustomerAddress(e.target.value)} 
+                  />
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -751,7 +803,20 @@ export default function Home() {
                     className="search-input" 
                     style={{ margin: 0, width: '100%', background: 'white' }}
                     value={salePartyId || ''} 
-                    onChange={e => setSalePartyId(Number(e.target.value) || null)}
+                    onChange={e => {
+                      const pId = Number(e.target.value) || null;
+                      setSalePartyId(pId);
+                      const selected = parties.find(p => p.id === pId);
+                      if (selected) {
+                        setSaleCustomerName(selected.name);
+                        setSaleCustomerPhone(selected.phone || '');
+                        setSaleCustomerAddress(selected.address || '');
+                      } else {
+                        setSaleCustomerName('');
+                        setSaleCustomerPhone('');
+                        setSaleCustomerAddress('');
+                      }
+                    }}
                   >
                     <option value="">-- Choose Customer --</option>
                     {parties.filter(p => p.type === 'Customer').map(p => (
@@ -815,7 +880,45 @@ export default function Home() {
             )}
 
             {/* Cart Listing */}
-            <div className="section-title" style={{ margin: '8px 0 0 0' }}>Items in Invoice</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 6px 0' }}>
+              <div className="section-title" style={{ margin: 0 }}>Items in Invoice</div>
+              <div className="segmented-control" style={{ display: 'inline-flex', gap: '2px', background: 'var(--slate-100)', padding: '2px', borderRadius: '6px' }}>
+                <button 
+                  className={`btn-seg ${saleTaxMode === 'exclusive' ? 'active' : ''}`}
+                  style={{ 
+                    padding: '4px 8px', 
+                    border: 'none', 
+                    borderRadius: '4px', 
+                    background: saleTaxMode === 'exclusive' ? 'white' : 'transparent', 
+                    color: saleTaxMode === 'exclusive' ? 'var(--emerald-600)' : 'var(--slate-500)', 
+                    fontWeight: 750, 
+                    cursor: 'pointer', 
+                    fontSize: '10px',
+                    boxShadow: saleTaxMode === 'exclusive' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                  }}
+                  onClick={() => setSaleTaxMode('exclusive')}
+                >
+                  GST Excl.
+                </button>
+                <button 
+                  className={`btn-seg ${saleTaxMode === 'inclusive' ? 'active' : ''}`}
+                  style={{ 
+                    padding: '4px 8px', 
+                    border: 'none', 
+                    borderRadius: '4px', 
+                    background: saleTaxMode === 'inclusive' ? 'white' : 'transparent', 
+                    color: saleTaxMode === 'inclusive' ? 'var(--emerald-600)' : 'var(--slate-500)', 
+                    fontWeight: 750, 
+                    cursor: 'pointer', 
+                    fontSize: '10px',
+                    boxShadow: saleTaxMode === 'inclusive' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
+                  }}
+                  onClick={() => setSaleTaxMode('inclusive')}
+                >
+                  GST Incl.
+                </button>
+              </div>
+            </div>
             {saleCart.length === 0 ? (
               <div className="empty-state" style={{ padding: '24px', background: 'var(--slate-50)', borderRadius: '12px', border: '1px dashed var(--slate-200)' }}>
                 <p style={{ margin: 0 }}>No products added yet. Use the search bar above to build your invoice.</p>
@@ -825,15 +928,25 @@ export default function Home() {
                 {saleCart.map(item => {
                   const originalProduct = products.find(p => p.id === item.product_id);
                   const maxStock = originalProduct ? originalProduct.quantity : 9999;
-                  const itemGstAmount = (item.price * item.quantity * item.gst_rate) / 100;
-                  const lineTotal = (item.price * item.quantity) + itemGstAmount;
+                  
+                  let basePrice = item.price;
+                  let lineTotal = item.price * item.quantity;
+                  let itemGstAmount = 0;
+
+                  if (saleTaxMode === 'inclusive') {
+                    basePrice = item.price / (1 + (item.gst_rate / 100));
+                    itemGstAmount = lineTotal - (basePrice * item.quantity);
+                  } else {
+                    itemGstAmount = (lineTotal * item.gst_rate) / 100;
+                    lineTotal = lineTotal + itemGstAmount;
+                  }
 
                   return (
                     <div key={item.product_id} className="list-item" style={{ padding: '12px', alignItems: 'center', borderBottom: '1px solid var(--slate-50)' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="name" style={{ fontSize: '0.92rem' }}>{item.product_name}</div>
                         <div className="detail" style={{ fontSize: '0.78rem' }}>
-                          {fmt(item.price, C)} + {item.gst_rate}% GST
+                          {saleTaxMode === 'inclusive' ? `${fmt(item.price, C)} (GST Inc. • ${item.gst_rate}%)` : `${fmt(item.price, C)} + ${item.gst_rate}% GST`}
                         </div>
                         <div className="detail" style={{ fontWeight: 700, color: 'var(--slate-800)', marginTop: '4px', fontSize: '0.85rem' }}>
                           Total: {fmt(lineTotal, C)}
@@ -869,6 +982,12 @@ export default function Home() {
                   <span>GST Amount</span>
                   <span>{fmt(getCartTotals().totalGst, C)}</span>
                 </div>
+                {Number(getCartTotals().roundOff) !== 0 && (
+                  <div style={{ padding: '4px 16px', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--slate-400)', fontStyle: 'italic' }}>
+                    <span>Round Off</span>
+                    <span>{Number(getCartTotals().roundOff) > 0 ? '+' : ''}{getCartTotals().roundOff}</span>
+                  </div>
+                )}
                 <div style={{ padding: '4px 16px 12px 16px', display: 'flex', justifyContent: 'space-between', fontSize: '1.05rem', fontWeight: 800, color: 'var(--slate-900)' }}>
                   <span>Invoice Total</span>
                   <span>{fmt(getCartTotals().total, C)}</span>
