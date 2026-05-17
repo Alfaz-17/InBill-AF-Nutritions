@@ -198,13 +198,21 @@ export default function Home() {
 
   const stopQRScanner = async (instance?: any) => {
     const scanner = instance || qrScannerInstance;
+    setScanning(false);
+    setQrScannerInstance(null);
     if (scanner) {
       try {
-        await scanner.stop();
+        // Only stop if the camera stream is actively scanning
+        if (scanner.isScanning) {
+          await scanner.stop();
+        }
+      } catch (e) {
+        console.error('Error stopping scanner:', e);
+      }
+      try {
+        scanner.clear();
       } catch (e) {}
     }
-    setQrScannerInstance(null);
-    setScanning(false);
   };
 
   // ── Logout ──
