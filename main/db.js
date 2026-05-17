@@ -2458,6 +2458,59 @@ const syncToCloud = async () => {
       console.log("Creating/Verifying Postgres Schema...");
       await ensurePostgresSchema(cloud);
 
+      // 1.5 Pull New Mobile Sales from Neon Postgres that do not exist locally in SQLite
+      console.log("📥 Sync: Checking for new mobile sales in cloud...");
+      try {
+        const pgSales = await cloud`SELECT * FROM sales`;
+        for (const pgs of pgSales) {
+          const localSale = db.prepare('SELECT id FROM sales WHERE invoice_number = ?').get(pgs.invoice_number);
+          if (!localSale) {
+            console.log(`📥 Sync: Pulling new mobile sale: ${pgs.invoice_number}`);
+            
+            // Insert sale locally inside SQLite
+            const saleInfo = db.prepare(`
+              INSERT INTO sales (invoice_number, date, party_id, customer_name, customer_phone, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              pgs.invoice_number, pgs.date, pgs.party_id, pgs.customer_name, pgs.customer_phone,
+              pgs.subtotal, pgs.total_gst, pgs.misc_charges, pgs.total_amount, pgs.total_discount,
+              pgs.payment_mode, pgs.paid_amount, pgs.due_amount, pgs.credit_days, pgs.due_date
+            );
+            const localSaleId = saleInfo.lastInsertRowid;
+
+            // Fetch corresponding Postgres sale items
+            const pgItems = await cloud`SELECT * FROM sale_items WHERE sale_id = ${pgs.id}`;
+            for (const pgi of pgItems) {
+              db.prepare(`
+                INSERT INTO sale_items (sale_id, product_id, product_name, quantity, mrp, price, cost_price, discount, gst_rate, gst_amount, total_price)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                localSaleId, pgi.product_id, pgi.product_name, pgi.quantity, pgi.mrp, pgi.price, pgi.cost_price, pgi.discount, pgi.gst_rate, pgi.gst_amount, pgi.total_price
+              );
+
+              // Deduct stock quantity in local products table
+              if (pgi.product_id) {
+                db.prepare('UPDATE products SET quantity = quantity - ? WHERE id = ?').run(pgi.quantity, pgi.product_id);
+              }
+            }
+
+            // Update local customer balance and transactions if party_id is linked
+            if (pgs.party_id) {
+              db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(pgs.due_amount, pgs.party_id);
+              
+              db.prepare(`
+                INSERT INTO party_transactions (party_id, type, reference_id, total_amount, paid_amount, due_amount, payment_mode, credit_days, due_date, date)
+                VALUES (?, 'Sale', ?, ?, ?, ?, ?, ?, ?, ?)
+              `).run(
+                pgs.party_id, localSaleId, pgs.total_amount, pgs.paid_amount, pgs.due_amount, pgs.payment_mode, pgs.credit_days, pgs.due_date, pgs.date
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("⚠️ Warning: Pulling mobile sales failed (non-blocking):", err.message);
+      }
+
       const tables = [
         'business_profile', 'custom_categories', 'product_attribute_defs', 
         'expense_categories',

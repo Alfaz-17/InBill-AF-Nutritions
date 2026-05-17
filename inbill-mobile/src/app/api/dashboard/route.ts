@@ -30,11 +30,11 @@ export async function GET(req: NextRequest) {
     `;
     const todayStats = salesRows[0] || {};
 
-    // Receivable & Payable
+    // Receivable & Payable (Matches desktop accounting logic perfectly)
     const balanceRows = await sql`
       SELECT 
-        COALESCE(SUM(CASE WHEN type = 'Customer' AND current_balance > 0 THEN current_balance ELSE 0 END), 0) as receivable,
-        COALESCE(SUM(CASE WHEN type = 'Supplier' AND current_balance > 0 THEN current_balance ELSE 0 END), 0) as payable
+        COALESCE(SUM(CASE WHEN current_balance > 0.1 THEN current_balance ELSE 0 END), 0) as receivable,
+        ABS(COALESCE(SUM(CASE WHEN current_balance < -0.1 THEN current_balance ELSE 0 END), 0)) as payable
       FROM parties WHERE (is_deleted IS NULL OR is_deleted = 0)
     `;
     const balances = balanceRows[0] || {};

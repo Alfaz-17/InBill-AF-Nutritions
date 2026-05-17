@@ -119,14 +119,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
 
   const getMobileQRPayload = () => {
     if (!mobileConfig?.mobile_access_code || !neonConfig.url) return '';
-    return JSON.stringify({
-      app: 'InBill',
-      version: 1,
-      code: mobileConfig.mobile_access_code,
-      secret: mobileConfig.mobile_secret,
-      cloud_url: neonConfig.url,
-      business: profileForm.business_name || 'My Business',
-    });
+    return `https://in-bill-store.vercel.app/?code=${mobileConfig.mobile_access_code}&url=${encodeURIComponent(neonConfig.url)}`;
   };
 
   const handleCopyCode = () => {
