@@ -125,12 +125,9 @@ export default function Dashboard({ onNavigate, profile }) {
             <p className="metric-sub">Today's Sales</p>
             <h3 className="metric-value text-emerald-600">{CURRENCY}{(s.todaySalesTotal || 0).toLocaleString('en-IN')}</h3>
             <div className="mt-2 text-[10px] font-black text-slate-400 uppercase tracking-widest">Daily Performance</div>
-                      </div>
-                    </div>
-                    <p className="mt-3 text-[10px] font-bold text-amber-700">
-                      Real reminders disappear automatically after the customer pays.
-                    </p>
-                  </div>
+          </div>
+        </div>
+      </div>
 
       {/* Daily Cashflow Breakdown */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 -mt-4">
@@ -248,29 +245,11 @@ export default function Dashboard({ onNavigate, profile }) {
                     </Button>
                   </div>
                 )) : (
-                  <div className="space-y-4">
-                    <div className="p-4 bg-amber-50/60 rounded-2xl border border-dashed border-amber-200">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <Badge className="mb-2 bg-white text-amber-700 border-amber-200 rounded-lg text-[9px] font-black">Example</Badge>
-                          <p className="font-black text-sm text-slate-900 truncate">Amit Customer</p>
-                          <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
-                            Due today - {formatReminderDate(new Date().toISOString().slice(0, 10))}
-                          </p>
-                          <p className="mt-1 text-[10px] font-bold text-slate-400">9876543210</p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="font-black text-sm text-rose-600">{CURRENCY}1,500</p>
-                          <p className="text-[9px] font-black text-slate-400 uppercase">1 bill</p>
-                        </div>
-                      </div>
+                  <div className="py-10 text-center">
+                    <div className="w-12 h-12 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                      <Check size={24} strokeWidth={3} />
                     </div>
-                    <div className="py-8 text-center">
-                      <div className="w-12 h-12 bg-emerald-50 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                        <Check size={24} strokeWidth={3} />
-                      </div>
-                      <p className="text-xs font-black text-slate-400 uppercase tracking-widest">No real payments due today</p>
-                    </div>
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest">All payments clear</p>
                   </div>
                 )}
              </CardContent>
