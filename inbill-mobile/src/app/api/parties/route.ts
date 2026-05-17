@@ -18,9 +18,9 @@ export async function GET() {
       FROM parties 
       WHERE (is_deleted = 0 OR is_deleted IS NULL)
       ORDER BY name ASC
-    `;
+    `; 
 
-    return NextResponse.json({ parties: rows });
+    return NextResponse.json({ parties: rows }) ;
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Parties load failed';
     console.error('Parties error:', message);
