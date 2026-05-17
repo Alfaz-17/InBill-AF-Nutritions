@@ -939,18 +939,12 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                     <div className="relative p-6 bg-white rounded-[2rem] shadow-xl shadow-indigo-100 border-2 border-indigo-50">
                       <div className="absolute -top-3 -right-3 bg-emerald-500 text-white text-[10px] font-black px-3 py-1 rounded-full shadow-lg">ACTIVE</div>
                       <QRCodeSVG 
-                        value={getMobileQRPayload()}
+                        value={getMobileQRPayload() || 'InBill'}
                         size={220}
                         level="H"
                         includeMargin={true}
                         bgColor="#ffffff"
                         fgColor="#1e1b4b"
-                        imageSettings={{
-                          src: '',
-                          height: 0,
-                          width: 0,
-                          excavate: false,
-                        }}
                       />
                     </div>
 
