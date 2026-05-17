@@ -151,6 +151,10 @@ export default function Home() {
     setTimeout(async () => {
       try {
         const { Html5Qrcode } = await import('html5-qrcode');
+        const container = document.getElementById("qr-reader");
+        if (!container) {
+          throw new Error("Scanner container not ready in DOM.");
+        }
         const qrScanner = new Html5Qrcode("qr-reader");
         setQrScannerInstance(qrScanner);
         
@@ -189,11 +193,17 @@ export default function Home() {
           () => {} // scan error (silent)
         );
       } catch (e: any) {
-        console.error(e);
-        setLoginError("Could not start camera scanner. Enter details manually.");
+        console.error('Camera startup error:', e);
+        const errMsg = e?.message || String(e);
+        // User friendly hint for insecure HTTP local connections
+        if (errMsg.includes('navigator.mediaDevices') || errMsg.includes('Permission') || errMsg.includes('getUserMedia')) {
+          setLoginError(`Camera requires secure HTTPS. (Local HTTP blocks camera access on phones). Deploy to Vercel or enter credentials manually!`);
+        } else {
+          setLoginError(`Scanner Error: ${errMsg}`);
+        }
         setScanning(false);
       }
-    }, 200);
+    }, 300);
   };
 
   const stopQRScanner = async (instance?: any) => {
