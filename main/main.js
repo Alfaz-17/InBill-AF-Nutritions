@@ -570,8 +570,24 @@ ipcMain.handle('settings:syncToCloud', async () => {
 
 /* ── Mobile Access Configuration ── */
 ipcMain.handle('mobile:getConfig', () => mobileAccessOps.get());
-ipcMain.handle('mobile:generate', () => mobileAccessOps.generate());
-ipcMain.handle('mobile:revoke', () => mobileAccessOps.revoke());
+ipcMain.handle('mobile:generate', async () => {
+  const config = mobileAccessOps.generate();
+  try {
+    await syncToCloud();
+  } catch (e) {
+    console.error('Mobile generate: Background sync to cloud failed:', e.message);
+  }
+  return config;
+});
+ipcMain.handle('mobile:revoke', async () => {
+  const result = mobileAccessOps.revoke();
+  try {
+    await syncToCloud();
+  } catch (e) {
+    console.error('Mobile revoke: Background sync to cloud failed:', e.message);
+  }
+  return result;
+});
 
 ipcMain.handle('settings:resetData', () => {
   try {
