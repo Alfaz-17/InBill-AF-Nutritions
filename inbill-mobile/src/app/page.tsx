@@ -538,7 +538,7 @@ export default function Home() {
     });
 
     let allRowsHtml = rowsHtmlList.join('');
-    const minRows = 8;
+    const minRows = 5;
     if (invoice.items.length < minRows) {
       const emptyRowsCount = minRows - invoice.items.length;
       for (let i = 0; i < emptyRowsCount; i++) {
@@ -594,10 +594,11 @@ export default function Home() {
 
           .page {
             width: 210mm;
-            min-height: 297mm;
-            margin: auto;
+            height: 297mm;
+            margin: 0;
             background: #ffffff;
-            padding: 15mm;
+            padding: 12mm 15mm;
+            box-sizing: border-box;
           }
 
           table {
@@ -859,17 +860,35 @@ export default function Home() {
       const container = document.createElement('div');
       container.innerHTML = template;
       
+      // Temporarily append styled container off-screen to ensure accurate font sizes & widths
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      container.style.width = '794px'; // 210mm wide at 96 DPI
+      container.style.background = '#ffffff';
+      document.body.appendChild(container);
+      
       const opt = {
-        margin:       [10, 10, 10, 10],
+        margin:       0, // Bypasses extra double page wrap-around margins
         filename:     `${invoice.invoice_number}.pdf`,
         image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false },
+        html2canvas:  { 
+          scale: 2.2, 
+          useCORS: true, 
+          logging: false,
+          width: 794,
+          windowWidth: 794 // Lock rendering context to standard desktop viewport
+        },
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
       };
 
       (window as any).html2pdf().from(container).set(opt).save().then(() => {
+        document.body.removeChild(container);
         showToast('PDF downloaded successfully!', 'success');
       }).catch((err: any) => {
+        if (container.parentNode) {
+          document.body.removeChild(container);
+        }
         console.error('PDF Generation Error:', err);
       });
     };
