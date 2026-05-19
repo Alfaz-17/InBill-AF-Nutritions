@@ -861,10 +861,12 @@ function HomeComponent() {
         const container = document.createElement('div');
         container.innerHTML = template;
         
-        // Temporarily append styled container off-screen to ensure accurate font sizes & widths
-        container.style.position = 'absolute';
-        container.style.left = '-9999px';
+        // Temporarily append styled container behind the main viewport to ensure perfect canvas rendering
+        container.style.position = 'fixed';
+        container.style.left = '0';
         container.style.top = '0';
+        container.style.zIndex = '-9999';
+        container.style.pointerEvents = 'none';
         container.style.width = '794px'; // 210mm wide at 96 DPI
         container.style.background = '#ffffff';
         document.body.appendChild(container);
