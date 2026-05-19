@@ -2,11 +2,16 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "InBill Mobile — Business Dashboard",
-  description: "Access your InBill business data from anywhere. View sales, inventory, and party balances on your phone.",
+  title: "InBill Mobile — Emergency Invoice Maker",
+  description: "Generate premium PDF invoices on the go. 100% offline-first utility for InBill desktop.",
   icons: {
-    icon: '/icon.png',
-    apple: '/icon.png',
+    icon: [
+      { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [
+      { url: '/apple-touch-icon.png', sizes: '512x512', type: 'image/png' }
+    ]
   },
   manifest: '/manifest.json',
 };

@@ -39,7 +39,7 @@ export default function Dashboard({ onNavigate, profile }) {
   const getReminderLabel = (days) => {
     const value = Number(days || 0);
     if (value <= 0) return 'Due today';
-    return `${value} day${value === 1 ? '' : 's'} late`;
+    return `${value} day${value === 1 ? '' : 's'} overdue`;
   };
 
   if (loading) {
@@ -219,30 +219,37 @@ export default function Dashboard({ onNavigate, profile }) {
         {/* Action Sidebar */}
         <div className="space-y-10">
           <Card className="rounded-[2.5rem] border-amber-100 shadow-xl shadow-amber-100/30">
-             <CardHeader className="p-8 pb-2">
+             <CardHeader className="p-8 pb-2 flex flex-row items-center justify-between">
                <CardTitle className="text-lg font-black flex items-center gap-2">
                  <Clock size={18} className="text-amber-500" /> Payment Reminders
                </CardTitle>
+               <Button variant="ghost" className="font-black gap-2 hover:bg-amber-50 text-amber-700 text-sm" onClick={() => onNavigate('parties')}>
+                 View All <ChevronRight size={16} />
+               </Button>
              </CardHeader>
              <CardContent className="p-8 pt-0 space-y-4">
                 {s.paymentReminders?.length > 0 ? s.paymentReminders.map((item) => (
-                  <div key={item.party_id} className="p-4 bg-amber-50 rounded-2xl border border-amber-100">
+                  <div
+                    key={item.party_id}
+                    onClick={() => onNavigate('parties', item.party_id)}
+                    className="p-4 bg-amber-50 rounded-2xl border border-amber-100 cursor-pointer hover:bg-amber-100 hover:border-amber-300 transition-all active:scale-[0.98]"
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-black text-sm text-slate-900 truncate">{item.name}</p>
                         <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest">
-                          {getReminderLabel(item.days_overdue)} - {formatReminderDate(item.due_date)}
+                          {getReminderLabel(item.days_overdue)} — {formatReminderDate(item.due_date)}
                         </p>
                         {item.phone && <p className="mt-1 text-[10px] font-bold text-slate-400">{item.phone}</p>}
                       </div>
                       <div className="text-right shrink-0">
                         <p className="font-black text-sm text-rose-600">{CURRENCY}{Number(item.due_amount || 0).toLocaleString('en-IN')}</p>
                         <p className="text-[9px] font-black text-slate-400 uppercase">{item.invoice_count} bill{item.invoice_count === 1 ? '' : 's'}</p>
+                        <div className="mt-2 inline-flex items-center gap-1 text-[9px] font-black text-amber-700 uppercase tracking-widest">
+                          Collect <ChevronRight size={10} />
+                        </div>
                       </div>
                     </div>
-                    <Button onClick={() => onNavigate('parties')} size="sm" variant="ghost" className="mt-3 h-9 w-full rounded-xl text-amber-700 font-black hover:bg-white">
-                      Open Parties
-                    </Button>
                   </div>
                 )) : (
                   <div className="py-10 text-center">

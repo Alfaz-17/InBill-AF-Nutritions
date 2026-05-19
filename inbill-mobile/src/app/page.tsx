@@ -1,1183 +1,1786 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 
 // ═══════════════════════════════════════════════════════
-// SVG Icons (inline, no dependency needed)
+// SVG Icons (Inline to ensure zero-dependency compilation)
 // ═══════════════════════════════════════════════════════
-const Icon = ({ d, ...props }: { d: string } & React.SVGProps<SVGSVGElement>) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-    <path d={d} />
+const HistoryIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
 
-const HomeIcon = (p: React.SVGProps<SVGSVGElement>) => <Icon d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" {...p} />;
-const BoxIcon = (p: React.SVGProps<SVGSVGElement>) => <Icon d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" {...p} />;
-const UsersIcon = (p: React.SVGProps<SVGSVGElement>) => <Icon d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 11a4 4 0 100-8 4 4 0 000 8m13 10v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" {...p} />;
-const PlusIcon = (p: React.SVGProps<SVGSVGElement>) => <Icon d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" {...p} />;
+const PlusIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"></line>
+    <line x1="5" y1="12" x2="19" y2="12"></line>
+  </svg>
+);
 
-type Business = { name: string; short: string; currency: string };
-type DashboardData = {
-  profile: { business_name: string; business_short: string; currency_symbol: string };
-  today: { salesCount: number; salesTotal: number; cash: number; digital: number; credit: number };
-  receivable: number;
-  payable: number;
-  lowStock: { product_name: string; quantity: number; min_stock_alert: number }[];
-  recentSales: { id: number; invoice_number: string; customer_name: string; total_amount: number; payment_mode: string; date: string }[];
-  totalProducts: number;
+const SettingsIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"></circle>
+    <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"></path>
+  </svg>
+);
+
+const TrashIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"></polyline>
+    <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"></path>
+    <line x1="10" y1="11" x2="10" y2="17"></line>
+    <line x1="14" y1="11" x2="14" y2="17"></line>
+  </svg>
+);
+
+const CopyIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+    <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"></path>
+  </svg>
+);
+
+const PrinterIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 6 2 18 2 18 9"></polyline>
+    <path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"></path>
+    <rect x="6" y="14" width="12" height="8"></rect>
+  </svg>
+);
+
+const SearchIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8"></circle>
+    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+  </svg>
+);
+
+const FileIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"></path>
+    <polyline points="14 2 14 8 20 8"></polyline>
+    <line x1="16" y1="13" x2="8" y2="13"></line>
+    <line x1="16" y1="17" x2="8" y2="17"></line>
+  </svg>
+);
+
+// ═══════════════════════════════════════════════════════
+// Interfaces
+// ═══════════════════════════════════════════════════════
+interface BusinessProfile {
+  business_name: string;
+  phone: string;
+  email: string;
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state: string;
+  pincode: string;
+  gstin: string;
+  pan_number: string;
+  bank_name: string;
+  bank_account_no: string;
+  bank_ifsc: string;
+  terms_and_conditions: string;
+  whatsapp_number: string;
+  instagram_id: string;
+  gst_enabled: boolean;
+  currency_symbol: string;
+  logo_url?: string;
+}
+
+interface CartItem {
+  id: string;
+  product_name: string;
+  price: number;
+  quantity: number;
+  gst_rate: number;
+}
+
+interface OfflineInvoice {
+  invoice_number: string;
+  date: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_address: string;
+  payment_mode: 'Cash' | 'UPI' | 'Credit';
+  credit_days: number;
+  items: CartItem[];
+  subtotal: number;
+  total_gst: number;
+  grand_total: number;
+}
+
+const numberToWords = (num: number): string => {
+  const a = [
+    '', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven',
+    'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen',
+    'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen',
+    'Nineteen'
+  ];
+  const b = [
+    '', '', 'Twenty', 'Thirty', 'Forty', 'Fifty',
+    'Sixty', 'Seventy', 'Eighty', 'Ninety'
+  ];
+
+  const inWords = (n: number): string => {
+    if (n < 20) return a[n];
+    if (n < 100) return b[Math.floor(n / 10)] + (n % 10 ? ' ' + a[n % 10] : '');
+    if (n < 1000) return a[Math.floor(n / 100)] + ' Hundred ' + (n % 100 ? inWords(n % 100) : '');
+    if (n < 100000) return inWords(Math.floor(n / 1000)) + ' Thousand ' + (n % 1000 ? inWords(n % 1000) : '');
+    if (n < 10000000) return inWords(Math.floor(n / 100000)) + ' Lakh ' + (n % 100000 ? inWords(n % 100000) : '');
+    return inWords(Math.floor(n / 10000000)) + ' Crore ' + (n % 10000000 ? inWords(n % 10000000) : '');
+  };
+
+  return inWords(Math.round(num));
 };
-type Product = { id: number; product_name: string; brand: string; category: string; selling_price: number; mrp: number; cost_price: number; quantity: number; unit: string; barcode: string; min_stock_alert: number; gst_rate: number };
-type Party = { id: number; name: string; phone: string; type: string; current_balance: number; opening_balance: number; address?: string };
 
-const fmt = (n: number, c: string) => `${c}${Number(n || 0).toLocaleString('en-IN')}`;
+const DEFAULT_PROFILE: BusinessProfile = {
+  business_name: 'AF NUTRITION',
+  phone: '9988776655',
+  email: 'info@afnutrition.com',
+  address_line1: '123 Health Plaza',
+  address_line2: 'Gym Road, Sector 5',
+  city: 'Mumbai',
+  state: 'Maharashtra',
+  pincode: '400001',
+  gstin: '27AAAAA1111A1Z1',
+  pan_number: 'AAAAA1111A',
+  bank_name: 'HDFC Bank',
+  bank_account_no: '50100012345678',
+  bank_ifsc: 'HDFC0000001',
+  terms_and_conditions: '1. Goods once sold will not be taken back.\n2. Interest @ 18% will be charged if payment is not made within due date.',
+  whatsapp_number: '919988776655',
+  instagram_id: 'af_nutrition',
+  gst_enabled: true,
+  currency_symbol: '₹',
+  logo_url: '',
+};
 
 export default function Home() {
-  const [loggedIn, setLoggedIn] = useState(false);
-  const [checking, setChecking] = useState(true);
-  const [business, setBusiness] = useState<Business | null>(null);
+  const [tab, setTab] = useState<'history' | 'new' | 'settings'>('new');
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
 
-  // Login
-  const [code, setCode] = useState('');
-  const [neonUrl, setNeonUrl] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [connecting, setConnecting] = useState(false);
+  // Persistence States
+  const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
+  const [history, setHistory] = useState<OfflineInvoice[]>([]);
+  
+  // Invoice states
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState('');
+  const [invoiceNumber, setInvoiceNumber] = useState('');
+  const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI' | 'Credit'>('Cash');
+  const [creditDays, setCreditDays] = useState(30);
+  const [cart, setCart] = useState<CartItem[]>([
+    { id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18 }
+  ]);
 
-  // QR Scanner State
-  const [scanning, setScanning] = useState(false);
-  const [qrScannerInstance, setQrScannerInstance] = useState<any>(null);
-  const [scannerFeedback, setScannerFeedback] = useState('');
+  // Modals & triggers
+  const [selectedInvoice, setSelectedInvoice] = useState<OfflineInvoice | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [demoSuccess, setDemoSuccess] = useState(false);
 
-  // Tabs
-  const [tab, setTab] = useState<'home' | 'inventory' | 'sale' | 'parties'>('home');
-
-  // New Sale States
-  const [saleCustomerType, setSaleCustomerType] = useState<'counter' | 'linked'>('counter');
-  const [salePartyId, setSalePartyId] = useState<number | null>(null);
-  const [saleCustomerName, setSaleCustomerName] = useState('');
-  const [saleCustomerPhone, setSaleCustomerPhone] = useState('');
-  const [saleCustomerAddress, setSaleCustomerAddress] = useState('');
-  const [saleCart, setSaleCart] = useState<{ product_id: number; product_name: string; price: number; mrp: number; gst_rate: number; quantity: number; unit: string }[]>([]);
-  const [salePaymentMode, setSalePaymentMode] = useState<'Cash' | 'UPI' | 'Credit'>('Cash');
-  const [salePaidAmount, setSalePaidAmount] = useState('');
-  const [saleCreditDays, setSaleCreditDays] = useState('30');
-  const [saleSubmitting, setSaleSubmitting] = useState(false);
-  const [saleError, setSaleError] = useState('');
-  const [saleSuccessData, setSaleSuccessData] = useState<{ invoice_number: string; total_amount: number } | null>(null);
-  const [saleProductSearch, setSaleProductSearch] = useState('');
-  const [saleTaxMode, setSaleTaxMode] = useState<'exclusive' | 'inclusive'>('exclusive');
-
-  const getCartTotals = () => {
-    let subtotal = 0;
-    let totalGst = 0;
-    saleCart.forEach(item => {
-      const lineTotal = item.price * item.quantity;
-      if (saleTaxMode === 'inclusive') {
-        const basePrice = lineTotal / (1 + (item.gst_rate / 100));
-        const gst = lineTotal - basePrice;
-        subtotal += basePrice;
-        totalGst += gst;
-      } else {
-        const gst = (lineTotal * item.gst_rate) / 100;
-        subtotal += lineTotal;
-        totalGst += gst;
-      }
-    });
-    const rawTotal = subtotal + totalGst;
-    const total = Math.round(rawTotal);
-    const roundOff = (total - rawTotal).toFixed(2);
-    return { subtotal, totalGst, total, roundOff };
+  const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
   };
 
-  const addToCart = (product: Product) => {
-    const existing = saleCart.find(i => i.product_id === product.id);
-    if (existing) {
-      if (existing.quantity >= product.quantity) {
-        setSaleError(`Cannot add more. Insufficient stock for ${product.product_name}.`);
-        return;
-      }
-      setSaleCart(saleCart.map(i => i.product_id === product.id ? { ...i, quantity: i.quantity + 1 } : i));
-    } else {
-      if (product.quantity <= 0) {
-        setSaleError(`Insufficient stock for ${product.product_name}.`);
-        return;
-      }
-      setSaleCart([...saleCart, {
-        product_id: product.id,
-        product_name: product.product_name,
-        price: product.selling_price,
-        mrp: product.mrp,
-        gst_rate: product.gst_rate,
-        quantity: 1,
-        unit: product.unit
-      }]);
-    }
-    setSaleError('');
-    playBeep();
-  };
-
-  const updateCartQty = (productId: number, delta: number, maxStock: number) => {
-    const existing = saleCart.find(i => i.product_id === productId);
-    if (!existing) return;
-    const newQty = existing.quantity + delta;
-    if (newQty <= 0) {
-      setSaleCart(saleCart.filter(i => i.product_id !== productId));
-    } else {
-      if (newQty > maxStock) {
-        setSaleError(`Cannot exceed available stock (${maxStock})`);
-        return;
-      }
-      setSaleCart(saleCart.map(i => i.product_id === productId ? { ...i, quantity: newQty } : i));
-      setSaleError('');
-    }
-  };
-
-  const submitSale = async () => {
-    setSaleError('');
-    if (saleCart.length === 0) {
-      setSaleError('Add at least one product to make a sale.');
-      return;
-    }
-
-    let customerName = saleCustomerName.trim();
-    let customerPhone = saleCustomerPhone.trim();
-
-    if (saleCustomerType === 'linked') {
-      const selected = parties.find(p => p.id === salePartyId);
-      if (!selected) {
-        setSaleError('Please select a customer.');
-        return;
-      }
-      customerName = selected.name;
-      customerPhone = selected.phone || '';
-    } else {
-      if (!customerName) {
-        customerName = 'Counter Sale';
-      }
-    }
-
-    const { total } = getCartTotals();
-    const paid = salePaidAmount === '' ? total : Number(salePaidAmount);
-
-    setSaleSubmitting(true);
-    try {
-      const res = await fetch('/api/sales', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          party_id: saleCustomerType === 'linked' ? salePartyId : null,
-          customer_name: customerName,
-          customer_phone: customerPhone,
-          customer_address: saleCustomerAddress.trim(),
-          payment_mode: salePaymentMode,
-          paid_amount: paid,
-          credit_days: salePaymentMode === 'Credit' ? Number(saleCreditDays || 0) : 0,
-          items: saleCart,
-          tax_mode: saleTaxMode
-        })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setSaleError(data.error || 'Failed to create sale.');
-      } else {
-        playBeep();
-        setSaleSuccessData({
-          invoice_number: data.invoice_number,
-          total_amount: data.total_amount
-        });
-        setSaleCart([]);
-        setSaleCustomerName('');
-        setSaleCustomerPhone('');
-        setSaleCustomerAddress('');
-        setSalePaidAmount('');
-        setSaleTaxMode('exclusive');
-      }
-    } catch {
-      setSaleError('Network error. Failed to save sale.');
-    }
-    setSaleSubmitting(false);
-  };
-
-  // Dashboard
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
-  const [dashLoading, setDashLoading] = useState(false);
-
-  // Inventory
-  const [products, setProducts] = useState<Product[]>([]);
-  const [prodSearch, setProdSearch] = useState('');
-  const [prodLoading, setProdLoading] = useState(false);
-
-  // Parties
-  const [parties, setParties] = useState<Party[]>([]);
-  const [partyLoading, setPartyLoading] = useState(false);
-
-  // Audio synthesized success beep
-  const playBeep = () => {
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, ctx.currentTime); // High-pitched clean beep
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.12);
-    } catch (e) {
-      console.error('Audio beep failed:', e);
-    }
-  };
-
-  // Check if already authenticated or auto-connecting via QR link query params
+  // Mount logic
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const qCode = params.get('code');
-    const qUrl = params.get('url');
-
-    if (qCode && qUrl) {
-      setChecking(true);
-      handleScanConnect(qCode, qUrl).then(() => {
-        try {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        } catch (e) {}
-      }).finally(() => {
-        setChecking(false);
-      });
-      return;
+    const savedProfile = localStorage.getItem('inbill_offline_profile');
+    if (savedProfile) {
+      try { setProfile(JSON.parse(savedProfile)); } catch (e) {}
+    } else {
+      localStorage.setItem('inbill_offline_profile', JSON.stringify(DEFAULT_PROFILE));
     }
 
-    fetch('/api/dashboard').then(r => {
-      if (r.ok) {
-        r.json().then(d => {
-          setBusiness({ name: d.profile.business_name, short: d.profile.business_short, currency: d.profile.currency_symbol });
-          setDashboard(d);
-          setLoggedIn(true);
-        });
-      }
-      setChecking(false);
-    }).catch(() => setChecking(false));
+    const savedHistory = localStorage.getItem('inbill_offline_invoices');
+    if (savedHistory) {
+      try { setHistory(JSON.parse(savedHistory)); } catch (e) {}
+    }
+
+    setInvoiceDate(new Date().toISOString().split('T')[0]);
+    generateNextInvoiceNo();
   }, []);
 
-  // Clean up scanner on unmount
-  useEffect(() => {
-    return () => {
-      if (qrScannerInstance) {
-        qrScannerInstance.stop().catch(() => {});
-      }
-    };
-  }, [qrScannerInstance]);
-
-  // ── Login ──
-  const handleConnect = async () => {
-    setLoginError('');
-    if (!code.trim() || !neonUrl.trim()) {
-      setLoginError('Enter both your access code and Neon Cloud URL');
-      return;
-    }
-    setConnecting(true);
-    try {
-      const res = await fetch('/api/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.trim(), neonUrl: neonUrl.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setLoginError(data.error || 'Connection failed'); setConnecting(false); return; }
-      setBusiness(data.business);
-      setLoggedIn(true);
-      loadDashboard();
-    } catch { setLoginError('Network error. Try again.'); }
-    setConnecting(false);
-  };
-
-  const handleScanConnect = async (scannedCode: string, scannedUrl: string) => {
-    setConnecting(true);
-    try {
-      const res = await fetch('/api/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: scannedCode.trim(), neonUrl: scannedUrl.trim() }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setLoginError(data.error || 'Connection failed'); setConnecting(false); return; }
-      setBusiness(data.business);
-      setLoggedIn(true);
-      loadDashboard();
-    } catch { setLoginError('Network error. Try again.'); }
-    setConnecting(false);
-  };
-
-  const startQRScanner = async () => {
-    setLoginError('');
-    setScanning(true);
-    setTimeout(async () => {
+  const generateNextInvoiceNo = () => {
+    const savedHistory = localStorage.getItem('inbill_offline_invoices');
+    let nextNum = 10;
+    if (savedHistory) {
       try {
-        const { Html5Qrcode } = await import('html5-qrcode');
-        const container = document.getElementById("qr-reader");
-        if (!container) {
-          throw new Error("Scanner container not ready in DOM.");
+        const list: OfflineInvoice[] = JSON.parse(savedHistory);
+        const parsedNums = list
+          .map(inv => {
+            const match = inv.invoice_number.match(/INV-(\d+)/) || inv.invoice_number.match(/INV(\d+)/) || inv.invoice_number.match(/MOB-(\d+)/);
+            return match ? parseInt(match[1]) : null;
+          })
+          .filter((n): n is number => n !== null);
+        if (parsedNums.length > 0) {
+          nextNum = Math.max(...parsedNums) + 1;
         }
-        const qrScanner = new Html5Qrcode("qr-reader");
-        setQrScannerInstance(qrScanner);
-        
-        let lastScanTime = 0;
-        await qrScanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 20,
-          },
-          async (decodedText) => {
-            const now = Date.now();
-            if (now - lastScanTime < 3000) return; // 3 seconds scan cooldown
-
-            try {
-              let parsedCode = '';
-              let parsedUrl = '';
-
-              if (decodedText.trim().startsWith('{')) {
-                try {
-                  const parsed = JSON.parse(decodedText.trim());
-                  if (parsed.code && parsed.cloud_url) {
-                    parsedCode = parsed.code;
-                    parsedUrl = parsed.cloud_url;
-                  }
-                } catch (e) {}
-              } else if (decodedText.includes('code=') && decodedText.includes('url=')) {
-                try {
-                  const uStr = decodedText.trim().startsWith('http') ? decodedText.trim() : 'https://dummy.com/?' + decodedText.trim();
-                  const u = new URL(uStr);
-                  const qCode = u.searchParams.get('code');
-                  const qUrl = u.searchParams.get('url');
-                  if (qCode && qUrl) {
-                    parsedCode = qCode;
-                    parsedUrl = qUrl;
-                  }
-                } catch (e) {}
-              }
-
-              if (parsedCode && parsedUrl) {
-                playBeep();
-                setCode(parsedCode);
-                setNeonUrl(parsedUrl);
-                
-                try {
-                  await qrScanner.stop();
-                } catch (e) {}
-                setQrScannerInstance(null);
-                setScanning(false);
-                setScannerFeedback('');
-
-                handleScanConnect(parsedCode, parsedUrl);
-              } else {
-                lastScanTime = now;
-                setScannerFeedback("Invalid InBill QR code. Aim at Settings → Mobile tab QR code.");
-                setTimeout(() => setScannerFeedback(''), 3000);
-              }
-            } catch (err) {
-              lastScanTime = now;
-              setScannerFeedback("Failed to parse scanned code. Check Settings → Mobile QR code.");
-              setTimeout(() => setScannerFeedback(''), 3000);
-            }
-          },
-          () => {} // scan error (silent)
-        );
-      } catch (e: any) {
-        console.error('Camera startup error:', e);
-        const errMsg = e?.message || String(e);
-        if (errMsg.includes('navigator.mediaDevices') || errMsg.includes('Permission') || errMsg.includes('getUserMedia')) {
-          setLoginError(`Camera requires secure HTTPS. (Local HTTP blocks camera access on phones). Deploy to Vercel or enter credentials manually!`);
-        } else {
-          setLoginError(`Scanner Error: ${errMsg}`);
-        }
-        setScanning(false);
-      }
-    }, 300);
-  };
-
-  const stopQRScanner = async (instance?: any, shouldReload = true) => {
-    const scanner = instance || qrScannerInstance;
-    setScanning(false);
-    setQrScannerInstance(null);
-    if (scanner) {
-      try {
-        if (scanner.isScanning) {
-          await scanner.stop();
-        }
-      } catch (e) {
-        console.error('Error stopping scanner:', e);
-      }
-      try {
-        scanner.clear();
       } catch (e) {}
     }
-    if (shouldReload) {
-      window.location.reload();
+    const padded = String(nextNum).padStart(3, '0');
+    setInvoiceNumber(`INV-${padded}`);
+  };
+
+  const handleLoadDemoData = () => {
+    setCustomerName('Rahul Sharma');
+    setCustomerPhone('9876543210');
+    setCustomerAddress('45, Ocean Heights, Sector 12, Navi Mumbai');
+    setPaymentMode('UPI');
+    setCart([
+      { id: 'demo1', product_name: 'Whey Protein Isolate 1kg (Vanilla)', price: 4200, quantity: 1, gst_rate: 18 },
+      { id: 'demo2', product_name: 'Creatine Monohydrate 250g', price: 950, quantity: 2, gst_rate: 18 }
+    ]);
+    showToast('Demo bill data loaded!', 'info');
+  };
+
+  const saveProfileSettings = (updated: BusinessProfile) => {
+    setProfile(updated);
+    localStorage.setItem('inbill_offline_profile', JSON.stringify(updated));
+    showToast('Shop profile settings saved perfectly!', 'success');
+  };
+
+  const addCartRow = () => {
+    const newId = Math.random().toString(36).substring(2, 7);
+    setCart([...cart, { id: newId, product_name: '', price: 0, quantity: 1, gst_rate: 18 }]);
+  };
+
+  const removeCartRow = (id: string) => {
+    if (cart.length === 1) return;
+    setCart(cart.filter(item => item.id !== id));
+  };
+
+  const updateCartField = (id: string, field: keyof CartItem, value: any) => {
+    setCart(cart.map(item => {
+      if (item.id === id) {
+        let cleanVal = value;
+        if (field === 'price' || field === 'quantity' || field === 'gst_rate') {
+          cleanVal = Number(value);
+        }
+        return { ...item, [field]: cleanVal };
+      }
+      return item;
+    }));
+  };
+
+  const adjustQty = (id: string, amount: number) => {
+    setCart(cart.map(item => {
+      if (item.id === id) {
+        return { ...item, quantity: Math.max(1, item.quantity + amount) };
+      }
+      return item;
+    }));
+  };
+
+  const getInvoiceTotals = () => {
+    let subtotal = 0;
+    let totalGst = 0;
+
+    cart.forEach(item => {
+      const lineAmount = item.price * item.quantity;
+      if (profile.gst_enabled) {
+        const base = lineAmount / (1 + (item.gst_rate / 100));
+        subtotal += base;
+        totalGst += (lineAmount - base);
+      } else {
+        subtotal += lineAmount;
+      }
+    });
+
+    return {
+      subtotal,
+      totalGst: profile.gst_enabled ? totalGst : 0,
+      grandTotal: Math.round(subtotal + totalGst)
+    };
+  };
+
+  const totals = getInvoiceTotals();
+
+  const handleGenerateInvoice = () => {
+    if (cart.some(i => !i.product_name.trim())) {
+      showToast('Please fill in product descriptions for all rows.', 'error');
+      return;
+    }
+
+    const { subtotal, totalGst, grandTotal } = getInvoiceTotals();
+    const newInvoice: OfflineInvoice = {
+      invoice_number: invoiceNumber || `MOB-${Date.now().toString().slice(-4)}`,
+      date: invoiceDate,
+      customer_name: customerName.trim() || 'Counter Sale',
+      customer_phone: customerPhone.trim(),
+      customer_address: customerAddress.trim(),
+      payment_mode: paymentMode,
+      credit_days: paymentMode === 'Credit' ? creditDays : 0,
+      items: cart,
+      subtotal,
+      total_gst: totalGst,
+      grand_total: grandTotal
+    };
+
+    const updated = [newInvoice, ...history];
+    setHistory(updated);
+    localStorage.setItem('inbill_offline_invoices', JSON.stringify(updated));
+
+    printInvoice(newInvoice, profile);
+
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerAddress('');
+    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18 }]);
+    generateNextInvoiceNo();
+    setWizardStep(1);
+    setTab('history');
+  };
+
+  const handleSaveCopyAndWhatsApp = () => {
+    if (cart.some(i => !i.product_name.trim())) {
+      showToast('Please fill in product descriptions for all rows.', 'error');
+      return;
+    }
+
+    const { subtotal, totalGst, grandTotal } = getInvoiceTotals();
+    const newInvoice: OfflineInvoice = {
+      invoice_number: invoiceNumber || `MOB-${Date.now().toString().slice(-4)}`,
+      date: invoiceDate,
+      customer_name: customerName.trim() || 'Counter Sale',
+      customer_phone: customerPhone.trim(),
+      customer_address: customerAddress.trim(),
+      payment_mode: paymentMode,
+      credit_days: paymentMode === 'Credit' ? creditDays : 0,
+      items: cart,
+      subtotal,
+      total_gst: totalGst,
+      grand_total: grandTotal
+    };
+
+    const updated = [newInvoice, ...history];
+    setHistory(updated);
+    localStorage.setItem('inbill_offline_invoices', JSON.stringify(updated));
+
+    const lines = [
+      `--- ${profile.business_name || 'INBILL'} OFFLINE BILL ---`,
+      `Invoice No: ${newInvoice.invoice_number}`,
+      `Date: ${newInvoice.date}`,
+      `Customer Name: ${newInvoice.customer_name}`,
+      newInvoice.customer_phone ? `Phone No: ${newInvoice.customer_phone}` : '',
+      `Payment Mode: ${newInvoice.payment_mode}`,
+      ``,
+      `Items:`,
+      ...newInvoice.items.map((item, idx) => `• ${item.product_name} | Qty: ${item.quantity} | Price: ${profile.currency_symbol}${item.price} | GST: ${item.gst_rate}%`),
+      ``,
+      `Subtotal: ${profile.currency_symbol}${Math.round(newInvoice.subtotal)}`,
+      `GST Tax: ${profile.currency_symbol}${Math.round(newInvoice.total_gst)}`,
+      `Grand Total: ${profile.currency_symbol}${newInvoice.grand_total}`,
+      `\nThank you for billing with us!`,
+    ].filter(Boolean);
+
+    navigator.clipboard.writeText(lines.join('\n'))
+      .then(() => {
+        showToast('Saved & copied details to clipboard!', 'success');
+      })
+      .catch(() => {
+        showToast('Saved but clipboard permission blocked!', 'error');
+      });
+
+    if (newInvoice.customer_phone) {
+      const cleanPhone = newInvoice.customer_phone.replace(/\D/g, '');
+      const number = cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone;
+      const msg = `Hi ${newInvoice.customer_name},\nHere is your invoice *#${newInvoice.invoice_number}* from *${profile.business_name || 'us'}*.\n\n*Amount Due:* ${profile.currency_symbol}${newInvoice.grand_total}\n*Payment Mode:* ${newInvoice.payment_mode}\n\n(Complete item breakdown copied to clipboard. Press paste to send!)`;
+      
+      setTimeout(() => {
+        window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
+      }, 500);
+    } else {
+      showToast('Saved & Copied! No customer phone for WhatsApp redirect.', 'info');
+    }
+
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerAddress('');
+    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18 }]);
+    generateNextInvoiceNo();
+    setWizardStep(1);
+    setTab('history');
+  };
+
+  const handleDownloadSharePdfOnWhatsApp = () => {
+    if (cart.some(i => !i.product_name.trim())) {
+      showToast('Please fill in product descriptions for all rows.', 'error');
+      return;
+    }
+
+    const { subtotal, totalGst, grandTotal } = getInvoiceTotals();
+    const newInvoice: OfflineInvoice = {
+      invoice_number: invoiceNumber || `MOB-${Date.now().toString().slice(-4)}`,
+      date: invoiceDate,
+      customer_name: customerName.trim() || 'Counter Sale',
+      customer_phone: customerPhone.trim(),
+      customer_address: customerAddress.trim(),
+      payment_mode: paymentMode,
+      credit_days: paymentMode === 'Credit' ? creditDays : 0,
+      items: cart,
+      subtotal,
+      total_gst: totalGst,
+      grand_total: grandTotal
+    };
+
+    const updated = [newInvoice, ...history];
+    setHistory(updated);
+    localStorage.setItem('inbill_offline_invoices', JSON.stringify(updated));
+
+    printInvoice(newInvoice, profile);
+    showToast('PDF print opened! Redirecting to WhatsApp...', 'success');
+
+    if (newInvoice.customer_phone) {
+      const cleanPhone = newInvoice.customer_phone.replace(/\D/g, '');
+      const number = cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone;
+      const msg = `Hi ${newInvoice.customer_name},\nHere is your invoice *#${newInvoice.invoice_number}* from *${profile.business_name || 'us'}*.\n\n*Amount Due:* ${profile.currency_symbol}${newInvoice.grand_total}\n*Payment Mode:* ${newInvoice.payment_mode}\n\n📎 *I have downloaded your PDF Bill. Tap the paperclip attachment icon on your screen and select it to view!*`;
+      
+      setTimeout(() => {
+        window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
+      }, 1500);
+    } else {
+      showToast('Saved & Printed! No customer phone for WhatsApp.', 'info');
+    }
+
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerAddress('');
+    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18 }]);
+    generateNextInvoiceNo();
+    setWizardStep(1);
+    setTab('history');
+  };
+
+  const printInvoice = (invoice: OfflineInvoice, biz: BusinessProfile) => {
+    const C = biz.currency_symbol || '₹';
+    
+    const escapeHtml = (val: string) =>
+      String(val ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+
+    const formatMoney = (value: number) => {
+      const num = Number(value || 0);
+      return isNaN(num) ? '0.00' : num.toLocaleString('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    };
+
+    const companyAddressVal = [
+      biz.address_line1,
+      biz.address_line2,
+      biz.city,
+      biz.state,
+      biz.pincode
+    ].filter(Boolean).map(escapeHtml).join(', ');
+
+    let untaxedSubtotal = 0;
+    let totalGstAmount = 0;
+
+    const rowsHtmlList = invoice.items.map((item, index) => {
+      const qty = Number(item.quantity || 0);
+      const rate = Number(item.price || 0);
+      const gstPercent = Number(item.gst_rate || 0);
+      const originalPrice = rate;
+
+      let rowUntaxedTotal = 0;
+      let rowTaxAmount = 0;
+
+      if (biz.gst_enabled) {
+        const rowTotalPaid = qty * rate;
+        rowUntaxedTotal = rowTotalPaid / (1 + gstPercent / 100);
+        rowTaxAmount = rowTotalPaid - rowUntaxedTotal;
+      } else {
+        rowUntaxedTotal = qty * rate;
+        rowTaxAmount = 0;
+      }
+
+      untaxedSubtotal += rowUntaxedTotal;
+      totalGstAmount += rowTaxAmount;
+
+      return `
+        <tr>
+          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500;">
+            ${index + 1}
+          </td>
+          <td style="border: 1px solid #000000; padding: 10px 8px; text-align: left; font-size: 11px; font-weight: 500; line-height: 1.4; color: #1e293b;">
+            ${escapeHtml(item.product_name)}
+          </td>
+          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500; white-space: nowrap;">
+            ${qty.toFixed(2)} Pcs
+          </td>
+          <td style="border: 1px solid #000000; padding: 10px 6px; text-align: center; font-size: 11px; font-weight: 500;">
+            ${formatMoney(originalPrice)}
+          </td>
+          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500; line-height: 1.25;">
+            0%
+          </td>
+          ${
+            biz.gst_enabled
+              ? `
+              <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500;">
+                ${gstPercent.toFixed(1)}
+              </td>
+            `
+              : ''
+          }
+          <td style="border: 1px solid #000000; padding: 10px 8px; text-align: right; font-size: 11px; font-weight: 600; color: #1e293b;">
+            ${C} ${formatMoney(rowUntaxedTotal)}
+          </td>
+        </tr>
+      `;
+    });
+
+    let allRowsHtml = rowsHtmlList.join('');
+    const minRows = 8;
+    if (invoice.items.length < minRows) {
+      const emptyRowsCount = minRows - invoice.items.length;
+      for (let i = 0; i < emptyRowsCount; i++) {
+        allRowsHtml += `
+          <tr style="height: 38px;">
+            <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
+            <td style="border: 1px solid #000000; padding: 10px 8px; text-align: left; font-size: 11px;"></td>
+            <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
+            <td style="border: 1px solid #000000; padding: 10px 6px; text-align: center; font-size: 11px;"></td>
+            <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
+            ${
+              biz.gst_enabled
+                ? `
+                <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
+              `
+                : ''
+            }
+            <td style="border: 1px solid #000000; padding: 10px 8px; text-align: right; font-size: 11px;"></td>
+          </tr>
+        `;
+      }
+    }
+
+    const halfGst = totalGstAmount / 2;
+    const displayUntaxed = biz.gst_enabled ? untaxedSubtotal : invoice.subtotal;
+
+    const template = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8" />
+        <title>Invoice - ${invoice.invoice_number}</title>
+        <style>
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+          @page {
+            size: A4;
+            margin: 0;
+          }
+
+          * {
+            box-sizing: border-box;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          body {
+            margin: 0;
+            background: #ffffff;
+            font-family: 'Inter', sans-serif;
+            color: #1e293b;
+          }
+
+          .page {
+            width: 210mm;
+            min-height: 297mm;
+            margin: auto;
+            background: #ffffff;
+            padding: 15mm;
+          }
+
+          table {
+            border-collapse: collapse;
+          }
+
+          @media print {
+            body {
+              background: #ffffff !important;
+            }
+            .page {
+              margin: 0 !important;
+              padding: 10mm !important;
+              box-shadow: none !important;
+            }
+          }
+        </style>
+      </head>
+      <body>
+
+      <div class="page">
+
+        <!-- HEADER -->
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+          <tr>
+            <td style="width: 40%; vertical-align: top; border: none !important; padding: 0;">
+              ${
+                biz.logo_url
+                  ? `<img src="${biz.logo_url}" style="max-height: 70px; max-width: 180px; object-fit: contain; display: block;" />`
+                  : ''
+              }
+            </td>
+            <td style="width: 60%; text-align: right; vertical-align: top; border: none !important; padding: 0; line-height: 1.45;">
+              <div style="color: #000000; font-size: 22px; font-weight: 700; margin-bottom: 3px;">
+                ${escapeHtml(biz.business_name || 'P M Nutrition')}
+              </div>
+              <div style="font-size: 10.5px; color: #334155; font-weight: 500;">
+                ${companyAddressVal}
+              </div>
+              ${
+                biz.phone
+                  ? `
+                  <div style="font-size: 10.5px; color: #334155; font-weight: 700; margin-top: 2px;">
+                    MO: ${escapeHtml(biz.phone)}
+                  </div>
+                `
+                  : ''
+              }
+              ${
+                biz.email
+                  ? `
+                  <div style="font-size: 10.5px; color: #334155; font-weight: 700; margin-top: 2px;">
+                    Email: ${escapeHtml(biz.email)}
+                  </div>
+                `
+                  : ''
+              }
+              ${
+                biz.pan_number
+                  ? `
+                  <div style="font-size: 10.5px; color: #334155; font-weight: 700; margin-top: 2px;">
+                    PAN: ${escapeHtml(biz.pan_number)}
+                  </div>
+                `
+                  : ''
+              }
+              ${
+                biz.gst_enabled && biz.gstin
+                  ? `
+                  <div style="font-size: 10.5px; color: #334155; font-weight: 700; margin-top: 2px;">
+                    GSTIN: ${escapeHtml(biz.gstin)}
+                  </div>
+                `
+                  : ''
+              }
+            </td>
+          </tr>
+        </table>
+
+        <!-- CUSTOMER & INVOICE METADATA BOX (Strict Bordered Box) -->
+        <table style="width: 100%; border: 1.5px solid #000000; border-collapse: collapse; margin-bottom: 20px;">
+          <tr>
+            <!-- Customer Column -->
+            <td style="width: 58%; border: 1.5px solid #000000 !important; padding: 10px 12px; vertical-align: top; font-size: 11px; line-height: 1.5; color: #1e293b;">
+              <div style="font-weight: 700; font-size: 12.5px; margin-bottom: 2px; color: #000000; text-transform: lowercase;">
+                ${escapeHtml(invoice.customer_name)}
+              </div>
+              ${
+                invoice.customer_phone
+                  ? `
+                  <div style="font-weight: 700; color: #000000; margin-bottom: 2px;">
+                    ${escapeHtml(invoice.customer_phone)}
+                  </div>
+                `
+                  : ''
+              }
+              ${
+                invoice.customer_address
+                  ? `
+                  <div style="font-weight: 400; color: #334155; margin-bottom: 2px; white-space: pre-line;">
+                    ${escapeHtml(invoice.customer_address)}
+                  </div>
+                `
+                  : ''
+              }
+              ${
+                invoice.customer_phone
+                  ? `
+                  <div style="font-weight: 400; color: #334155;">
+                    Mobile: +91 ${escapeHtml(
+                      invoice.customer_phone.replace(/^\+?91\s*/, '')
+                    )}
+                  </div>
+                `
+                  : ''
+              }
+            </td>
+            <!-- Invoice Meta Column -->
+            <td style="width: 42%; border: 1.5px solid #000000 !important; padding: 10px 12px; vertical-align: top; font-size: 11.5px; line-height: 1.6; color: #1e293b;">
+              <div>
+                <strong>Invoice No:</strong>
+                #${escapeHtml(invoice.invoice_number)}
+              </div>
+              <div>
+                <strong>Date:</strong>
+                ${escapeHtml(invoice.date)}
+              </div>
+              <div>
+                <strong>Payment:</strong>
+                ${escapeHtml(invoice.payment_mode)}
+              </div>
+            </td>
+          </tr>
+        </table>
+
+        <!-- ITEMS TABLE -->
+        <table style="width: 100%; border: 1.5px solid #000000; border-collapse: collapse; margin-bottom: 18px;">
+          <thead>
+            <tr style="background-color: #ffffff;">
+              <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 4%; color: #334155;">#</th>
+              <th style="border: 1.5px solid #000000 !important; padding: 8px 8px; font-size: 10px; font-weight: 700; text-align: left; width: 54%; color: #334155;">DESCRIPTION</th>
+              <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 10%; color: #334155;">QUANTITY</th>
+              <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: right; width: 9%; color: #334155;">PRICE</th>
+              <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 8%; color: #334155;">DISC.%</th>
+              ${
+                biz.gst_enabled
+                  ? `
+                  <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 5%; color: #334155;">GST</th>
+                `
+                  : ''
+              }
+              <th style="border: 1.5px solid #000000 !important; padding: 8px 6px; font-size: 10px; font-weight: 700; text-align: right; width: 10%; color: #334155; line-height: 1.2;">TOTAL<br>PRICE</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${allRowsHtml}
+          </tbody>
+        </table>
+
+        <!-- TOTAL & SUMMARY SECTION -->
+        <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+          <tr>
+            <!-- Amount in Words (Left) -->
+            <td style="width: 55%; vertical-align: top; padding-right: 20px; border: none !important;">
+              <div style="font-size: 11.5px; font-weight: 700; line-height: 1.6; color: #000000;">
+                Total (In Words): Rupees ${escapeHtml(numberToWords(invoice.grand_total))} Only
+              </div>
+            </td>
+            <!-- Summary Table (Right) -->
+            <td style="width: 45%; vertical-align: top; padding: 0; border: none !important;">
+              <table style="width: 100%; border: 1.5px solid #000000; border-collapse: collapse;">
+                <tr>
+                  <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; font-weight: 500; color: #475569;">Sub Total</td>
+                  <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; text-align: right; font-weight: 700; color: #000000;">
+                    ${C} ${formatMoney(displayUntaxed)}
+                  </td>
+                </tr>
+                ${
+                  biz.gst_enabled
+                    ? `
+                    <tr>
+                      <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; font-weight: 500; color: #475569;">SGST</td>
+                      <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; text-align: right; font-weight: 700; color: #000000;">
+                        ${C} ${formatMoney(halfGst)}
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; font-weight: 500; color: #475569;">CGST</td>
+                      <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; text-align: right; font-weight: 700; color: #000000;">
+                        ${C} ${formatMoney(halfGst)}
+                      </td>
+                    </tr>
+                  `
+                    : ''
+                }
+                <tr style="font-weight: 800; font-size: 12.5px; color: #000000;">
+                  <td style="border: 1.5px solid #000000 !important; padding: 8px 10px; font-weight: 800;">Total</td>
+                  <td style="border: 1.5px solid #000000 !important; padding: 8px 10px; text-align: right; font-weight: 800; color: #000000;">
+                    ${C} ${formatMoney(invoice.grand_total)}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+
+        <!-- TERMS AND SIGNATURE FOOTER -->
+        <table style="width: 100%; border-collapse: collapse; margin-top: 40px;">
+          <tr>
+            <td style="width: 100%; vertical-align: top; border: none !important; font-size: 11px; color: #4b5563; line-height: 1.6; padding: 0;">
+              ${
+                biz.terms_and_conditions
+                  ? `
+                  <div style="margin-bottom: 12px;">
+                    <strong style="color: #111827;">Terms & Conditions:</strong><br>
+                    <span style="font-size: 9.5px; color: #4b5563;">${escapeHtml(
+                      biz.terms_and_conditions
+                    ).replace(/\n/g, '<br>')}</span>
+                  </div>
+                `
+                  : ''
+              }
+              <div style="display: flex; gap: 15px; margin-top: 5px;">
+                ${
+                  biz.whatsapp_number
+                    ? `
+                    <div style="display: flex; align-items: center; gap: 4px; color: #000000; font-weight: 600; font-size: 10.5px;">
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="color: #25D366;"><path d="M12.004 2C6.51 2 2.014 6.5 2.014 12c0 2.13.67 4.19 1.9 5.92L2.03 22l4.22-1.1c1.66.9 3.52 1.37 5.75 1.37 5.49 0 9.99-4.5 9.99-10S17.5 2 12.004 2zm0 18.3c-1.92 0-3.66-.5-5.17-1.46l-.37-.22-2.52.66.68-2.46-.24-.38c-1.05-1.68-1.6-3.66-1.6-5.71 0-4.65 3.79-8.44 8.44-8.44 4.65 0 8.44 3.79 8.44 8.44s-3.79 8.44-8.44 8.44zM16.5 13.5c-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.54.12-.16.24-.62.79-.76.95-.14.16-.28.18-.52.06-.24-.12-1.02-.37-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.3-.74-1.79-.2-.48-.38-.41-.54-.42H8.76c-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.33.98 2.49c.12.16 1.69 2.58 4.1 3.62.58.25 1.02.4 1.37.51.58.18 1.1.16 1.52.1.47-.07 1.44-.59 1.64-1.15.2-.56.2-1.03.14-1.13-.06-.1-.22-.16-.46-.28z"/></svg>
+                      <span>+${escapeHtml(biz.whatsapp_number)}</span>
+                    </div>
+                  `
+                    : ''
+                }
+                ${
+                  biz.instagram_id
+                    ? `
+                    <div style="display: flex; align-items: center; gap: 4px; color: #000000; font-weight: 600; font-size: 10.5px;">
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" style="color: #E1306C;"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+                      <span>@${escapeHtml(biz.instagram_id)}</span>
+                    </div>
+                  `
+                    : ''
+                }
+              </div>
+            </td>
+          </tr>
+        </table>
+
+      </div>
+
+      <script>
+        window.onload = function() {
+          window.print();
+          setTimeout(function() { window.close(); }, 500);
+        }
+      </script>
+      </body>
+      </html>
+    `;
+
+    const printWin = window.open('', '_blank');
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(template);
+      printWin.document.close();
     }
   };
 
-  // ── Logout ──
-  const handleLogout = async () => {
-    await fetch('/api/logout', { method: 'POST' });
-    setLoggedIn(false);
-    setBusiness(null);
-    setDashboard(null);
-    setCode('');
-    setNeonUrl('');
+  const copyInvoicePlainText = (inv: OfflineInvoice) => {
+    const lines = [
+      `--- INBILL OFFLINE BILL ---`,
+      `Invoice No: ${inv.invoice_number}`,
+      `Date: ${inv.date}`,
+      `Customer Name: ${inv.customer_name}`,
+      inv.customer_phone ? `Phone No: ${inv.customer_phone}` : '',
+      `Payment Mode: ${inv.payment_mode}`,
+      `Items:`,
+      ...inv.items.map((item, idx) => `${idx + 1}. ${item.product_name} | Qty: ${item.quantity} | Rate: ${profile.currency_symbol}${item.price} | GST: ${item.gst_rate}%`),
+      `Subtotal: ${profile.currency_symbol}${Math.round(inv.subtotal)}`,
+      `GST Tax: ${profile.currency_symbol}${Math.round(inv.total_gst)}`,
+      `Grand Total: ${profile.currency_symbol}${inv.grand_total}`,
+    ].filter(Boolean);
+
+    navigator.clipboard.writeText(lines.join('\n'));
+    showToast(`Invoice #${inv.invoice_number} copied for Desktop!`, 'success');
   };
 
-  // ── Dashboard ──
-  const loadDashboard = useCallback(async () => {
-    setDashLoading(true);
-    try {
-      const r = await fetch('/api/dashboard');
-      if (r.ok) {
-        const d = await r.json();
-        setDashboard(d);
-        setBusiness({ name: d.profile.business_name, short: d.profile.business_short, currency: d.profile.currency_symbol });
-      }
-    } catch { /* silent */ }
-    setDashLoading(false);
-  }, []);
+  const handleWhatsAppShare = (inv: OfflineInvoice) => {
+    printInvoice(inv, profile);
+    showToast('PDF print opened! Redirecting to WhatsApp...', 'success');
 
-  // ── Inventory ──
-  const loadProducts = useCallback(async (q = '') => {
-    setProdLoading(true);
-    try {
-      const r = await fetch(`/api/inventory?q=${encodeURIComponent(q)}`);
-      if (r.ok) { const d = await r.json(); setProducts(d.products || []); }
-    } catch { /* silent */ }
-    setProdLoading(false);
-  }, []);
+    const cleanPhone = inv.customer_phone.replace(/\D/g, '');
+    const number = cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone;
+    const msg = `Hi ${inv.customer_name},\nHere is your invoice *#${inv.invoice_number}* from *${profile.business_name}*.\n\n*Amount Due:* ${profile.currency_symbol}${inv.grand_total}\n*Payment Mode:* ${inv.payment_mode}\n\n📎 *I have downloaded your PDF Bill. Tap the paperclip attachment icon on your screen and select it to view!*`;
+    
+    setTimeout(() => {
+      window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
+    }, 1500);
+  };
 
-  // ── Parties ──
-  const loadParties = useCallback(async () => {
-    setPartyLoading(true);
-    try {
-      const r = await fetch('/api/parties');
-      if (r.ok) { const d = await r.json(); setParties(d.parties || []); }
-    } catch { /* silent */ }
-    setPartyLoading(false);
-  }, []);
+  const handleDeleteInvoice = (invNo: string) => {
+    if (!confirm('Are you sure you want to delete this invoice record from history?')) return;
+    const updated = history.filter(item => item.invoice_number !== invNo);
+    setHistory(updated);
+    localStorage.setItem('inbill_offline_invoices', JSON.stringify(updated));
+    setSelectedInvoice(null);
+    showToast('Invoice deleted from history', 'info');
+  };
 
-  useEffect(() => {
-    if (!loggedIn) return;
-    if (tab === 'home' && !dashboard) loadDashboard();
-    if (tab === 'inventory' && products.length === 0) loadProducts();
-    if (tab === 'parties' && parties.length === 0) loadParties();
-  }, [tab, loggedIn, dashboard, products.length, parties.length, loadDashboard, loadProducts, loadParties]);
+  const filteredHistory = history.filter(inv => {
+    const q = searchQuery.toLowerCase();
+    return inv.customer_name.toLowerCase().includes(q) || inv.invoice_number.toLowerCase().includes(q);
+  });
 
-  const C = business?.currency || '₹';
+  const currencySymbol = profile.currency_symbol || '₹';
 
-  // ═══════ CHECKING AUTH STATE ═══════
-  if (checking) return (
-    <div className="loading-center">
-      <div className="spinner" />
-      <p>Connecting...</p>
-    </div>
-  );
-
-  // ═══════ LOGIN SCREEN ═══════
-  if (!loggedIn) return (
-    <div className="login-container">
-      {scanning && (
-        <div className="scanner-modal">
-          <div style={{ color: 'white', fontSize: '18px', fontWeight: 900, marginBottom: '24px' }}>Scan Pairing QR Code</div>
-          <div className="scanner-viewfinder">
-            <div className="scanner-laser" />
-            <div id="qr-reader" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          </div>
-          
-          {scannerFeedback ? (
-            <div style={{
-              background: 'rgba(239, 68, 68, 0.95)',
-              color: 'white',
-              fontSize: '12px',
-              fontWeight: 700,
-              padding: '10px 16px',
-              borderRadius: '8px',
-              marginTop: '20px',
-              textAlign: 'center',
-              maxWidth: '280px',
-              boxShadow: '0 8px 16px rgba(0,0,0,0.3)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              animation: 'pulse 1.5s infinite'
-            }}>
-              ⚠️ {scannerFeedback}
-            </div>
-          ) : (
-            <p style={{ color: 'var(--slate-400)', fontSize: '13px', fontWeight: 600, marginTop: '24px', textAlign: 'center', maxWidth: '280px' }}>
-              Point your camera at your Desktop App Settings → Mobile tab QR code
-            </p>
-          )}
-
-          <button 
-            className="btn-connect" 
-            style={{ marginTop: '32px', maxWidth: '200px', background: 'var(--slate-800)', border: '1px solid var(--slate-700)' }}
-            onClick={() => stopQRScanner()}
-          >
-            Cancel Scan
-          </button>
+  return (
+    <div className="app-body">
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          top: '24px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          background: 'rgba(15, 23, 42, 0.95)',
+          backdropFilter: 'blur(12px)',
+          border: '1.5px solid rgba(255, 255, 255, 0.15)',
+          padding: '12px 24px',
+          borderRadius: '16px',
+          boxShadow: '0 10px 30px rgba(0, 0, 0, 0.25)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          color: '#ffffff',
+          fontWeight: 800,
+          fontSize: '12px',
+          whiteSpace: 'nowrap',
+          animation: 'slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}>
+          {toast.type === 'success' && <span style={{ color: '#10b981', fontSize: '15px', fontWeight: 900 }}>✓</span>}
+          {toast.type === 'error' && <span style={{ color: '#ef4444', fontSize: '15px', fontWeight: 900 }}>✗</span>}
+          {toast.type === 'info' && <span style={{ color: '#3b82f6', fontSize: '15px', fontWeight: 900 }}>ℹ</span>}
+          <span>{toast.message}</span>
         </div>
       )}
-
-      <div className="login-card">
-        <div className="login-logo">IB</div>
-        <h1 className="login-title">InBill Mobile</h1>
-        <p className="login-subtitle">Connect instantly via QR or enter credentials manually</p>
-
-        {loginError && <div className="login-error">{loginError}</div>}
-
-        <button className="btn-scan-qr" onClick={startQRScanner}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M7 7h.01M17 7h.01M7 17h.01M17 17h.01"/><path d="M12 7v10M7 12h10"/></svg>
-          Scan Pairing QR Code
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '8px 0 20px' }}>
-          <div style={{ flex: 1, height: '1px', background: 'var(--slate-100)' }} />
-          <span style={{ fontSize: '11px', fontWeight: 800, color: 'var(--slate-300)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>or enter manual</span>
-          <div style={{ flex: 1, height: '1px', background: 'var(--slate-100)' }} />
-        </div>
-
-        <label className="form-label">6-Digit Access Code</label>
-        <input
-          className="form-input code-input"
-          type="text"
-          placeholder="• • • • • •"
-          value={code}
-          onChange={e => {
-            const val = e.target.value;
-            // Check if user pasted the raw QR code JSON payload
-            if (val.trim().startsWith('{')) {
-              try {
-                const parsed = JSON.parse(val.trim());
-                if (parsed.code && parsed.cloud_url) {
-                  playBeep();
-                  setCode(parsed.code);
-                  setNeonUrl(parsed.cloud_url);
-                  handleScanConnect(parsed.code, parsed.cloud_url);
-                  return;
-                }
-              } catch (err) {
-                console.error("Manual paste parse error:", err);
-              }
-            }
-            // Check if user pasted the pairings link URL
-            if (val.trim().includes('code=') && val.trim().includes('url=')) {
-              try {
-                const uStr = val.trim().startsWith('http') ? val.trim() : 'https://dummy.com/?' + val.trim();
-                const u = new URL(uStr);
-                const qCode = u.searchParams.get('code');
-                const qUrl = u.searchParams.get('url');
-                if (qCode && qUrl) {
-                  playBeep();
-                  setCode(qCode);
-                  setNeonUrl(qUrl);
-                  handleScanConnect(qCode, qUrl);
-                  return;
-                }
-              } catch (err) {
-                console.error("Manual paste URL parse error:", err);
-              }
-            }
-            setCode(val.replace(/\D/g, '').slice(0, 6));
-          }}
-          inputMode="numeric"
-        />
-
-        <label className="form-label">Neon Cloud URL</label>
-        <input
-          className="form-input"
-          type="url"
-          placeholder="postgresql://user:pass@host/db"
-          value={neonUrl}
-          onChange={e => setNeonUrl(e.target.value)}
-        />
-
-        <button className="btn-connect" onClick={handleConnect} disabled={connecting}>
-          {connecting ? 'Connecting...' : 'Connect to Business'}
-        </button>
-      </div>
-    </div>
-  );
-
-  // ═══════ APP (LOGGED IN) ═══════
-  return (
-    <>
-      {/* Header */}
+      <style>{`
+        @keyframes slideDown {
+          from { transform: translate(-50%, -20px); opacity: 0; }
+          to { transform: translate(-50%, 0); opacity: 1; }
+        }
+      `}</style>
+      
+      {/* Premium System Header */}
       <header className="app-header">
-        <div className="app-header-logo">{business?.short || 'IB'}</div>
-        <h1>{business?.name || 'InBill'}</h1>
-        <button className="app-header-logout" onClick={handleLogout}>Logout</button>
+        <div className="app-header-logo">IB</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h1>{profile.business_name}</h1>
+          <span style={{ fontSize: '9px', fontWeight: 800, color: 'var(--indigo-500)', letterSpacing: '1px', textTransform: 'uppercase', display: 'block', marginTop: '2px' }}>
+            Emergency Bill Maker
+          </span>
+        </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {tab === 'new' && (
+            <button className="app-header-logout" onClick={handleLoadDemoData} style={{ fontSize: '10px', padding: '6px 12px', fontWeight: 900, color: 'var(--indigo-600)' }}>
+              {demoSuccess ? 'LOADED ✓' : '⚡ DEMO BILL'}
+            </button>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: 'var(--emerald-50)', border: '1px solid rgba(16,185,129,0.2)', padding: '5px 10px', borderRadius: '8px' }}>
+            <span style={{ width: '6px', height: '6px', backgroundColor: '#10b981', borderRadius: '50%', display: 'inline-block' }}></span>
+            <span style={{ fontSize: '9px', fontWeight: 900, color: '#10b981' }}>OFFLINE</span>
+          </div>
+        </div>
       </header>
 
-      {/* Body */}
-      <main className="app-body">
-        {tab === 'home' && (
-          dashLoading && !dashboard ? (
-            <div className="loading-center"><div className="spinner" /><p>Loading Dashboard...</p></div>
-          ) : dashboard ? (
-            <>
-              {/* Metrics */}
-              <div className="metrics-grid">
-                <div className="metric-card green">
-                  <div className="label">To Receive</div>
-                  <div className="value">{fmt(dashboard.receivable, C)}</div>
-                  <div className="sub">Customer Balances</div>
+      {/* Main viewport spacing */}
+      <main style={{ maxWidth: '460px', margin: '0 auto', padding: '16px' }}>
+
+        {/* ═══════════════════════════════════════════════════
+            TAB 1: NEW BILL
+            ═══════════════════════════════════════════════════ */}
+        {tab === 'new' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            
+            {/* Multi-step Stepper Card */}
+            <div className="section-card" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', marginBottom: 0 }}>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setWizardStep(1)}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: wizardStep >= 1 ? 'var(--indigo-600)' : 'var(--slate-100)', color: wizardStep >= 1 ? '#ffffff' : 'var(--slate-500)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>
+                  {wizardStep > 1 ? '✓' : '1'}
                 </div>
-                <div className="metric-card red">
-                  <div className="label">To Pay</div>
-                  <div className="value">{fmt(dashboard.payable, C)}</div>
-                  <div className="sub">Supplier Balances</div>
-                </div>
-                <div className="metric-card blue">
-                  <div className="label">Bills Today</div>
-                  <div className="value">{dashboard.today.salesCount}</div>
-                  <div className="sub">Transactions</div>
-                </div>
-                <div className="metric-card green">
-                  <div className="label">Today&apos;s Sales</div>
-                  <div className="value">{fmt(dashboard.today.salesTotal, C)}</div>
-                  <div className="sub">Revenue</div>
-                </div>
+                <span style={{ fontSize: '8px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px', color: wizardStep === 1 ? 'var(--indigo-600)' : 'var(--slate-400)' }}>Customer</span>
               </div>
 
-              {/* Cashflow */}
-              <div className="cashflow-strip">
-                <div className="cashflow-item cash">
-                  <div className="cl">Cash</div>
-                  <div className="cv">{fmt(dashboard.today.cash, C)}</div>
+              <div style={{ flex: 1, height: '2px', backgroundColor: wizardStep >= 2 ? 'var(--indigo-600)' : 'var(--slate-200)', margin: '0 8px' }}></div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setWizardStep(2)}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: wizardStep >= 2 ? 'var(--indigo-600)' : 'var(--slate-100)', color: wizardStep >= 2 ? '#ffffff' : 'var(--slate-500)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>
+                  {wizardStep > 2 ? '✓' : '2'}
                 </div>
-                <div className="cashflow-item digital">
-                  <div className="cl">UPI</div>
-                  <div className="cv">{fmt(dashboard.today.digital, C)}</div>
-                </div>
-                <div className="cashflow-item credit">
-                  <div className="cl">Credit</div>
-                  <div className="cv">{fmt(dashboard.today.credit, C)}</div>
-                </div>
+                <span style={{ fontSize: '8px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px', color: wizardStep === 2 ? 'var(--indigo-600)' : 'var(--slate-400)' }}>Products</span>
               </div>
 
-              {/* Recent Sales */}
-              <div className="section-card">
-                <div className="section-header">
-                  <h3>Recent Sales</h3>
-                  <p>Last 5 transactions</p>
+              <div style={{ flex: 1, height: '2px', backgroundColor: wizardStep >= 3 ? 'var(--indigo-600)' : 'var(--slate-200)', margin: '0 8px' }}></div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer' }} onClick={() => setWizardStep(3)}>
+                <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: wizardStep === 3 ? 'var(--indigo-600)' : 'var(--slate-100)', color: wizardStep === 3 ? '#ffffff' : 'var(--slate-500)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 900 }}>
+                  3
                 </div>
-                {dashboard.recentSales?.length > 0 ? dashboard.recentSales.map(s => (
-                  <div key={s.id} className="list-item">
-                    <div style={{ minWidth: 0 }}>
-                      <div className="name">#{s.invoice_number}</div>
-                      <div className="detail">{s.customer_name || 'Counter Sale'} • {new Date(s.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>
-                    </div>
-                    <div>
-                      <div className="amount" style={{ color: 'var(--slate-900)' }}>{fmt(s.total_amount, C)}</div>
-                      <div className={`badge ${s.payment_mode === 'Cash' ? 'badge-green' : s.payment_mode === 'Credit' ? 'badge-amber' : 'badge-blue'}`}>{s.payment_mode}</div>
-                    </div>
-                  </div>
-                )) : (
-                  <div className="empty-state"><p>No recent sales</p></div>
-                )}
+                <span style={{ fontSize: '8px', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.5px', color: wizardStep === 3 ? 'var(--indigo-600)' : 'var(--slate-400)' }}>Review</span>
               </div>
-
-              {/* Low Stock Alerts */}
-              {dashboard.lowStock?.length > 0 && (
-                <div className="section-card">
-                  <div className="section-header">
-                    <h3>⚠️ Low Stock</h3>
-                    <p>{dashboard.lowStock.length} items need restocking</p>
-                  </div>
-                  {dashboard.lowStock.map((item, i) => (
-                    <div key={i} className="list-item">
-                      <div className="name">{item.product_name}</div>
-                      <span className="stock-pill low">{item.quantity} left</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </>
-          ) : null
-        )}
-
-        {tab === 'inventory' && (
-          <>
-            <div className="search-bar">
-              <input
-                placeholder="Search products, brands, barcodes..."
-                value={prodSearch}
-                onChange={e => { setProdSearch(e.target.value); loadProducts(e.target.value); }}
-              />
             </div>
-            {prodLoading ? (
-              <div className="loading-center"><div className="spinner" /><p>Loading Inventory...</p></div>
-            ) : products.length > 0 ? (
-              <div className="section-card">
-                {products.map(p => (
-                  <div key={p.id} className="list-item">
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div className="name">{p.product_name}</div>
-                      <div className="detail">
-                        {p.brand && `${p.brand} • `}{p.category && `${p.category} • `}{p.unit}
-                      </div>
-                    </div>
-                    <div style={{ textAlign: 'right' }}>
-                      <div className="amount">{fmt(p.selling_price, C)}</div>
-                      <span className={`stock-pill ${p.quantity <= (p.min_stock_alert || 0) && p.min_stock_alert > 0 ? 'low' : 'ok'}`}>
-                        {p.quantity} {p.unit}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state"><p>No products found</p></div>
-            )}
-          </>
-        )}
 
-        {tab === 'sale' && (
-          <div className="new-sale-workflow" style={{ display: 'flex', flexDirection: 'column', gap: '16px', paddingBottom: '24px' }}>
-            <h2 className="section-title" style={{ margin: 0 }}>New Invoice</h2>
+            {/* WIZARD STEP 1: Customer Info */}
+            {wizardStep === 1 && (
+              <div className="section-card" style={{ marginBottom: 0 }}>
+                <div className="section-header" style={{ padding: '0 0 14px 0', borderBottom: '1px solid var(--slate-100)', marginBottom: '16px' }}>
+                  <h3 style={{ margin: 0 }}>Customer coordinates</h3>
+                  <p style={{ margin: '2px 0 0 0' }}>Provide client contact data for the emergency invoice</p>
+                </div>
 
-            {saleError && (
-              <div className="error-banner" style={{ background: 'var(--rose-50)', color: 'var(--rose-600)', padding: '12px', borderRadius: '8px', border: '1px solid var(--rose-100)', fontSize: '0.875rem', fontWeight: 600 }}>
-                {saleError}
-              </div>
-            )}
+                <div className="form-group">
+                  <label className="form-label">Customer Name</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Counter Sale / Rahul Sharma"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                  />
+                </div>
 
-            {/* Customer Details Card */}
-            <div className="section-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div className="segmented-control" style={{ display: 'flex', gap: '8px', background: 'var(--slate-100)', padding: '4px', borderRadius: '8px' }}>
-                <button 
-                  className={`btn-seg ${saleCustomerType === 'counter' ? 'active' : ''}`}
-                  style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '6px', background: saleCustomerType === 'counter' ? 'white' : 'transparent', color: 'var(--slate-800)', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', boxShadow: saleCustomerType === 'counter' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.2s' }}
-                  onClick={() => setSaleCustomerType('counter')}
-                >
-                  Counter Sale
-                </button>
-                <button 
-                  className={`btn-seg ${saleCustomerType === 'linked' ? 'active' : ''}`}
-                  style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '6px', background: saleCustomerType === 'linked' ? 'white' : 'transparent', color: 'var(--slate-800)', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', boxShadow: saleCustomerType === 'linked' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.2s' }}
+                <div className="form-group">
+                  <label className="form-label">Phone Number</label>
+                  <input
+                    type="tel"
+                    className="form-input"
+                    placeholder="e.g. 9876543210"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                  />
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '24px' }}>
+                  <label className="form-label">Delivery Address (Optional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. Sector 14, Vashi"
+                    value={customerAddress}
+                    onChange={(e) => setCustomerAddress(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  className="btn-connect"
                   onClick={() => {
-                    setSaleCustomerType('linked');
-                    if (!parties.length) loadParties();
+                    if (!customerName.trim()) setCustomerName('Counter Sale');
+                    setWizardStep(2);
                   }}
+                  style={{ width: '100%', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
                 >
-                  Linked Customer
+                  NEXT: CART PRODUCTS →
                 </button>
               </div>
+            )}
 
-              {saleCustomerType === 'counter' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <input 
-                    type="text" 
-                    placeholder="Customer Name (Optional)" 
-                    className="search-input" 
-                    style={{ margin: 0 }}
-                    value={saleCustomerName} 
-                    onChange={e => setSaleCustomerName(e.target.value)} 
-                  />
-                  <input 
-                    type="tel" 
-                    placeholder="Customer Phone (Optional)" 
-                    className="search-input" 
-                    style={{ margin: 0 }}
-                    value={saleCustomerPhone} 
-                    onChange={e => setSaleCustomerPhone(e.target.value)} 
-                  />
-                  <input 
-                    type="text" 
-                    placeholder="Customer Address (Optional)" 
-                    className="search-input" 
-                    style={{ margin: 0 }}
-                    value={saleCustomerAddress} 
-                    onChange={e => setSaleCustomerAddress(e.target.value)} 
-                  />
-                </div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--slate-500)' }}>Select Customer</label>
-                  <select 
-                    className="search-input" 
-                    style={{ margin: 0, width: '100%', background: 'white' }}
-                    value={salePartyId || ''} 
-                    onChange={e => {
-                      const pId = Number(e.target.value) || null;
-                      setSalePartyId(pId);
-                      const selected = parties.find(p => p.id === pId);
-                      if (selected) {
-                        setSaleCustomerName(selected.name);
-                        setSaleCustomerPhone(selected.phone || '');
-                        setSaleCustomerAddress(selected.address || '');
-                      } else {
-                        setSaleCustomerName('');
-                        setSaleCustomerPhone('');
-                        setSaleCustomerAddress('');
-                      }
-                    }}
-                  >
-                    <option value="">-- Choose Customer --</option>
-                    {parties.filter(p => p.type === 'Customer').map(p => (
-                      <option key={p.id} value={p.id}>{p.name} {p.phone ? `(${p.phone})` : ''}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
+            {/* WIZARD STEP 2: Cart Items */}
+            {wizardStep === 2 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                
+                <div className="section-card" style={{ marginBottom: 0 }}>
+                  <div className="section-header" style={{ padding: '0 0 14px 0', borderBottom: '1px solid var(--slate-100)', marginBottom: '16px', display: 'flex', justifyContent: 'between', alignItems: 'center' }}>
+                    <div style={{ flex: 1 }}>
+                      <h3 style={{ margin: 0 }}>Products in Cart</h3>
+                      <p style={{ margin: '2px 0 0 0' }}>Add items and quantities to invoice</p>
+                    </div>
+                    <span className="badge badge-blue">Rows: {cart.length}</span>
+                  </div>
 
-            {/* Product Searching & Addition */}
-            <div className="section-title" style={{ margin: '8px 0 0 0' }}>Add Products</div>
-            <div className="search-box" style={{ margin: 0 }}>
-              <input 
-                type="text" 
-                placeholder="Search product name or brand to add..." 
-                className="search-input" 
-                style={{ margin: 0 }}
-                value={saleProductSearch} 
-                onChange={e => setSaleProductSearch(e.target.value)} 
-              />
-            </div>
-
-            {saleProductSearch.trim() !== '' && (
-              <div className="section-card" style={{ maxHeight: '200px', overflowY: 'auto', display: 'flex', flexDirection: 'column', border: '1px solid var(--slate-200)', marginTop: '-8px' }}>
-                {products
-                  .filter(p => p.product_name.toLowerCase().includes(saleProductSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(saleProductSearch.toLowerCase())))
-                  .slice(0, 8)
-                  .map(p => {
-                    const inCart = saleCart.find(item => item.product_id === p.id);
-                    const qtyInCart = inCart ? inCart.quantity : 0;
-                    const avail = p.quantity - qtyInCart;
-                    return (
-                      <div 
-                        key={p.id} 
-                        className="list-item" 
-                        style={{ cursor: 'pointer', padding: '12px', borderBottom: '1px solid var(--slate-50)' }}
-                        onClick={() => {
-                          addToCart(p);
-                          setSaleProductSearch('');
+                  <div style={{ maxHeight: '380px', overflowY: 'auto', paddingRight: '4px' }}>
+                    {cart.map((item, idx) => (
+                      <div
+                        key={item.id}
+                        style={{
+                          backgroundColor: 'var(--slate-50)',
+                          border: '1.5px solid var(--slate-200)',
+                          borderRadius: '16px',
+                          padding: '12px',
+                          marginBottom: '12px',
+                          position: 'relative'
                         }}
                       >
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div className="name" style={{ fontSize: '0.92rem' }}>{p.product_name}</div>
-                          <div className="detail" style={{ fontSize: '0.78rem' }}>{p.brand && `${p.brand} • `}{fmt(p.selling_price, C)}</div>
-                        </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <span className={`stock-pill ${avail <= 0 ? 'low' : 'ok'}`} style={{ fontSize: '0.72rem' }}>
-                            {avail > 0 ? `${avail} ${p.unit} left` : 'Out of stock'}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                          <span style={{ fontSize: '9px', fontWeight: 900, color: 'var(--slate-400)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            Item #{idx + 1}
                           </span>
+                          {cart.length > 1 && (
+                            <button
+                              onClick={() => removeCartRow(item.id)}
+                              style={{ border: 'none', background: 'transparent', color: 'var(--rose-600)', fontSize: '9px', fontWeight: 900, cursor: 'pointer' }}
+                            >
+                              REMOVE
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="form-group" style={{ marginBottom: '8px' }}>
+                          <input
+                            type="text"
+                            className="form-input"
+                            style={{ height: '38px', fontSize: '13px' }}
+                            placeholder="Product description name..."
+                            value={item.product_name}
+                            onChange={(e) => updateCartField(item.id, 'product_name', e.target.value)}
+                          />
+                        </div>
+
+                        <div style={{ marginBottom: '10px' }}>
+                          <input
+                            type="number"
+                            className="form-input"
+                            style={{ height: '38px', fontSize: '13px', textAlign: 'right', fontWeight: 'bold', color: '#10b981', width: '100%' }}
+                            placeholder={`Price (${currencySymbol})`}
+                            value={item.price || ''}
+                            onChange={(e) => updateCartField(item.id, 'price', e.target.value)}
+                          />
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          
+                          {/* Tactile incrementer counter */}
+                          <div style={{ display: 'flex', alignItems: 'center', backgroundColor: '#ffffff', border: '1px solid var(--slate-200)', borderRadius: '8px', height: '32px', overflow: 'hidden' }}>
+                            <button
+                              type="button"
+                              onClick={() => adjustQty(item.id, -1)}
+                              style={{ width: '28px', height: '100%', border: 'none', background: 'var(--slate-50)', color: 'var(--slate-700)', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              -
+                            </button>
+                            <span style={{ padding: '0 10px', fontSize: '12px', fontWeight: 900, minWidth: '24px', textAlign: 'center' }}>
+                              {item.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => adjustQty(item.id, 1)}
+                              style={{ width: '28px', height: '100%', border: 'none', background: 'var(--slate-50)', color: 'var(--slate-700)', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          {profile.gst_enabled ? (
+                            <select
+                              value={item.gst_rate}
+                              onChange={(e) => updateCartField(item.id, 'gst_rate', e.target.value)}
+                              style={{ backgroundColor: '#ffffff', border: '1px solid var(--slate-200)', color: 'var(--indigo-600)', borderRadius: '8px', padding: '6px 12px', fontSize: '11px', fontWeight: 900, outline: 'none' }}
+                            >
+                              {[0, 5, 12, 18, 28].map(r => (
+                                <option key={r} value={r}>{r}% GST</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span style={{ fontSize: '11.5px', fontWeight: 900, color: 'var(--slate-500)' }}>
+                              Total: {currencySymbol}{Math.round(item.price * item.quantity)}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    );
-                  })}
-                {products.filter(p => p.product_name.toLowerCase().includes(saleProductSearch.toLowerCase()) || (p.brand && p.brand.toLowerCase().includes(saleProductSearch.toLowerCase()))).length === 0 && (
-                  <div style={{ padding: '16px', textShadow: 'none', textAlign: 'center', fontSize: '0.85rem', color: 'var(--slate-400)' }}>
-                    No products found matching search
+                    ))}
                   </div>
-                )}
+
+                  <button
+                    className="btn-scan-qr"
+                    onClick={addCartRow}
+                    style={{ margin: '8px 0 0 0', padding: '10px', fontSize: '11px', fontWeight: 900 }}
+                  >
+                    + ADD PRODUCT ROW
+                  </button>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    className="app-header-logout"
+                    onClick={() => setWizardStep(1)}
+                    style={{ flex: 1, height: '46px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    ← BACK
+                  </button>
+                  <button
+                    className="btn-connect"
+                    onClick={() => {
+                      if (cart.some(i => !i.product_name.trim())) {
+                        alert('Please fill in product names for all rows before advancing.');
+                        return;
+                      }
+                      setWizardStep(3);
+                    }}
+                    style={{ flex: 2, height: '46px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    NEXT: SUMMARIZE BILL →
+                  </button>
+                </div>
               </div>
             )}
 
-            {/* Cart Listing */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '12px 0 6px 0' }}>
-              <div className="section-title" style={{ margin: 0 }}>Items in Invoice</div>
-              <div className="segmented-control" style={{ display: 'inline-flex', gap: '2px', background: 'var(--slate-100)', padding: '2px', borderRadius: '6px' }}>
-                <button 
-                  className={`btn-seg ${saleTaxMode === 'exclusive' ? 'active' : ''}`}
-                  style={{ 
-                    padding: '4px 8px', 
-                    border: 'none', 
-                    borderRadius: '4px', 
-                    background: saleTaxMode === 'exclusive' ? 'white' : 'transparent', 
-                    color: saleTaxMode === 'exclusive' ? 'var(--emerald-600)' : 'var(--slate-500)', 
-                    fontWeight: 750, 
-                    cursor: 'pointer', 
-                    fontSize: '10px',
-                    boxShadow: saleTaxMode === 'exclusive' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
-                  }}
-                  onClick={() => setSaleTaxMode('exclusive')}
-                >
-                  GST Excl.
-                </button>
-                <button 
-                  className={`btn-seg ${saleTaxMode === 'inclusive' ? 'active' : ''}`}
-                  style={{ 
-                    padding: '4px 8px', 
-                    border: 'none', 
-                    borderRadius: '4px', 
-                    background: saleTaxMode === 'inclusive' ? 'white' : 'transparent', 
-                    color: saleTaxMode === 'inclusive' ? 'var(--emerald-600)' : 'var(--slate-500)', 
-                    fontWeight: 750, 
-                    cursor: 'pointer', 
-                    fontSize: '10px',
-                    boxShadow: saleTaxMode === 'inclusive' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
-                  }}
-                  onClick={() => setSaleTaxMode('inclusive')}
-                >
-                  GST Incl.
-                </button>
-              </div>
-            </div>
-            {saleCart.length === 0 ? (
-              <div className="empty-state" style={{ padding: '24px', background: 'var(--slate-50)', borderRadius: '12px', border: '1px dashed var(--slate-200)' }}>
-                <p style={{ margin: 0 }}>No products added yet. Use the search bar above to build your invoice.</p>
-              </div>
-            ) : (
-              <div className="section-card" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                {saleCart.map(item => {
-                  const originalProduct = products.find(p => p.id === item.product_id);
-                  const maxStock = originalProduct ? originalProduct.quantity : 9999;
-                  
-                  let basePrice = item.price;
-                  let lineTotal = item.price * item.quantity;
-                  let itemGstAmount = 0;
+            {/* WIZARD STEP 3: Review summary and Print */}
+            {wizardStep === 3 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                
+                <div className="section-card" style={{ marginBottom: 0 }}>
+                  <div className="section-header" style={{ padding: '0 0 14px 0', borderBottom: '1px solid var(--slate-100)', marginBottom: '16px' }}>
+                    <h3 style={{ margin: 0 }}>Bill Review Summary</h3>
+                    <p style={{ margin: '2px 0 0 0' }}>Review amounts and details before generation</p>
+                  </div>
 
-                  if (saleTaxMode === 'inclusive') {
-                    basePrice = item.price / (1 + (item.gst_rate / 100));
-                    itemGstAmount = lineTotal - (basePrice * item.quantity);
-                  } else {
-                    itemGstAmount = (lineTotal * item.gst_rate) / 100;
-                    lineTotal = lineTotal + itemGstAmount;
-                  }
-
-                  return (
-                    <div key={item.product_id} className="list-item" style={{ padding: '12px', alignItems: 'center', borderBottom: '1px solid var(--slate-50)' }}>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div className="name" style={{ fontSize: '0.92rem' }}>{item.product_name}</div>
-                        <div className="detail" style={{ fontSize: '0.78rem' }}>
-                          {saleTaxMode === 'inclusive' ? `${fmt(item.price, C)} (GST Inc. • ${item.gst_rate}%)` : `${fmt(item.price, C)} + ${item.gst_rate}% GST`}
-                        </div>
-                        <div className="detail" style={{ fontWeight: 700, color: 'var(--slate-800)', marginTop: '4px', fontSize: '0.85rem' }}>
-                          Total: {fmt(lineTotal, C)}
-                        </div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <button 
-                          className="btn btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '1rem', fontWeight: 'bold', borderRadius: '6px', border: '1px solid var(--slate-200)', background: 'white' }}
-                          onClick={() => updateCartQty(item.product_id, -1, maxStock)}
-                        >
-                          -
-                        </button>
-                        <span style={{ fontWeight: 700, minWidth: '20px', textAlign: 'center', fontSize: '0.9rem' }}>{item.quantity}</span>
-                        <button 
-                          className="btn btn-secondary" 
-                          style={{ padding: '4px 10px', fontSize: '1rem', fontWeight: 'bold', borderRadius: '6px', border: '1px solid var(--slate-200)', background: 'white' }}
-                          onClick={() => updateCartQty(item.product_id, 1, maxStock)}
-                        >
-                          +
-                        </button>
-                      </div>
+                  <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
+                    <div style={{ flex: 1 }}>
+                      <span className="form-label">Invoice Code</span>
+                      <input
+                        type="text"
+                        className="form-input"
+                        style={{ height: '38px', fontWeight: '900', color: 'var(--indigo-600)' }}
+                        value={invoiceNumber}
+                        onChange={(e) => setInvoiceNumber(e.target.value)}
+                      />
                     </div>
-                  );
-                })}
-
-                {/* Subtotals & Grand Totals */}
-                <div style={{ borderTop: '1px solid var(--slate-100)', padding: '12px 16px 4px 16px', display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: 'var(--slate-600)' }}>
-                  <span>Taxable Subtotal</span>
-                  <span>{fmt(getCartTotals().subtotal, C)}</span>
-                </div>
-                <div style={{ padding: '4px 16px', display: 'flex', justifyContent: 'space-between', fontSize: '0.875rem', color: 'var(--slate-600)' }}>
-                  <span>GST Amount</span>
-                  <span>{fmt(getCartTotals().totalGst, C)}</span>
-                </div>
-                {Number(getCartTotals().roundOff) !== 0 && (
-                  <div style={{ padding: '4px 16px', display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--slate-400)', fontStyle: 'italic' }}>
-                    <span>Round Off</span>
-                    <span>{Number(getCartTotals().roundOff) > 0 ? '+' : ''}{getCartTotals().roundOff}</span>
+                    <div style={{ flex: 1 }}>
+                      <span className="form-label">Invoice Date</span>
+                      <input
+                        type="date"
+                        className="form-input"
+                        style={{ height: '38px' }}
+                        value={invoiceDate}
+                        onChange={(e) => setInvoiceDate(e.target.value)}
+                      />
+                    </div>
                   </div>
-                )}
-                <div style={{ padding: '4px 16px 12px 16px', display: 'flex', justifyContent: 'space-between', fontSize: '1.05rem', fontWeight: 800, color: 'var(--slate-900)' }}>
-                  <span>Invoice Total</span>
-                  <span>{fmt(getCartTotals().total, C)}</span>
-                </div>
-              </div>
-            )}
 
-            {/* Payment & Action Card */}
-            {saleCart.length > 0 && (
-              <div className="section-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '8px' }}>
-                <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--slate-600)' }}>Payment mode</div>
-                <div className="segmented-control" style={{ display: 'flex', gap: '8px', background: 'var(--slate-100)', padding: '4px', borderRadius: '8px' }}>
-                  {['Cash', 'UPI', 'Credit'].map(mode => (
-                    <button 
-                      key={mode}
-                      className={`btn-seg ${salePaymentMode === mode ? 'active' : ''}`}
-                      style={{ flex: 1, padding: '8px', border: 'none', borderRadius: '6px', background: salePaymentMode === mode ? 'white' : 'transparent', color: 'var(--slate-800)', fontWeight: 600, fontSize: '0.875rem', cursor: 'pointer', boxShadow: salePaymentMode === mode ? '0 1px 3px rgba(0,0,0,0.1)' : 'none', transition: 'all 0.2s' }}
-                      onClick={() => {
-                        setSalePaymentMode(mode as any);
-                        if (mode !== 'Credit') {
-                          setSalePaidAmount('');
-                        } else {
-                          setSalePaidAmount('0');
-                        }
-                      }}
-                    >
-                      {mode}
-                    </button>
-                  ))}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                  <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--slate-500)' }}>
-                    Amount Paid ({C})
-                  </label>
-                  <input 
-                    type="number" 
-                    placeholder={`Full Amount: ${fmt(getCartTotals().total, C)}`}
-                    className="search-input" 
-                    style={{ margin: 0 }}
-                    value={salePaidAmount} 
-                    onChange={e => setSalePaidAmount(e.target.value)} 
-                  />
-                </div>
-
-                {salePaymentMode === 'Credit' && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--slate-500)' }}>
-                      Credit Period (Days)
-                    </label>
-                    <input 
-                      type="number" 
-                      placeholder="Credit Days (e.g. 30)" 
-                      className="search-input" 
-                      style={{ margin: 0 }}
-                      value={saleCreditDays} 
-                      onChange={e => setSaleCreditDays(e.target.value)} 
-                    />
+                  <span className="form-label">Payment Mode</span>
+                  <div style={{ display: 'flex', backgroundColor: 'var(--slate-50)', border: '1px solid var(--slate-200)', padding: '4px', borderRadius: '10px', marginBottom: '14px' }}>
+                    {(['Cash', 'UPI', 'Credit'] as const).map(m => (
+                      <button
+                        key={m}
+                        onClick={() => setPaymentMode(m)}
+                        style={{ flex: 1, height: '30px', border: 'none', background: paymentMode === m ? 'var(--indigo-600)' : 'transparent', color: paymentMode === m ? '#ffffff' : 'var(--slate-500)', fontSize: '11px', fontWeight: 900, borderRadius: '8px', cursor: 'pointer', transition: 'all 0.2s' }}
+                      >
+                        {m}
+                      </button>
+                    ))}
                   </div>
-                )}
 
-                <button 
-                  className="btn btn-primary" 
-                  style={{ width: '100%', padding: '14px', borderRadius: '10px', fontSize: '1rem', fontWeight: 800, marginTop: '8px', background: 'var(--emerald-600)', color: 'white', border: 'none', cursor: 'pointer', boxShadow: '0 4px 6px -1px rgba(16, 185, 129, 0.2)' }}
-                  onClick={submitSale}
-                  disabled={saleSubmitting}
+                  {paymentMode === 'Credit' && (
+                    <div className="form-group">
+                      <label className="form-label">Credit Limit Days</label>
+                      <input
+                        type="number"
+                        className="form-input"
+                        value={creditDays}
+                        onChange={(e) => setCreditDays(Number(e.target.value))}
+                      />
+                    </div>
+                  )}
+
+                  {/* Calculations card style */}
+                  <div style={{ backgroundColor: 'var(--slate-50)', border: '1.5px solid var(--slate-200)', borderRadius: '16px', padding: '14px', marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, color: 'var(--slate-500)', marginBottom: '8px' }}>
+                      <span>Subtotal</span>
+                      <span>{currencySymbol}{Math.round(totals.subtotal).toLocaleString('en-IN')}</span>
+                    </div>
+                    {profile.gst_enabled && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, color: 'var(--slate-500)', marginBottom: '8px' }}>
+                        <span>GST Amount Tax</span>
+                        <span style={{ color: 'var(--indigo-500)' }}>+{currencySymbol}{Math.round(totals.totalGst).toLocaleString('en-IN')}</span>
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 950, color: 'var(--slate-900)', borderTop: '1.5px dashed var(--slate-200)', paddingTop: '8px', marginTop: '8px' }}>
+                      <span>Grand Total</span>
+                      <span style={{ color: '#10b981' }}>{currencySymbol}{totals.grandTotal.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+
+                  <div style={{ marginTop: '12px', fontSize: '10.5px', color: 'var(--slate-500)', backgroundColor: 'var(--slate-50)', border: '1.5px solid var(--slate-200)', padding: '10px 14px', borderRadius: '12px', lineHeight: 1.5 }}>
+                    <span style={{ display: 'block', fontSize: '8px', fontWeight: 900, color: 'var(--slate-400)', textTransform: 'uppercase', marginBottom: '2px' }}>Amount in words:</span>
+                    Rupees {numberToWords(totals.grandTotal)} Only
+                  </div>
+                </div>
+
+                <button
+                  className="btn-connect"
+                  onClick={handleDownloadSharePdfOnWhatsApp}
+                  style={{ width: '100%', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px', background: 'linear-gradient(135deg, #059669, #10b981)', boxShadow: '0 6px 20px rgba(16, 185, 129, 0.25)', marginBottom: '8px' }}
                 >
-                  {saleSubmitting ? 'Generating Invoice...' : `Save & Finalize Invoice: ${fmt(getCartTotals().total, C)}`}
+                  📥 DOWNLOAD & SHARE ON WA
+                </button>
+
+                <button
+                  className="btn-connect"
+                  onClick={handleGenerateInvoice}
+                  style={{ width: '100%', height: '52px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px', background: 'linear-gradient(135deg, var(--indigo-600), var(--indigo-700))', boxShadow: '0 6px 20px rgba(79, 70, 229, 0.25)', marginBottom: '8px' }}
+                >
+                  📥 ONLY DOWNLOAD PDF
+                </button>
+
+                <button
+                  className="app-header-logout"
+                  onClick={() => setWizardStep(2)}
+                  style={{ width: '100%', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                >
+                  ← BACK TO PRODUCTS
                 </button>
               </div>
             )}
+
           </div>
         )}
 
-        {tab === 'parties' && (
-          partyLoading ? (
-            <div className="loading-center"><div className="spinner" /><p>Loading Parties...</p></div>
-          ) : parties.length > 0 ? (
-            <div className="section-card">
-              {parties.map(p => (
-                <div key={p.id} className="list-item">
-                  <div style={{ minWidth: 0, flex: 1 }}>
-                    <div className="name">{p.name}</div>
-                    <div className="detail">
-                      <span className={`badge ${p.type === 'Customer' ? 'badge-blue' : 'badge-amber'}`}>{p.type}</span>
-                      {p.phone && ` • ${p.phone}`}
-                    </div>
-                  </div>
-                  <div className="amount" style={{ color: p.current_balance > 0 ? 'var(--rose-600)' : 'var(--emerald-600)' }}>
-                    {p.current_balance > 0 ? fmt(p.current_balance, C) : 'Clear'}
-                  </div>
-                </div>
-              ))}
+        {/* ═══════════════════════════════════════════════════
+            TAB 2: HISTORY
+            ═══════════════════════════════════════════════════ */}
+        {tab === 'history' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            
+            {/* Search Input bar wrapper */}
+            <div className="search-bar" style={{ position: 'static', padding: 0, margin: 0 }}>
+              <input
+                type="text"
+                placeholder="Search invoices by customer or number..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
             </div>
-          ) : (
-            <div className="empty-state"><p>No parties found</p></div>
-          )
-        )}
-      </main>
 
-      {/* Invoice Success Overlay Modal */}
-      {saleSuccessData && (
-        <div className="modal-overlay" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.75)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '24px' }}>
-          <div className="section-card" style={{ width: '100%', maxWidth: '360px', padding: '24px', textAlign: 'center', display: 'flex', flexDirection: 'column', gap: '16px', background: 'white', borderRadius: '16px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
-            <div style={{ display: 'flex', justifyContent: 'center' }}>
-              <div style={{ background: '#ecfdf5', color: '#10b981', padding: '16px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
+            {/* Quick dashboard metrics */}
+            <div className="metrics-grid" style={{ gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: 0 }}>
+              <div className="metric-card">
+                <span className="label">Generated</span>
+                <span className="value" style={{ color: 'var(--indigo-600)' }}>{history.length}</span>
+                <span className="sub">BILLS LOGGED</span>
+              </div>
+              <div className="metric-card">
+                <span className="label">Revenue Total</span>
+                <span className="value" style={{ color: '#10b981' }}>
+                  {currencySymbol}{history.reduce((acc, curr) => acc + curr.grand_total, 0).toLocaleString('en-IN')}
+                </span>
+                <span className="sub">OFFLINE SALES</span>
               </div>
             </div>
 
-            <div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--slate-900)', margin: 0 }}>Invoice Generated!</h3>
-              <p style={{ fontSize: '0.875rem', color: 'var(--slate-50)', marginTop: '4px', margin: 0 }}>
-                Invoice <strong style={{ color: 'var(--slate-800)' }}>{saleSuccessData.invoice_number}</strong> was successfully recorded in Neon.
-              </p>
+            {/* Invoices List */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {filteredHistory.length > 0 ? (
+                filteredHistory.map(inv => (
+                  <div
+                    key={inv.invoice_number}
+                    className="section-card"
+                    style={{ padding: '14px', marginBottom: 0, cursor: 'pointer', border: '1.5px solid var(--slate-200)' }}
+                    onClick={() => setSelectedInvoice(inv)}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 0, paddingRight: '12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span style={{ fontSize: '9px', fontWeight: 900, color: 'var(--indigo-600)', backgroundColor: 'var(--indigo-50)', padding: '2px 6px', borderRadius: '4px', border: '1.5px solid rgba(99,102,241,0.1)' }}>
+                            #{inv.invoice_number}
+                          </span>
+                          <span style={{ fontSize: '9.5px', color: 'var(--slate-400)', fontWeight: 700 }}>{inv.date}</span>
+                        </div>
+                        <h4 style={{ fontSize: '13.5px', fontWeight: 900, color: 'var(--slate-900)', margin: '6px 0 2px 0', textOverflow: 'ellipsis', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+                          {inv.customer_name}
+                        </h4>
+                        <span style={{ fontSize: '9.5px', color: 'var(--slate-500)', fontWeight: 800 }}>
+                          {inv.items.length} items | {inv.payment_mode}
+                        </span>
+                      </div>
+
+                      <div style={{ textRendering: 'optimizeLegibility', textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: '14px', fontWeight: 950, color: '#10b981' }}>
+                          {currencySymbol}{inv.grand_total.toLocaleString('en-IN')}
+                        </div>
+                        <span style={{ display: 'inline-block', marginTop: '6px', fontSize: '8px', fontWeight: 900, textTransform: 'uppercase', color: 'var(--indigo-600)', letterSpacing: '0.5px' }}>
+                          VIEW DETAILS
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="empty-state" style={{ backgroundColor: 'var(--slate-50)', border: '1.5px dashed var(--slate-200)', borderRadius: '22px' }}>
+                  <FileIcon />
+                  <p style={{ margin: '8px 0 0 0', fontWeight: 900 }}>No Offline Bills Generated</p>
+                  <span style={{ fontSize: '10px', color: 'var(--slate-400)', display: 'block', marginTop: '4px' }}>
+                    Start billing under the "New Bill" wizard!
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div style={{ background: 'var(--slate-50)', padding: '12px', borderRadius: '8px', fontSize: '1.25rem', fontWeight: 800, color: 'var(--slate-800)' }}>
-              {fmt(saleSuccessData.total_amount, C)}
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════
+            TAB 3: SETTINGS
+            ═══════════════════════════════════════════════════ */}
+        {tab === 'settings' && (
+          <div className="section-card">
+            <div className="section-header" style={{ padding: '0 0 14px 0', borderBottom: '1px solid var(--slate-100)', marginBottom: '16px' }}>
+              <h3 style={{ margin: 0 }}>Shop settings profile</h3>
+              <p style={{ margin: '2px 0 0 0' }}>Configure shop details printed on A4 invoice template</p>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '100%' }}>
-              <button 
-                className="btn" 
-                style={{ width: '100%', padding: '12px', background: '#25D366', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                onClick={() => {
-                  const cleanPhone = saleCustomerPhone.replace(/\D/g, '');
-                  const message = `Hi ${saleCustomerName || 'Customer'}, thank you for shopping with ${business?.name || 'AF NUTRITION'}! Here is your invoice ${saleSuccessData.invoice_number} for amount ${fmt(saleSuccessData.total_amount, C)}. We appreciate your business!`;
-                  const waUrl = cleanPhone 
-                    ? `https://wa.me/91${cleanPhone}?text=${encodeURIComponent(message)}`
-                    : `https://wa.me/?text=${encodeURIComponent(message)}`;
-                  window.open(waUrl, '_blank');
-                }}
+            {saveSuccess && (
+              <div style={{ backgroundColor: 'var(--emerald-50)', border: '1px solid rgba(16,185,129,0.3)', padding: '10px', borderRadius: '10px', textAlign: 'center', fontSize: '11px', fontWeight: 900, color: '#10b981', marginBottom: '14px' }}>
+                ✓ Profile settings saved successfully!
+              </div>
+            )}
+
+            {/* Toggle calculation config */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: 'var(--slate-50)', border: '1.5px solid var(--slate-200)', padding: '12px 14px', borderRadius: '16px', marginBottom: '16px' }}>
+              <div style={{ flex: 1, paddingRight: '12px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 900, color: 'var(--slate-900)' }}>GST Columns Config</div>
+                <div style={{ fontSize: '8.5px', color: 'var(--slate-400)', marginTop: '2px' }}>Enable/Disable HSN, GST% selectors and GSTIN</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => saveProfileSettings({ ...profile, gst_enabled: !profile.gst_enabled })}
+                style={{ width: '40px', height: '22px', borderRadius: '11px', backgroundColor: profile.gst_enabled ? 'var(--indigo-600)' : 'var(--slate-300)', border: 'none', cursor: 'pointer', padding: '2px', display: 'flex', justifyContent: profile.gst_enabled ? 'flex-end' : 'flex-start', transition: 'all 0.2s' }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.907h.004c4.368 0 7.926-3.558 7.93-7.93a7.897 7.897 0 0 0-2.33-5.593l.004-.005zm-8.86 10.152a5.908 5.908 0 0 1-2.909-3.872 5.922 5.922 0 0 1 1.764-5.263 5.918 5.918 0 0 1 4.148-1.748c1.583.003 3.072.62 4.19 1.74a5.9 5.9 0 0 1 1.738 4.192 5.942 5.942 0 0 1-5.931 5.951h-.001zm3.802-1.688c-.198-.1-.4-.199-.498-.249-.099-.05-.173-.074-.247.074-.074.15-.297.371-.361.445-.064.075-.129.083-.327-.018-.198-.1-.837-.309-1.593-.984-.59-.525-.985-1.175-1.102-1.372-.118-.198-.013-.304.086-.403.09-.089.198-.233.298-.348.099-.116.134-.198.198-.33.064-.133.032-.249-.015-.349-.049-.1-.4-.967-.549-1.327-.145-.353-.291-.305-.4-.307l-.341-.005c-.118 0-.309.044-.47.218-.162.173-.618.604-.618 1.472 0 .867.63 1.705.718 1.82.089.117 1.242 1.897 3.01 2.66.42.181.749.289.1.5.176.43.342.118.497.118.156 0 .341.045.474.074.133-.03.328-.13.372-.258z"/>
-                </svg>
-                Share via WhatsApp
+                <div style={{ width: '18px', height: '18px', borderRadius: '50%', backgroundColor: '#ffffff' }} />
+              </button>
+            </div>
+
+            {/* Store Logo Upload Block */}
+            <div className="form-group" style={{ marginBottom: '20px' }}>
+              <label className="form-label">Store / Business Logo</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', backgroundColor: 'var(--slate-50)', border: '1.5px dashed var(--slate-200)', padding: '12px', borderRadius: '16px' }}>
+                <div style={{
+                  width: '60px',
+                  height: '60px',
+                  borderRadius: '12px',
+                  backgroundColor: '#ffffff',
+                  border: '1px solid var(--slate-200)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  overflow: 'hidden',
+                  flexShrink: 0
+                }}>
+                  {profile.logo_url ? (
+                    <img src={profile.logo_url} style={{ width: '100%', height: '100%', objectFit: 'contain' }} alt="Logo" />
+                  ) : (
+                    <span style={{ fontSize: '9px', fontWeight: 900, color: 'var(--slate-400)', textAlign: 'center', padding: '4px' }}>NO LOGO</span>
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    id="logo-upload-input"
+                    style={{ display: 'none' }}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setProfile({ ...profile, logo_url: reader.result as string });
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById('logo-upload-input')?.click()}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '11px',
+                        fontWeight: 900,
+                        backgroundColor: 'var(--indigo-50)',
+                        color: 'var(--indigo-600)',
+                        border: '1px solid var(--indigo-100)',
+                        borderRadius: '8px',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      CHOOSE IMAGE
+                    </button>
+                    {profile.logo_url && (
+                      <button
+                        type="button"
+                        onClick={() => setProfile({ ...profile, logo_url: '' })}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '11px',
+                          fontWeight: 900,
+                          backgroundColor: 'var(--rose-50)',
+                          color: 'var(--rose-600)',
+                          border: '1px solid var(--rose-100)',
+                          borderRadius: '8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        REMOVE
+                      </button>
+                    )}
+                  </div>
+                  <p style={{ fontSize: '8px', color: 'var(--slate-400)', margin: '4px 0 0 0', fontWeight: 500 }}>JPEG/PNG supported.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Store / Business Name</label>
+              <input
+                type="text"
+                className="form-input"
+                value={profile.business_name}
+                onChange={(e) => setProfile({ ...profile, business_name: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Phone Number</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={profile.phone}
+                  onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Email Address</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={profile.email}
+                  onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Address line 1</label>
+              <input
+                type="text"
+                className="form-input"
+                value={profile.address_line1}
+                onChange={(e) => setProfile({ ...profile, address_line1: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+              <div style={{ flex: 1 }}>
+                <span className="form-label">City</span>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={profile.city}
+                  onChange={(e) => setProfile({ ...profile, city: e.target.value })}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <span className="form-label">State</span>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={profile.state}
+                  onChange={(e) => setProfile({ ...profile, state: e.target.value })}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <span className="form-label">Pincode</span>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={profile.pincode}
+                  onChange={(e) => setProfile({ ...profile, pincode: e.target.value })}
+                />
+              </div>
+            </div>
+
+            {profile.gst_enabled && (
+              <div className="form-group">
+                <label className="form-label" style={{ color: 'var(--indigo-600)' }}>Shop GSTIN Code</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{ color: 'var(--indigo-600)', textTransform: 'uppercase' }}
+                  value={profile.gstin}
+                  onChange={(e) => setProfile({ ...profile, gstin: e.target.value })}
+                />
+              </div>
+            )}
+
+            <div className="form-group">
+              <label className="form-label">PAN Number</label>
+              <input
+                type="text"
+                className="form-input"
+                style={{ textTransform: 'uppercase' }}
+                value={profile.pan_number}
+                onChange={(e) => setProfile({ ...profile, pan_number: e.target.value })}
+              />
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label" style={{ color: '#059669' }}>WhatsApp Brand Link</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. 919988776655"
+                  value={profile.whatsapp_number}
+                  onChange={(e) => setProfile({ ...profile, whatsapp_number: e.target.value })}
+                />
+              </div>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label" style={{ color: '#e11d48' }}>Instagram Handle</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. username"
+                  value={profile.instagram_id}
+                  onChange={(e) => setProfile({ ...profile, instagram_id: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '20px' }}>
+              <label className="form-label">Terms & Conditions</label>
+              <textarea
+                className="form-input"
+                style={{ height: '80px', paddingTop: '10px', resize: 'none', fontFamily: 'inherit' }}
+                value={profile.terms_and_conditions}
+                onChange={(e) => setProfile({ ...profile, terms_and_conditions: e.target.value })}
+              />
+            </div>
+
+            <button
+              className="btn-connect"
+              onClick={() => saveProfileSettings(profile)}
+              style={{ width: '100%', height: '46px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              SAVE PROFILE DETAILS
+            </button>
+          </div>
+        )}
+
+      </main>
+
+      {/* Expanded History Modal Details Panel */}
+      {selectedInvoice && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, backgroundColor: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: '16px' }}>
+          <div className="section-card" style={{ width: '100%', maxWidth: '420px', borderRadius: '24px 24px 0 0', borderBottom: 'none', display: 'flex', flexDirection: 'column', maxHeight: '82vh', overflow: 'hidden', padding: 0, boxShadow: '0 -15px 45px rgba(0,0,0,0.2)' }}>
+            
+            <div style={{ backgroundColor: 'var(--slate-50)', padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--slate-100)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '10px', fontWeight: 900, color: 'var(--indigo-600)', backgroundColor: 'var(--indigo-50)', padding: '3px 8px', borderRadius: '6px' }}>
+                  #{selectedInvoice.invoice_number}
+                </span>
+                <span style={{ fontSize: '10.5px', color: 'var(--slate-400)', fontWeight: 800 }}>{selectedInvoice.date}</span>
+              </div>
+              <button
+                onClick={() => setSelectedInvoice(null)}
+                style={{ backgroundColor: '#ffffff', border: '1px solid var(--slate-200)', borderRadius: '8px', fontSize: '9px', fontWeight: 900, padding: '5px 12px', color: 'var(--slate-600)', cursor: 'pointer' }}
+              >
+                CLOSE
+              </button>
+            </div>
+
+            <div style={{ padding: '20px', overflowY: 'auto', flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              
+              {/* Customer Info Card block */}
+              <div style={{ backgroundColor: 'var(--slate-50)', border: '1px solid var(--slate-200)', padding: '14px', borderRadius: '16px' }}>
+                <span className="form-label" style={{ marginBottom: '2px' }}>BILL TO:</span>
+                <div style={{ fontSize: '14px', fontWeight: 900, color: 'var(--slate-900)' }}>{selectedInvoice.customer_name}</div>
+                {selectedInvoice.customer_phone && <div style={{ fontSize: '11.5px', color: 'var(--slate-500)', marginTop: '4px' }}>Mobile: {selectedInvoice.customer_phone}</div>}
+                {selectedInvoice.customer_address && <div style={{ fontSize: '11.5px', color: 'var(--slate-500)' }}>Address: {selectedInvoice.customer_address}</div>}
+              </div>
+
+              {/* Items Card */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span className="form-label">ITEMS IN BILL</span>
+                <div style={{ border: '1px solid var(--slate-200)', borderRadius: '16px', overflow: 'hidden', backgroundColor: '#ffffff' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', border: 'none', margin: 0, minWidth: 0 }}>
+                    <thead>
+                      <tr style={{ background: 'var(--slate-50)' }}>
+                        <th style={{ textAlign: 'left', padding: '8px 12px', fontSize: '8.5px', color: 'var(--slate-400)' }}>Item Description</th>
+                        <th style={{ width: '15%', textAlign: 'center', padding: '8px', fontSize: '8.5px', color: 'var(--slate-400)' }}>Qty</th>
+                        <th style={{ width: '25%', textAlign: 'right', padding: '8px 12px', fontSize: '8.5px', color: 'var(--slate-400)' }}>Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedInvoice.items.map(item => (
+                        <tr key={item.id} style={{ borderTop: '1px solid var(--slate-100)' }}>
+                          <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--slate-700)', fontWeight: 800 }}>{item.product_name}</td>
+                          <td style={{ textAlign: 'center', padding: '10px 8px', fontSize: '12px', color: 'var(--slate-500)', fontWeight: 700 }}>{item.quantity}</td>
+                          <td style={{ textAlign: 'right', padding: '10px 12px', fontSize: '12px', color: 'var(--slate-800)', fontWeight: 850 }}>
+                            {profile.currency_symbol}{Math.round(item.price * item.quantity).toLocaleString('en-IN')}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Summary table */}
+              <div style={{ borderTop: '1px dashed var(--slate-200)', paddingTop: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, color: 'var(--slate-500)', marginBottom: '6px' }}>
+                  <span>Subtotal Amount</span>
+                  <span>{profile.currency_symbol}{Math.round(selectedInvoice.subtotal).toLocaleString('en-IN')}</span>
+                </div>
+                {profile.gst_enabled && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', fontWeight: 700, color: 'var(--slate-500)', marginBottom: '6px' }}>
+                    <span>GST Tax</span>
+                    <span style={{ color: 'var(--indigo-600)' }}>+{profile.currency_symbol}{Math.round(selectedInvoice.total_gst).toLocaleString('en-IN')}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '15px', fontWeight: 950, color: '#10b981', borderTop: '1px solid var(--slate-200)', paddingTop: '8px', marginTop: '8px' }}>
+                  <span>Grand Total</span>
+                  <span>{profile.currency_symbol}{selectedInvoice.grand_total.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal footers */}
+            <div style={{ backgroundColor: 'var(--slate-50)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--slate-100)' }}>
+              
+              {selectedInvoice.customer_phone && (
+                <button
+                  onClick={() => handleWhatsAppShare(selectedInvoice)}
+                  style={{ width: '100%', height: '52px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '14px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(5,150,105,0.15)' }}
+                >
+                  📥 DOWNLOAD & SHARE ON WA
+                </button>
+              )}
+
+              <button
+                onClick={() => printInvoice(selectedInvoice, profile)}
+                style={{ width: '100%', height: '52px', background: 'linear-gradient(135deg, var(--indigo-600), var(--indigo-700))', color: 'white', border: 'none', borderRadius: '14px', fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxShadow: '0 4px 12px rgba(79, 70, 229, 0.15)' }}
+              >
+                📥 ONLY DOWNLOAD PDF
               </button>
 
-              <button 
-                className="btn" 
-                style={{ width: '100%', padding: '12px', background: '#4f46e5', color: 'white', border: 'none', borderRadius: '8px', fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                onClick={() => {
-                  window.open(`/api/print/${saleSuccessData.invoice_number}`, '_blank');
-                }}
+              <button
+                onClick={() => handleDeleteInvoice(selectedInvoice.invoice_number)}
+                style={{ backgroundColor: 'transparent', border: 'none', color: 'var(--rose-600)', fontSize: '9px', fontWeight: 900, cursor: 'pointer', height: '24px', alignSelf: 'center', marginTop: '4px' }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                  <path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v3a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-3h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5zm0 1a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z"/>
-                </svg>
-                Download PDF / Print
-              </button>
-
-              <button 
-                className="btn btn-secondary" 
-                style={{ width: '100%', padding: '12px', borderRadius: '8px', fontSize: '0.95rem', fontWeight: 700, border: '1px solid var(--slate-200)', background: 'white', cursor: 'pointer' }}
-                onClick={() => {
-                  setSaleSuccessData(null);
-                  setTab('home');
-                  loadDashboard();
-                }}
-              >
-                Back to Dashboard
+                DELETE RECORD
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Bottom Nav */}
+      {/* Premium Bottom Nav Bar */}
       <nav className="bottom-nav">
-        <button className={`nav-tab ${tab === 'home' ? 'active' : ''}`} onClick={() => { setTab('home'); loadDashboard(); }}>
-          <HomeIcon />
-          <span>Home</span>
+        <button className={`nav-tab ${tab === 'history' ? 'active' : ''}`} onClick={() => setTab('history')}>
+          <HistoryIcon />
+          <span>History</span>
         </button>
-        <button className={`nav-tab ${tab === 'inventory' ? 'active' : ''}`} onClick={() => { setTab('inventory'); if (!products.length) loadProducts(); }}>
-          <BoxIcon />
-          <span>Stock</span>
-        </button>
-        <button className={`nav-tab ${tab === 'sale' ? 'active' : ''}`} onClick={() => { setTab('sale'); if (!products.length) loadProducts(); if (!parties.length) loadParties(); }}>
+
+        <button className={`nav-tab ${tab === 'new' ? 'active' : ''}`} onClick={() => { setTab('new'); setWizardStep(1); }}>
           <PlusIcon />
-          <span>New Sale</span>
+          <span>New Bill</span>
         </button>
-        <button className={`nav-tab ${tab === 'parties' ? 'active' : ''}`} onClick={() => { setTab('parties'); if (!parties.length) loadParties(); }}>
-          <UsersIcon />
-          <span>Parties</span>
+
+        <button className={`nav-tab ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>
+          <SettingsIcon />
+          <span>Settings</span>
         </button>
       </nav>
-    </>
+
+    </div>
   );
 }

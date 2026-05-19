@@ -1362,7 +1362,8 @@ const statsOps = {
         AND COALESCE(pt.due_date, '') != ''
         AND date(pt.due_date) <= date('now', 'localtime')
       GROUP BY p.id
-      ORDER BY date(due_date) ASC, due_amount DESC
+      HAVING COALESCE(SUM(pt.due_amount), 0) > 0.1
+      ORDER BY date(MIN(pt.due_date)) ASC, due_amount DESC
       LIMIT 5
     `).all();
 

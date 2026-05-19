@@ -17,7 +17,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-export default function Parties({ profile }) {
+export default function Parties({ profile, initialPartyId, onDeepLinkConsumed }) {
   const { toast, confirm } = useToast();
   const masterData = typeof profile?.master_data === 'string' 
     ? (JSON.parse(profile.master_data || '{}')) 
@@ -51,6 +51,17 @@ export default function Parties({ profile }) {
   useEffect(() => {
     loadParties();
   }, []);
+
+  // Deep-link: auto-open ledger for a specific party (from Dashboard reminder)
+  useEffect(() => {
+    if (initialPartyId && parties.length > 0) {
+      const target = parties.find(p => p.id === initialPartyId);
+      if (target) {
+        handleOpenLedger(target);
+        if (onDeepLinkConsumed) onDeepLinkConsumed();
+      }
+    }
+  }, [initialPartyId, parties]);
 
   const loadParties = async () => {
     if (typeof window !== 'undefined' && window.electronAPI) {

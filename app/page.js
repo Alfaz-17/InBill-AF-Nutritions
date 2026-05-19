@@ -61,6 +61,7 @@ export default function Home() {
   const [activePage, setActivePage] = useState('dashboard');
   const [lowStockCount, setLowStockCount] = useState(0);
   const [syncTrigger, setSyncTrigger] = useState(0);
+  const [deepLinkPartyId, setDeepLinkPartyId] = useState(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [hasNotified, setHasNotified] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -152,6 +153,11 @@ export default function Home() {
 
   const ActiveComponent = pages[activePage] || Dashboard;
 
+  const handleNavigate = (page, partyId = null) => {
+    setActivePage(page);
+    if (partyId) setDeepLinkPartyId(partyId);
+  };
+
   return (
     <div className="app-shell">
       <header className="mobile-app-header">
@@ -221,9 +227,12 @@ export default function Home() {
       <main className="main-content">
         <ActiveComponent 
           key={activePage + '_' + syncTrigger}
-          onNavigate={setActivePage} 
+          onNavigate={handleNavigate} 
           profile={profile} 
           onProfileUpdate={loadProfile}
+          // Deep link for Parties
+          initialPartyId={activePage === 'parties' ? deepLinkPartyId : null}
+          onDeepLinkConsumed={() => setDeepLinkPartyId(null)}
           // Shared Persistence
           cart={cart} setCart={setCart}
           customerData={customerData} setCustomerData={setCustomerData}
