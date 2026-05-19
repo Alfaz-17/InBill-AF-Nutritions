@@ -276,7 +276,7 @@ function HomeComponent() {
     let totalGst = 0;
 
     cart.forEach(item => {
-      const discountedPrice = item.price * (1 - (item.discount || 0) / 100);
+      const discountedPrice = item.price - (item.discount || 0);
       const lineAmount = discountedPrice * item.quantity;
       if (profile.gst_enabled) {
         const base = lineAmount / (1 + (item.gst_rate / 100));
@@ -490,10 +490,11 @@ function HomeComponent() {
       const qty = Number(item.quantity || 0);
       const rate = Number(item.price || 0);
       const gstPercent = Number(item.gst_rate || 0);
-      const discountPercent = Number(item.discount || 0);
-      
-      const discountedPrice = rate * (1 - discountPercent / 100);
+      const discountAmount = Number(item.discount || 0);
+      const discountedPrice = rate - discountAmount;
       const originalPrice = rate;
+      const computedPercent = originalPrice > 0 ? Math.round((discountAmount / originalPrice) * 100) : 0;
+      const totalRowDiscount = discountAmount * qty;
 
       let rowUntaxedTotal = 0;
       let rowTaxAmount = 0;
@@ -525,7 +526,10 @@ function HomeComponent() {
             ${formatMoney(originalPrice)}
           </td>
           <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500; line-height: 1.25;">
-            ${discountPercent > 0 ? `${discountPercent}%` : '0%'}
+            ${discountAmount > 0 
+              ? `${computedPercent}%<br><span style="font-size: 8.5px; color: #475569; font-weight: 500;">(${C}${formatMoney(totalRowDiscount)})</span>`
+              : '0%'
+            }
           </td>
           ${
             biz.gst_enabled
@@ -1117,7 +1121,7 @@ function HomeComponent() {
                               type="number"
                               className="form-input"
                               style={{ height: '38px', fontSize: '13px', textAlign: 'right', fontWeight: 'bold', color: '#f59e0b', width: '100%' }}
-                              placeholder="Discount %"
+                              placeholder={`Discount (${currencySymbol})`}
                               value={item.discount || ''}
                               onChange={(e) => updateCartField(item.id, 'discount', e.target.value)}
                             />
@@ -1159,7 +1163,7 @@ function HomeComponent() {
                             </select>
                           ) : (
                             <span style={{ fontSize: '11.5px', fontWeight: 900, color: 'var(--slate-500)' }}>
-                              Total: {currencySymbol}{Math.round(item.price * (1 - (item.discount || 0) / 100) * item.quantity)}
+                              Total: {currencySymbol}{Math.round((item.price - (item.discount || 0)) * item.quantity)}
                             </span>
                           )}
                         </div>
@@ -1694,9 +1698,9 @@ function HomeComponent() {
                           <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--slate-700)', fontWeight: 800 }}>{item.product_name}</td>
                           <td style={{ textAlign: 'center', padding: '10px 8px', fontSize: '12px', color: 'var(--slate-500)', fontWeight: 700 }}>{item.quantity}</td>
                           <td style={{ textAlign: 'right', padding: '10px 12px', fontSize: '12px', color: 'var(--slate-800)', fontWeight: 850 }}>
-                            {profile.currency_symbol}{Math.round(item.price * (1 - (item.discount || 0) / 100) * item.quantity).toLocaleString('en-IN')}
+                            {profile.currency_symbol}{Math.round((item.price - (item.discount || 0)) * item.quantity).toLocaleString('en-IN')}
                             {item.discount > 0 && (
-                              <div style={{ fontSize: '8.5px', color: '#f59e0b', fontWeight: 900 }}>(-{item.discount}%)</div>
+                              <div style={{ fontSize: '8.5px', color: '#f59e0b', fontWeight: 900 }}>(-{profile.currency_symbol}{item.discount})</div>
                             )}
                           </td>
                         </tr>
