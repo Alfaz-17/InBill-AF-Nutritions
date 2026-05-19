@@ -567,18 +567,9 @@ function HomeComponent() {
     const displayUntaxed = biz.gst_enabled ? untaxedSubtotal : invoice.subtotal;
 
     const template = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8" />
-        <title>Invoice - ${invoice.invoice_number}</title>
+      <div class="page" style="width: 210mm; height: 296mm; margin: 0; background: #ffffff; padding: 10mm 15mm; box-sizing: border-box; font-family: 'Inter', sans-serif; color: #1e293b; position: relative; page-break-after: avoid; page-break-inside: avoid;">
         <style>
           @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
-          @page {
-            size: A4;
-            margin: 0;
-          }
 
           * {
             box-sizing: border-box;
@@ -586,41 +577,10 @@ function HomeComponent() {
             print-color-adjust: exact;
           }
 
-          body {
-            margin: 0;
-            background: #ffffff;
-            font-family: 'Inter', sans-serif;
-            color: #1e293b;
-          }
-
-          .page {
-            width: 210mm;
-            height: 297mm;
-            margin: 0;
-            background: #ffffff;
-            padding: 12mm 15mm;
-            box-sizing: border-box;
-          }
-
           table {
             border-collapse: collapse;
           }
-
-          @media print {
-            body {
-              background: #ffffff !important;
-            }
-            .page {
-              margin: 0 !important;
-              padding: 10mm !important;
-              box-shadow: none !important;
-            }
-          }
         </style>
-      </head>
-      <body>
-
-      <div class="page">
 
         <!-- HEADER -->
         <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
@@ -849,27 +809,11 @@ function HomeComponent() {
         </table>
 
       </div>
-
-      </body>
-      </html>
     `;
 
     const executeDownload = async () => {
       try {
         const html2pdf = (await import('html2pdf.js')).default;
-        
-        const container = document.createElement('div');
-        container.innerHTML = template;
-        
-        // Temporarily append styled container behind the main viewport to ensure perfect canvas rendering
-        container.style.position = 'fixed';
-        container.style.left = '0';
-        container.style.top = '0';
-        container.style.zIndex = '-9999';
-        container.style.pointerEvents = 'none';
-        container.style.width = '794px'; // 210mm wide at 96 DPI
-        container.style.background = '#ffffff';
-        document.body.appendChild(container);
         
         const opt: any = {
           margin:       0, // Bypasses extra double page wrap-around margins
@@ -885,13 +829,10 @@ function HomeComponent() {
           jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
         };
 
-        html2pdf().from(container).set(opt).save().then(() => {
-          document.body.removeChild(container);
+        // Pass the template HTML string directly! html2pdf handles the rendering isolation in its own iframe!
+        html2pdf().from(template.trim()).set(opt).save().then(() => {
           showToast('PDF downloaded successfully!', 'success');
         }).catch((err: any) => {
-          if (container.parentNode) {
-            document.body.removeChild(container);
-          }
           console.error('PDF Generation Error:', err);
         });
       } catch (err) {
