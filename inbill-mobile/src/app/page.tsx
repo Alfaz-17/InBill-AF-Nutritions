@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 
 // ═══════════════════════════════════════════════════════
 // SVG Icons (Inline to ensure zero-dependency compilation)
@@ -158,7 +159,7 @@ const DEFAULT_PROFILE: BusinessProfile = {
   logo_url: '',
 };
 
-export default function Home() {
+function HomeComponent() {
   const [tab, setTab] = useState<'history' | 'new' | 'settings'>('new');
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
 
@@ -437,7 +438,7 @@ export default function Home() {
     if (newInvoice.customer_phone) {
       const cleanPhone = newInvoice.customer_phone.replace(/\D/g, '');
       const number = cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone;
-      const msg = `Hi ${newInvoice.customer_name},\nHere is your invoice *#${newInvoice.invoice_number}* from *${profile.business_name || 'us'}*.\n\n📎 *I have saved your PDF Bill. Tap the attachment icon (Document), and Paste (Ctrl+V) the filename "${newInvoice.invoice_number}.pdf" to send it instantly!*`;
+      const msg = `Hi ${newInvoice.customer_name},\nHere is your invoice *#${newInvoice.invoice_number}* from *${profile.business_name || 'us'}*.\n\n📎 *PDF Invoice downloaded. Tap the attachment icon (Document) to select and send it!*`;
       
       setTimeout(() => {
         window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -868,10 +869,10 @@ export default function Home() {
         container.style.background = '#ffffff';
         document.body.appendChild(container);
         
-        const opt = {
+        const opt: any = {
           margin:       0, // Bypasses extra double page wrap-around margins
           filename:     `${invoice.invoice_number}.pdf`,
-          image:        { type: 'jpeg' as const, quality: 0.98 },
+          image:        { type: 'jpeg', quality: 0.98 },
           html2canvas:  { 
             scale: 2.2, 
             useCORS: true, 
@@ -931,7 +932,7 @@ export default function Home() {
 
     const cleanPhone = inv.customer_phone.replace(/\D/g, '');
     const number = cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone;
-    const msg = `Hi ${inv.customer_name},\nHere is your invoice *#${inv.invoice_number}* from *${profile.business_name}*.\n\n📎 *I have saved your PDF Bill. Tap the attachment icon (Document), and Paste (Ctrl+V) the filename "${inv.invoice_number}.pdf" to send it instantly!*`;
+    const msg = `Hi ${inv.customer_name},\nHere is your invoice *#${inv.invoice_number}* from *${profile.business_name}*.\n\n📎 *PDF Invoice downloaded. Tap the attachment icon (Document) to select and send it!*`;
     
     setTimeout(() => {
       window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
@@ -1812,3 +1813,9 @@ export default function Home() {
     </div>
   );
 }
+
+const Home = dynamic(() => Promise.resolve(HomeComponent), {
+  ssr: false,
+});
+
+export default Home;
