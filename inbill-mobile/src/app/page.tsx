@@ -441,7 +441,7 @@ function HomeComponent() {
       const msg = `Hi ${newInvoice.customer_name},\nHere is your invoice *#${newInvoice.invoice_number}* from *${profile.business_name || 'us'}*.\n\n📎 *PDF Invoice downloaded. Tap the attachment icon (Document) to select and send it!*`;
       
       setTimeout(() => {
-        window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
+        window.location.href = `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
       }, 1500);
     }
 
@@ -878,7 +878,7 @@ function HomeComponent() {
     const msg = `Hi ${inv.customer_name},\nHere is your invoice *#${inv.invoice_number}* from *${profile.business_name}*.\n\n📎 *PDF Invoice downloaded. Tap the attachment icon (Document) to select and send it!*`;
     
     setTimeout(() => {
-      window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
+      window.location.href = `https://wa.me/${number}?text=${encodeURIComponent(msg)}`;
     }, 1500);
   };
 
