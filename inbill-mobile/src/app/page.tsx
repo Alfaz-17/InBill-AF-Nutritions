@@ -426,18 +426,22 @@ export default function Home() {
     localStorage.setItem('inbill_offline_invoices', JSON.stringify(updated));
 
     printInvoice(newInvoice, profile);
-    showToast('PDF print opened! Redirecting to WhatsApp...', 'success');
+    
+    try {
+      navigator.clipboard.writeText(`${newInvoice.invoice_number}.pdf`);
+      showToast('PDF name copied! Paste in WhatsApp document picker!', 'success');
+    } catch (e) {
+      showToast('PDF downloaded! Redirecting to WhatsApp...', 'success');
+    }
 
     if (newInvoice.customer_phone) {
       const cleanPhone = newInvoice.customer_phone.replace(/\D/g, '');
       const number = cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone;
-      const msg = `Hi ${newInvoice.customer_name},\nHere is your invoice *#${newInvoice.invoice_number}* from *${profile.business_name || 'us'}*.\n\n*Amount Due:* ${profile.currency_symbol}${newInvoice.grand_total}\n*Payment Mode:* ${newInvoice.payment_mode}\n\n📎 *I have downloaded your PDF Bill. Tap the paperclip attachment icon on your screen and select it to view!*`;
+      const msg = `Hi ${newInvoice.customer_name},\nHere is your invoice *#${newInvoice.invoice_number}* from *${profile.business_name || 'us'}*.\n\n📎 *I have saved your PDF Bill. Tap the attachment icon (Document), and Paste (Ctrl+V) the filename "${newInvoice.invoice_number}.pdf" to send it instantly!*`;
       
       setTimeout(() => {
         window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
       }, 1500);
-    } else {
-      showToast('Saved & Printed! No customer phone for WhatsApp.', 'info');
     }
 
     setCustomerName('');
@@ -904,11 +908,17 @@ export default function Home() {
 
   const handleWhatsAppShare = (inv: OfflineInvoice) => {
     printInvoice(inv, profile);
-    showToast('PDF print opened! Redirecting to WhatsApp...', 'success');
+    
+    try {
+      navigator.clipboard.writeText(`${inv.invoice_number}.pdf`);
+      showToast('PDF name copied! Paste in WhatsApp document picker!', 'success');
+    } catch (e) {
+      showToast('PDF downloaded! Redirecting to WhatsApp...', 'success');
+    }
 
     const cleanPhone = inv.customer_phone.replace(/\D/g, '');
     const number = cleanPhone.startsWith('91') ? cleanPhone : '91' + cleanPhone;
-    const msg = `Hi ${inv.customer_name},\nHere is your invoice *#${inv.invoice_number}* from *${profile.business_name}*.\n\n*Amount Due:* ${profile.currency_symbol}${inv.grand_total}\n*Payment Mode:* ${inv.payment_mode}\n\n📎 *I have downloaded your PDF Bill. Tap the paperclip attachment icon on your screen and select it to view!*`;
+    const msg = `Hi ${inv.customer_name},\nHere is your invoice *#${inv.invoice_number}* from *${profile.business_name}*.\n\n📎 *I have saved your PDF Bill. Tap the attachment icon (Document), and Paste (Ctrl+V) the filename "${inv.invoice_number}.pdf" to send it instantly!*`;
     
     setTimeout(() => {
       window.open(`https://wa.me/${number}?text=${encodeURIComponent(msg)}`, '_blank');
