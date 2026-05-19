@@ -97,6 +97,7 @@ interface CartItem {
   price: number;
   quantity: number;
   gst_rate: number;
+  discount: number;
 }
 
 interface OfflineInvoice {
@@ -176,7 +177,7 @@ function HomeComponent() {
   const [paymentMode, setPaymentMode] = useState<'Cash' | 'UPI' | 'Credit'>('Cash');
   const [creditDays, setCreditDays] = useState(30);
   const [cart, setCart] = useState<CartItem[]>([
-    { id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18 }
+    { id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18, discount: 0 }
   ]);
 
   // Modals & triggers
@@ -240,7 +241,7 @@ function HomeComponent() {
 
   const addCartRow = () => {
     const newId = Math.random().toString(36).substring(2, 7);
-    setCart([...cart, { id: newId, product_name: '', price: 0, quantity: 1, gst_rate: 18 }]);
+    setCart([...cart, { id: newId, product_name: '', price: 0, quantity: 1, gst_rate: 18, discount: 0 }]);
   };
 
   const removeCartRow = (id: string) => {
@@ -252,7 +253,7 @@ function HomeComponent() {
     setCart(cart.map(item => {
       if (item.id === id) {
         let cleanVal = value;
-        if (field === 'price' || field === 'quantity' || field === 'gst_rate') {
+        if (field === 'price' || field === 'quantity' || field === 'gst_rate' || field === 'discount') {
           cleanVal = Number(value);
         }
         return { ...item, [field]: cleanVal };
@@ -275,7 +276,8 @@ function HomeComponent() {
     let totalGst = 0;
 
     cart.forEach(item => {
-      const lineAmount = item.price * item.quantity;
+      const discountedPrice = item.price * (1 - (item.discount || 0) / 100);
+      const lineAmount = discountedPrice * item.quantity;
       if (profile.gst_enabled) {
         const base = lineAmount / (1 + (item.gst_rate / 100));
         subtotal += base;
@@ -324,7 +326,7 @@ function HomeComponent() {
     setCustomerName('');
     setCustomerPhone('');
     setCustomerAddress('');
-    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18 }]);
+    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18, discount: 0 }]);
     generateNextInvoiceNo();
     setWizardStep(1);
     setTab('history');
@@ -395,7 +397,7 @@ function HomeComponent() {
     setCustomerName('');
     setCustomerPhone('');
     setCustomerAddress('');
-    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18 }]);
+    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18, discount: 0 }]);
     generateNextInvoiceNo();
     setWizardStep(1);
     setTab('history');
@@ -448,7 +450,7 @@ function HomeComponent() {
     setCustomerName('');
     setCustomerPhone('');
     setCustomerAddress('');
-    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18 }]);
+    setCart([{ id: '1', product_name: '', price: 0, quantity: 1, gst_rate: 18, discount: 0 }]);
     generateNextInvoiceNo();
     setWizardStep(1);
     setTab('history');
@@ -488,17 +490,20 @@ function HomeComponent() {
       const qty = Number(item.quantity || 0);
       const rate = Number(item.price || 0);
       const gstPercent = Number(item.gst_rate || 0);
+      const discountPercent = Number(item.discount || 0);
+      
+      const discountedPrice = rate * (1 - discountPercent / 100);
       const originalPrice = rate;
 
       let rowUntaxedTotal = 0;
       let rowTaxAmount = 0;
 
       if (biz.gst_enabled) {
-        const rowTotalPaid = qty * rate;
+        const rowTotalPaid = qty * discountedPrice;
         rowUntaxedTotal = rowTotalPaid / (1 + gstPercent / 100);
         rowTaxAmount = rowTotalPaid - rowUntaxedTotal;
       } else {
-        rowUntaxedTotal = qty * rate;
+        rowUntaxedTotal = qty * discountedPrice;
         rowTaxAmount = 0;
       }
 
@@ -520,7 +525,7 @@ function HomeComponent() {
             ${formatMoney(originalPrice)}
           </td>
           <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500; line-height: 1.25;">
-            0%
+            ${discountPercent > 0 ? `${discountPercent}%` : '0%'}
           </td>
           ${
             biz.gst_enabled
@@ -1096,15 +1101,27 @@ function HomeComponent() {
                           />
                         </div>
 
-                        <div style={{ marginBottom: '10px' }}>
-                          <input
-                            type="number"
-                            className="form-input"
-                            style={{ height: '38px', fontSize: '13px', textAlign: 'right', fontWeight: 'bold', color: '#10b981', width: '100%' }}
-                            placeholder={`Price (${currencySymbol})`}
-                            value={item.price || ''}
-                            onChange={(e) => updateCartField(item.id, 'price', e.target.value)}
-                          />
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '10px' }}>
+                          <div>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ height: '38px', fontSize: '13px', textAlign: 'right', fontWeight: 'bold', color: '#10b981', width: '100%' }}
+                              placeholder={`Price (${currencySymbol})`}
+                              value={item.price || ''}
+                              onChange={(e) => updateCartField(item.id, 'price', e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <input
+                              type="number"
+                              className="form-input"
+                              style={{ height: '38px', fontSize: '13px', textAlign: 'right', fontWeight: 'bold', color: '#f59e0b', width: '100%' }}
+                              placeholder="Discount %"
+                              value={item.discount || ''}
+                              onChange={(e) => updateCartField(item.id, 'discount', e.target.value)}
+                            />
+                          </div>
                         </div>
 
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -1142,7 +1159,7 @@ function HomeComponent() {
                             </select>
                           ) : (
                             <span style={{ fontSize: '11.5px', fontWeight: 900, color: 'var(--slate-500)' }}>
-                              Total: {currencySymbol}{Math.round(item.price * item.quantity)}
+                              Total: {currencySymbol}{Math.round(item.price * (1 - (item.discount || 0) / 100) * item.quantity)}
                             </span>
                           )}
                         </div>
@@ -1677,7 +1694,10 @@ function HomeComponent() {
                           <td style={{ padding: '10px 12px', fontSize: '12px', color: 'var(--slate-700)', fontWeight: 800 }}>{item.product_name}</td>
                           <td style={{ textAlign: 'center', padding: '10px 8px', fontSize: '12px', color: 'var(--slate-500)', fontWeight: 700 }}>{item.quantity}</td>
                           <td style={{ textAlign: 'right', padding: '10px 12px', fontSize: '12px', color: 'var(--slate-800)', fontWeight: 850 }}>
-                            {profile.currency_symbol}{Math.round(item.price * item.quantity).toLocaleString('en-IN')}
+                            {profile.currency_symbol}{Math.round(item.price * (1 - (item.discount || 0) / 100) * item.quantity).toLocaleString('en-IN')}
+                            {item.discount > 0 && (
+                              <div style={{ fontSize: '8.5px', color: '#f59e0b', fontWeight: 900 }}>(-{item.discount}%)</div>
+                            )}
                           </td>
                         </tr>
                       ))}
