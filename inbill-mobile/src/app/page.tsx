@@ -153,7 +153,7 @@ const DEFAULT_PROFILE: BusinessProfile = {
   terms_and_conditions: '1. Goods once sold will not be taken back.\n2. Interest @ 18% will be charged if payment is not made within due date.',
   whatsapp_number: '919988776655',
   instagram_id: 'af_nutrition',
-  gst_enabled: true,
+  gst_enabled: false,
   currency_symbol: '₹',
   logo_url: '',
 };
@@ -184,7 +184,6 @@ export default function Home() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'info' | 'error' } | null>(null);
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [demoSuccess, setDemoSuccess] = useState(false);
 
   const showToast = (message: string, type: 'success' | 'info' | 'error' = 'success') => {
     setToast({ message, type });
@@ -230,17 +229,7 @@ export default function Home() {
     setInvoiceNumber(`INV-${padded}`);
   };
 
-  const handleLoadDemoData = () => {
-    setCustomerName('Rahul Sharma');
-    setCustomerPhone('9876543210');
-    setCustomerAddress('45, Ocean Heights, Sector 12, Navi Mumbai');
-    setPaymentMode('UPI');
-    setCart([
-      { id: 'demo1', product_name: 'Whey Protein Isolate 1kg (Vanilla)', price: 4200, quantity: 1, gst_rate: 18 },
-      { id: 'demo2', product_name: 'Creatine Monohydrate 250g', price: 950, quantity: 2, gst_rate: 18 }
-    ]);
-    showToast('Demo bill data loaded!', 'info');
-  };
+
 
   const saveProfileSettings = (updated: BusinessProfile) => {
     setProfile(updated);
@@ -855,21 +844,42 @@ export default function Home() {
 
       </div>
 
-      <script>
-        window.onload = function() {
-          window.print();
-          setTimeout(function() { window.close(); }, 500);
-        }
-      </script>
       </body>
       </html>
     `;
 
-    const printWin = window.open('', '_blank');
-    if (printWin) {
-      printWin.document.open();
-      printWin.document.write(template);
-      printWin.document.close();
+    const scriptId = 'html2pdf-script';
+    let script = document.getElementById(scriptId) as HTMLScriptElement;
+
+    const executeDownload = () => {
+      const container = document.createElement('div');
+      container.innerHTML = template;
+      
+      const opt = {
+        margin:       [10, 10, 10, 10],
+        filename:     `${invoice.invoice_number}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true, logging: false },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+
+      (window as any).html2pdf().from(container).set(opt).save().then(() => {
+        showToast('PDF downloaded successfully!', 'success');
+      }).catch((err: any) => {
+        console.error('PDF Generation Error:', err);
+      });
+    };
+
+    if (!(window as any).html2pdf) {
+      if (!script) {
+        script = document.createElement('script');
+        script.id = scriptId;
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+        script.onload = executeDownload;
+        document.body.appendChild(script);
+      }
+    } else {
+      executeDownload();
     }
   };
 
@@ -969,11 +979,6 @@ export default function Home() {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {tab === 'new' && (
-            <button className="app-header-logout" onClick={handleLoadDemoData} style={{ fontSize: '10px', padding: '6px 12px', fontWeight: 900, color: 'var(--indigo-600)' }}>
-              {demoSuccess ? 'LOADED ✓' : '⚡ DEMO BILL'}
-            </button>
-          )}
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px', backgroundColor: 'var(--emerald-50)', border: '1px solid rgba(16,185,129,0.2)', padding: '5px 10px', borderRadius: '8px' }}>
             <span style={{ width: '6px', height: '6px', backgroundColor: '#10b981', borderRadius: '50%', display: 'inline-block' }}></span>
             <span style={{ fontSize: '9px', fontWeight: 900, color: '#10b981' }}>OFFLINE</span>
