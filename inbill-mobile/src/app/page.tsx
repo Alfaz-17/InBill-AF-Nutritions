@@ -853,57 +853,51 @@ export default function Home() {
       </html>
     `;
 
-    const scriptId = 'html2pdf-script';
-    let script = document.getElementById(scriptId) as HTMLScriptElement;
+    const executeDownload = async () => {
+      try {
+        const html2pdf = (await import('html2pdf.js')).default;
+        
+        const container = document.createElement('div');
+        container.innerHTML = template;
+        
+        // Temporarily append styled container off-screen to ensure accurate font sizes & widths
+        container.style.position = 'absolute';
+        container.style.left = '-9999px';
+        container.style.top = '0';
+        container.style.width = '794px'; // 210mm wide at 96 DPI
+        container.style.background = '#ffffff';
+        document.body.appendChild(container);
+        
+        const opt = {
+          margin:       0, // Bypasses extra double page wrap-around margins
+          filename:     `${invoice.invoice_number}.pdf`,
+          image:        { type: 'jpeg' as const, quality: 0.98 },
+          html2canvas:  { 
+            scale: 2.2, 
+            useCORS: true, 
+            logging: false,
+            width: 794,
+            windowWidth: 794 // Lock rendering context to standard desktop viewport
+          },
+          jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+        };
 
-    const executeDownload = () => {
-      const container = document.createElement('div');
-      container.innerHTML = template;
-      
-      // Temporarily append styled container off-screen to ensure accurate font sizes & widths
-      container.style.position = 'absolute';
-      container.style.left = '-9999px';
-      container.style.top = '0';
-      container.style.width = '794px'; // 210mm wide at 96 DPI
-      container.style.background = '#ffffff';
-      document.body.appendChild(container);
-      
-      const opt = {
-        margin:       0, // Bypasses extra double page wrap-around margins
-        filename:     `${invoice.invoice_number}.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { 
-          scale: 2.2, 
-          useCORS: true, 
-          logging: false,
-          width: 794,
-          windowWidth: 794 // Lock rendering context to standard desktop viewport
-        },
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
-      };
-
-      (window as any).html2pdf().from(container).set(opt).save().then(() => {
-        document.body.removeChild(container);
-        showToast('PDF downloaded successfully!', 'success');
-      }).catch((err: any) => {
-        if (container.parentNode) {
+        html2pdf().from(container).set(opt).save().then(() => {
           document.body.removeChild(container);
-        }
-        console.error('PDF Generation Error:', err);
-      });
+          showToast('PDF downloaded successfully!', 'success');
+        }).catch((err: any) => {
+          if (container.parentNode) {
+            document.body.removeChild(container);
+          }
+          console.error('PDF Generation Error:', err);
+        });
+      } catch (err) {
+        console.error('Failed to load html2pdf library locally:', err);
+        showToast('PDF Generation failed locally.', 'error');
+      }
     };
 
-    if (!(window as any).html2pdf) {
-      if (!script) {
-        script = document.createElement('script');
-        script.id = scriptId;
-        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
-        script.onload = executeDownload;
-        document.body.appendChild(script);
-      }
-    } else {
-      executeDownload();
-    }
+    executeDownload();
   };
 
   const copyInvoicePlainText = (inv: OfflineInvoice) => {
