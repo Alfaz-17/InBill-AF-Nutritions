@@ -4,6 +4,11 @@ import Providers from './Providers';
 export const metadata = {
   title: 'InBill — Professional Billing & Inventory',
   description: 'Universal ERP — Billing, Inventory & Business Management',
+  icons: {
+    icon: '/icon.png',
+    shortcut: '/favicon.ico',
+    apple: '/icon.png',
+  },
 };
 
 export default function RootLayout({ children }) {
