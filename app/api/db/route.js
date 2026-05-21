@@ -1,43 +1,33 @@
 import { NextResponse } from 'next/server';
-import path from 'path';
 
-// Force database path to point to store.db in root workspace before loading main/db
-process.env.INBILL_DB_PATH = process.env.INBILL_DB_PATH || path.join(process.cwd(), 'store.db');
+export const dynamic = 'force-dynamic';
 
-const { 
-  db,
-  initDB,
-  resetDB,
-  productOps, 
-  saleOps, 
-  purchaseOps, 
-  statsOps, 
-  reportOps, 
-  expenseOps, 
-  partyOps, 
-  returnOps, 
-  businessProfileOps, 
-  categoryOps, 
-  expenseCategoryOps, 
-  attributeOps, 
-  storageOps, 
-  syncToCloud, 
-  authOps,
-  mobileAccessOps
-} = require('../../../main/db.js');
+let dbInstance = null;
+
+function getDB() {
+  if (!dbInstance) {
+    const path = require('path');
+    // Force database path to point to store.db in root workspace before loading main/db
+    process.env.INBILL_DB_PATH = process.env.INBILL_DB_PATH || path.join(process.cwd(), 'store.db');
+    
+    dbInstance = require('../../../main/db.js');
+    
+    // Ensure DB is initialized
+    try {
+      dbInstance.initDB();
+    } catch (e) {
+      console.error("DB Initialization error in API route:", e);
+    }
+  }
+  return dbInstance;
+}
 
 // Load Gemini SDK
 const { GoogleGenAI } = require('@google/genai');
 
-// Ensure DB is initialized
-try {
-  initDB();
-} catch (e) {
-  console.error("DB Initialization error in API route:", e);
-}
-
 // Helper: Get API Key from DB
 function getGeminiApiKey() {
+  const { businessProfileOps } = getDB();
   const row = businessProfileOps.get();
   return row?.gemini_api_key || '';
 }
@@ -185,6 +175,28 @@ async function handleGetInsights(snapshot) {
 export async function POST(req) {
   try {
     const { channel, args = [] } = await req.json();
+    
+    const { 
+      db,
+      initDB,
+      resetDB,
+      productOps, 
+      saleOps, 
+      purchaseOps, 
+      statsOps, 
+      reportOps, 
+      expenseOps, 
+      partyOps, 
+      returnOps, 
+      businessProfileOps, 
+      categoryOps, 
+      expenseCategoryOps, 
+      attributeOps, 
+      storageOps, 
+      syncToCloud, 
+      authOps,
+      mobileAccessOps
+    } = getDB();
     
     // Extract dynamic web-client browser credentials
     const neonUrlHeader = req.headers.get('x-neon-url');

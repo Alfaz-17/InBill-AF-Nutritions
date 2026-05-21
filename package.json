@@ -19,7 +19,7 @@
     "electron-dev": "wait-on http://localhost:3456 && electron .",
     "dev": "concurrently \"npm run next-dev\" \"npm run electron-dev\"",
     "build": "next build && electron-builder",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "node -e \"if (!process.env.VERCEL) { require('child_process').execSync('electron-builder install-app-deps', { stdio: 'inherit' }); }\""
   },
   "dependencies": {
     "@google/genai": "^1.50.1",
