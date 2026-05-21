@@ -61,7 +61,7 @@ export default function Dashboard({ onNavigate, profile }) {
   };
 
   return (
-    <div className="flex flex-col gap-10 md:p-2 lg:p-4 animate-in">
+    <div className="flex flex-col gap-6 lg:gap-8 md:p-2 animate-in">
       <header className="page-header">
         <div>
           <h2>Executive Overview</h2>
@@ -83,7 +83,7 @@ export default function Dashboard({ onNavigate, profile }) {
       </header>
 
       {/* Primary Metrics */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 xl:gap-6">
         <div className="metric-card group">
           <div className="metric-icon green group-hover:scale-110 transition-transform duration-500">
             <ArrowDownLeft size={28} />
@@ -130,7 +130,7 @@ export default function Dashboard({ onNavigate, profile }) {
       </div>
 
       {/* Daily Cashflow Breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 -mt-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 xl:gap-6 -mt-4">
         <div className="bg-emerald-50/50 border border-emerald-100 rounded-[2rem] p-6 flex items-center justify-between">
           <div>
             <p className="text-[10px] font-black text-emerald-600 uppercase tracking-[0.2em] mb-1">Today's Cash</p>
@@ -160,11 +160,11 @@ export default function Dashboard({ onNavigate, profile }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 xl:gap-8">
         {/* Quick Insights */}
-        <div className="lg:col-span-2 space-y-10">
+        <div className="lg:col-span-2 space-y-6 lg:space-y-8">
           <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40">
-            <CardHeader className="p-10 pb-4 flex flex-row items-center justify-between">
+            <CardHeader className="p-6 md:p-8 xl:p-10 pb-4 flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-2xl font-black">Recent Transactions</CardTitle>
                 <CardDescription className="text-base font-medium">Last 5 sales activities</CardDescription>
@@ -173,10 +173,10 @@ export default function Dashboard({ onNavigate, profile }) {
                 Full Report <ChevronRight size={16} />
               </Button>
             </CardHeader>
-            <CardContent className="p-10 pt-0">
+            <CardContent className="p-6 md:p-8 xl:p-10 pt-0">
               {s.recentSales?.length > 0 ? (
                 <div className="table-wrap border-none shadow-none">
-                  <table className="w-full">
+                  <table className="w-full dashboard-table">
                     <thead>
                       <tr>
                         <th className="px-0">Invoice</th>
@@ -217,9 +217,9 @@ export default function Dashboard({ onNavigate, profile }) {
         </div>
 
         {/* Action Sidebar */}
-        <div className="space-y-10">
+        <div className="space-y-6 lg:space-y-8">
           <Card className="rounded-[2.5rem] border-amber-100 shadow-xl shadow-amber-100/30">
-             <CardHeader className="p-8 pb-2 flex flex-row items-center justify-between">
+             <CardHeader className="p-6 md:p-8 pb-2 flex flex-row items-center justify-between">
                <CardTitle className="text-lg font-black flex items-center gap-2">
                  <Clock size={18} className="text-amber-500" /> Payment Reminders
                </CardTitle>
@@ -227,7 +227,7 @@ export default function Dashboard({ onNavigate, profile }) {
                  View All <ChevronRight size={16} />
                </Button>
              </CardHeader>
-             <CardContent className="p-8 pt-0 space-y-4">
+             <CardContent className="p-6 md:p-8 pt-0 space-y-4">
                 {s.paymentReminders?.length > 0 ? s.paymentReminders.map((item) => (
                   <div
                     key={item.party_id}
@@ -263,12 +263,12 @@ export default function Dashboard({ onNavigate, profile }) {
           </Card>
 
           <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40">
-             <CardHeader className="p-8 pb-2">
+             <CardHeader className="p-6 md:p-8 pb-2">
                <CardTitle className="text-lg font-black flex items-center gap-2">
                  <AlertTriangle size={18} className="text-amber-500" /> Restock Radar
                </CardTitle>
              </CardHeader>
-             <CardContent className="p-8 pt-0 space-y-4">
+             <CardContent className="p-6 md:p-8 pt-0 space-y-4">
                 {stats?.lowStock?.length > 0 ? stats.lowStock.slice(0, 3).map(item => (
                   <div key={item.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div className="min-w-0">

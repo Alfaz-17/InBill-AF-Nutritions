@@ -8,6 +8,8 @@
   "scripts": {
     "next-dev": "next dev -p 3456",
     "next-build": "next build",
+    "web-dev": "set IS_WEB=true&& next dev -p 3456",
+    "web-build": "set IS_WEB=true&& next build",
     "qa-frontend": "node tests/frontend-contract.mjs",
     "qa-e2e": "node tests/run-e2e-core.cjs",
     "qa-financial-integrity": "node tests/run-financial-integrity.cjs",

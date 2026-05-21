@@ -403,9 +403,11 @@ export const getInvoiceHTML = (data, profile = {}) => {
             ? `
             <img
               style="max-height: 80px; object-fit: contain;"
-              src="local-file://asset/?path=${encodeURIComponent(
-                profile.logo_path
-              )}"
+              src="${
+                profile.logo_path.startsWith('/') || profile.logo_path.startsWith('http')
+                  ? profile.logo_path
+                  : `local-file://asset/?path=${encodeURIComponent(profile.logo_path)}`
+              }"
             />
           `
             : ''

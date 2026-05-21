@@ -723,3 +723,47 @@
     min-width: 620px;
   }
 }
+
+/* Mistake-proofing: Disable default browser spin buttons in number inputs */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* Advanced Desktop Responsiveness Enhancements */
+@media (min-width: 1024px) {
+  /* Prevent extreme stretching on ultra-wide screens */
+  .app-shell {
+    max-width: 2560px;
+    margin: 0 auto;
+  }
+
+  /* Make sure the main content scales beautifully */
+  .main-content {
+    padding: 2.5rem 3rem;
+  }
+
+  /* Adapt grid items on medium/large desktops (3/4 columns auto sizing) */
+  .metric-grid,
+  .grid-cols-1.md\:grid-cols-2.lg\:grid-cols-4 {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+  }
+}
+
+@media (min-width: 1440px) {
+  .main-content {
+    padding: 3rem 4rem;
+  }
+}
+
+/* Dashboard Table Override */
+.dashboard-table {
+  min-width: auto !important;
+  width: 100% !important;
+}
+
+

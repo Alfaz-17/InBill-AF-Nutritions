@@ -394,7 +394,12 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                   <div className="flex items-center gap-6 p-6 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200">
                     {profileForm.logo_path ? (
                       <div className="relative group">
-                        <img src={`local-file://asset/?path=${encodeURIComponent(profileForm.logo_path)}&t=${Date.now()}`} className="h-20 w-20 object-contain bg-white p-2 rounded-xl border border-slate-200" />
+                        <img 
+                          src={profileForm.logo_path.startsWith('/') || profileForm.logo_path.startsWith('http')
+                            ? profileForm.logo_path
+                            : `local-file://asset/?path=${encodeURIComponent(profileForm.logo_path)}&t=${Date.now()}`} 
+                          className="h-20 w-20 object-contain bg-white p-2 rounded-xl border border-slate-200" 
+                        />
                         <button 
                           onClick={() => setProfileForm({...profileForm, logo_path: ''})}
                           className="absolute -top-2 -right-2 bg-rose-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
