@@ -26,15 +26,15 @@ function getDB() {
 const { GoogleGenAI } = require('@google/genai');
 
 // Helper: Get API Key from DB
-function getGeminiApiKey() {
+async function getGeminiApiKey() {
   const { businessProfileOps } = getDB();
-  const row = businessProfileOps.get();
+  const row = await businessProfileOps.get();
   return row?.gemini_api_key || '';
 }
 
 // AI Parse Invoice Handler
 async function handleParseInvoice({ base64, mimeType }) {
-  const apiKey = getGeminiApiKey();
+  const apiKey = await getGeminiApiKey();
   if (!apiKey) return { success: false, error: "GEMINI_API_KEY not configured." };
 
   const ai = new GoogleGenAI({ apiKey });
@@ -139,7 +139,7 @@ async function handleParseInvoice({ base64, mimeType }) {
 
 // AI Insights Handler
 async function handleGetInsights(snapshot) {
-  const apiKey = getGeminiApiKey();
+  const apiKey = await getGeminiApiKey();
   if (!apiKey) return { success: false, error: "GEMINI_API_KEY not configured." };
 
   const ai = new GoogleGenAI({ apiKey });
@@ -203,25 +203,25 @@ export async function POST(req) {
     const geminiKeyHeader = req.headers.get('x-gemini-key');
     
     if (neonUrlHeader) {
-      const currentProfile = db.prepare('SELECT neon_db_url, use_cloud FROM business_profile WHERE id = 1').get();
+      const currentProfile = await db.prepare('SELECT neon_db_url, use_cloud FROM business_profile WHERE id = 1').get();
       if (!currentProfile) {
-        db.prepare('INSERT INTO business_profile (id, neon_db_url, use_cloud) VALUES (1, ?, 1)').run(neonUrlHeader);
+        await db.prepare('INSERT INTO business_profile (id, neon_db_url, use_cloud) VALUES (1, ?, 1)').run(neonUrlHeader);
         console.log("🔄 Seeded first business profile with custom Neon URL.");
         try { await syncToCloud(); } catch (e) { console.error("Auto-sync error on seed:", e); }
       } else if (currentProfile.neon_db_url !== neonUrlHeader || currentProfile.use_cloud !== 1) {
-        db.prepare('UPDATE business_profile SET neon_db_url = ?, use_cloud = 1 WHERE id = 1').run(neonUrlHeader);
+        await db.prepare('UPDATE business_profile SET neon_db_url = ?, use_cloud = 1 WHERE id = 1').run(neonUrlHeader);
         console.log("🔄 Dynamically updated session Neon Postgres connection URL.");
         try { await syncToCloud(); } catch (e) { console.error("Auto-sync error on update:", e); }
       }
     }
 
     if (geminiKeyHeader) {
-      const currentProfile = db.prepare('SELECT gemini_api_key FROM business_profile WHERE id = 1').get();
+      const currentProfile = await db.prepare('SELECT gemini_api_key FROM business_profile WHERE id = 1').get();
       if (!currentProfile) {
-        db.prepare('INSERT INTO business_profile (id, gemini_api_key) VALUES (1, ?)').run(geminiKeyHeader);
+        await db.prepare('INSERT INTO business_profile (id, gemini_api_key) VALUES (1, ?)').run(geminiKeyHeader);
         console.log("🔄 Seeded first business profile with custom Gemini key.");
       } else if (currentProfile.gemini_api_key !== geminiKeyHeader) {
-        db.prepare('UPDATE business_profile SET gemini_api_key = ? WHERE id = 1').run(geminiKeyHeader);
+        await db.prepare('UPDATE business_profile SET gemini_api_key = ? WHERE id = 1').run(geminiKeyHeader);
         console.log("🔄 Dynamically updated session Gemini API key.");
       }
     }
@@ -230,31 +230,31 @@ export async function POST(req) {
     switch (channel) {
       /* ── Products ── */
       case 'products:getAll':
-        result = productOps.getAll();
+        result = await productOps.getAll();
         break;
       case 'products:getById':
-        result = productOps.getById(...args);
+        result = await productOps.getById(...args);
         break;
       case 'products:search':
-        result = productOps.search(...args);
+        result = await productOps.search(...args);
         break;
       case 'products:add':
-        result = productOps.add(...args);
+        result = await productOps.add(...args);
         break;
       case 'products:update':
-        result = productOps.update(...args);
+        result = await productOps.update(...args);
         break;
       case 'products:delete':
-        result = productOps.delete(...args);
+        result = await productOps.delete(...args);
         break;
       case 'products:lowStock':
-        result = productOps.getLowStock(...args);
+        result = await productOps.getLowStock(...args);
         break;
       case 'products:expiring':
-        result = productOps.getExpiring(...args);
+        result = await productOps.getExpiring(...args);
         break;
       case 'products:getLastPrice':
-        result = productOps.getLastPurchasePrice(...args);
+        result = await productOps.getLastPurchasePrice(...args);
         break;
 
       /* ── Sales ── */
@@ -262,19 +262,19 @@ export async function POST(req) {
         result = await saleOps.create(...args);
         break;
       case 'sales:getAll':
-        result = saleOps.getAll();
+        result = await saleOps.getAll();
         break;
       case 'sales:getById':
-        result = saleOps.getById(...args);
+        result = await saleOps.getById(...args);
         break;
       case 'sales:getByInvoice':
-        result = saleOps.getByInvoice(...args);
+        result = await saleOps.getByInvoice(...args);
         break;
       case 'sales:getByDateRange':
-        result = saleOps.getByDateRange(...args);
+        result = await saleOps.getByDateRange(...args);
         break;
       case 'sales:getToday':
-        result = saleOps.getTodaySales();
+        result = await saleOps.getTodaySales();
         break;
 
       /* ── Purchases ── */
@@ -282,105 +282,105 @@ export async function POST(req) {
         result = await purchaseOps.create(...args);
         break;
       case 'purchases:getAll':
-        result = purchaseOps.getAll();
+        result = await purchaseOps.getAll();
         break;
       case 'purchases:getById':
-        result = purchaseOps.getById(...args);
+        result = await purchaseOps.getById(...args);
         break;
       case 'purchases:delete':
-        result = purchaseOps.delete(...args);
+        result = await purchaseOps.delete(...args);
         break;
 
       /* ── Expenses ── */
       case 'expenses:getAll':
-        result = expenseOps.getAll();
+        result = await expenseOps.getAll();
         break;
       case 'expenses:add':
-        result = expenseOps.add(...args);
+        result = await expenseOps.add(...args);
         break;
       case 'expenses:delete':
-        result = expenseOps.delete(...args);
+        result = await expenseOps.delete(...args);
         break;
 
       /* ── Dashboard ── */
       case 'stats:dashboard':
-        result = statsOps.getDashboard();
+        result = await statsOps.getDashboard();
         break;
       case 'stats:getMonthly':
-        result = statsOps.getMonthlyStats();
+        result = await statsOps.getMonthlyStats();
         break;
       case 'stats:getAiSnapshot':
-        result = statsOps.getAiSnapshot();
+        result = await statsOps.getAiSnapshot();
         break;
 
       /* ── Reports ── */
       case 'reports:sales':
-        result = reportOps.salesReport(...args);
+        result = await reportOps.salesReport(...args);
         break;
       case 'reports:purchases':
-        result = reportOps.purchaseReport(...args);
+        result = await reportOps.purchaseReport(...args);
         break;
       case 'reports:stock':
-        result = reportOps.stockReport();
+        result = await reportOps.stockReport();
         break;
 
       /* ── Returns ── */
       case 'returns:createSaleReturn':
-        result = returnOps.createSaleReturn(...args);
+        result = await returnOps.createSaleReturn(...args);
         break;
       case 'returns:getAllSaleReturns':
-        result = returnOps.getAllSaleReturns();
+        result = await returnOps.getAllSaleReturns();
         break;
       case 'returns:deleteSaleReturn':
-        result = returnOps.deleteSaleReturn(...args);
+        result = await returnOps.deleteSaleReturn(...args);
         break;
       case 'returns:createPurchaseReturn':
-        result = returnOps.createPurchaseReturn(...args);
+        result = await returnOps.createPurchaseReturn(...args);
         break;
       case 'returns:getAllPurchaseReturns':
-        result = returnOps.getAllPurchaseReturns();
+        result = await returnOps.getAllPurchaseReturns();
         break;
       case 'returns:deletePurchaseReturn':
-        result = returnOps.deletePurchaseReturn(...args);
+        result = await returnOps.deletePurchaseReturn(...args);
         break;
 
       /* ── Parties ── */
       case 'parties:getAll':
-        result = partyOps.getAll(...args);
+        result = await partyOps.getAll(...args);
         break;
       case 'parties:getById':
-        result = partyOps.getById(...args);
+        result = await partyOps.getById(...args);
         break;
       case 'parties:add':
-        result = partyOps.add(...args);
+        result = await partyOps.add(...args);
         break;
       case 'parties:update':
-        result = partyOps.update(...args, args[1]); // Ensure full args map
+        result = await partyOps.update(...args, args[1]); // Ensure full args map
         break;
       case 'parties:delete':
-        result = partyOps.delete(...args);
+        result = await partyOps.delete(...args);
         break;
       case 'parties:updateBalance':
-        result = partyOps.updateBalance(...args);
+        result = await partyOps.updateBalance(...args);
         break;
       case 'parties:getLedger':
-        result = partyOps.getLedger(...args);
+        result = await partyOps.getLedger(...args);
         break;
       case 'parties:recordPayment':
-        result = partyOps.recordPayment(...args);
+        result = await partyOps.recordPayment(...args);
         break;
 
       /* ── Authentication ── */
       case 'auth:check':
-        const password = authOps.getPassword();
+        const password = await authOps.getPassword();
         result = { hasPassword: !!password };
         break;
       case 'auth:verify':
-        result = authOps.verify(...args);
+        result = await authOps.verify(...args);
         break;
       case 'auth:setPassword':
         try {
-          authOps.setPassword(...args);
+          await authOps.setPassword(...args);
           result = { success: true };
         } catch (err) {
           result = { success: false, error: err.message };
@@ -389,70 +389,70 @@ export async function POST(req) {
 
       /* ── Business Profile ── */
       case 'business:getProfile':
-        result = businessProfileOps.get();
+        result = await businessProfileOps.get();
         break;
       case 'business:updateProfile':
-        result = businessProfileOps.update(...args);
+        result = await businessProfileOps.update(...args);
         break;
 
       /* ── Categories ── */
       case 'categories:getAll':
-        result = categoryOps.getAll();
+        result = await categoryOps.getAll();
         break;
       case 'categories:add':
-        result = categoryOps.add(...args);
+        result = await categoryOps.add(...args);
         break;
       case 'categories:delete':
-        result = categoryOps.delete(...args);
+        result = await categoryOps.delete(...args);
         break;
 
       /* ── Expense Categories ── */
       case 'expenseCategories:getAll':
-        result = expenseCategoryOps.getAll();
+        result = await expenseCategoryOps.getAll();
         break;
       case 'expenseCategories:add':
-        result = expenseCategoryOps.add(...args);
+        result = await expenseCategoryOps.add(...args);
         break;
       case 'expenseCategories:delete':
-        result = expenseCategoryOps.delete(...args);
+        result = await expenseCategoryOps.delete(...args);
         break;
 
       /* ── Product Attributes ── */
       case 'attributes:getAll':
-        result = attributeOps.getAll();
+        result = await attributeOps.getAll();
         break;
       case 'attributes:add':
-        result = attributeOps.add(...args);
+        result = await attributeOps.add(...args);
         break;
       case 'attributes:delete':
-        result = attributeOps.delete(...args);
+        result = await attributeOps.delete(...args);
         break;
 
       /* ── Mobile Access ── */
       case 'mobile:getConfig':
-        result = mobileAccessOps.get();
+        result = await mobileAccessOps.get();
         break;
       case 'mobile:generate':
-        result = mobileAccessOps.generate();
+        result = await mobileAccessOps.generate();
         break;
       case 'mobile:revoke':
-        result = mobileAccessOps.revoke();
+        result = await mobileAccessOps.revoke();
         break;
 
       /* ── Settings ── */
       case 'settings:getGeminiKey':
-        const currentProfile = businessProfileOps.get();
-        const key = currentProfile?.gemini_api_key || '';
+        const currProf = await businessProfileOps.get();
+        const key = currProf?.gemini_api_key || '';
         const masked = key ? (key.substring(0, 6) + '•'.repeat(Math.max(0, key.length - 10)) + key.substring(key.length - 4)) : '';
         result = { configured: !!key, maskedKey: masked };
         break;
       case 'settings:setGeminiKey':
-        db.prepare('UPDATE business_profile SET gemini_api_key = ? WHERE id = 1').run(args[0].trim());
+        await db.prepare('UPDATE business_profile SET gemini_api_key = ? WHERE id = 1').run(args[0].trim());
         result = { success: true };
         break;
       case 'settings:getNeonConfig':
-        const row = db.prepare('SELECT neon_db_url, use_cloud FROM business_profile WHERE id = 1').get();
-        result = { url: row?.neon_db_url || '', useCloud: row?.use_cloud === 1 };
+        const neonRow = await db.prepare('SELECT neon_db_url, use_cloud FROM business_profile WHERE id = 1').get();
+        result = { url: neonRow?.neon_db_url || '', useCloud: neonRow?.use_cloud === 1 };
         break;
       case 'settings:setNeonConfig':
         let cleanUrl = (args[0]?.url || '').trim();
@@ -461,11 +461,12 @@ export async function POST(req) {
         } else {
           cleanUrl = cleanUrl.replace(/^['"]|['"]$/g, '');
         }
-        db.prepare('UPDATE business_profile SET neon_db_url = ?, use_cloud = ? WHERE id = 1').run(cleanUrl, args[0]?.useCloud ? 1 : 0);
+        cleanUrl = cleanUrl.split('?')[0];
+        await db.prepare('UPDATE business_profile SET neon_db_url = ?, use_cloud = ? WHERE id = 1').run(cleanUrl, args[0]?.useCloud ? 1 : 0);
         result = { success: true };
         break;
       case 'settings:resetData':
-        resetDB();
+        await resetDB();
         result = { success: true };
         break;
       case 'settings:syncToCloud':

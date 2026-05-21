@@ -552,6 +552,7 @@ ipcMain.handle('settings:setNeonConfig', async (_, { url, useCloud }) => {
     } else {
       cleanUrl = cleanUrl.replace(/^['"]|['"]$/g, '');
     }
+    cleanUrl = cleanUrl.split('?')[0];
     
     db.prepare('UPDATE business_profile SET neon_db_url = ?, use_cloud = ? WHERE id = 1').run(cleanUrl, useCloud ? 1 : 0);
     return { success: true };

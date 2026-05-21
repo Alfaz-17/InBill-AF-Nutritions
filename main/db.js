@@ -1,4 +1,3 @@
-const Database = require('better-sqlite3');
 const postgres = require('postgres');
 const path = require('path');
 let app;
@@ -11,6 +10,178 @@ try {
 }
 
 const isDev = app ? !app.isPackaged : true;
+const isWebEnv = process.env.IS_WEB === 'true' || !!process.env.DATABASE_URL || !!process.env.VERCEL;
+
+let Database;
+if (isWebEnv) {
+  console.log("⚡ [InBill Web Mode] Using Postgres Direct Link Compatibility Layer");
+  
+  class PostgresStatementCompat {
+    constructor(pgClient, sqlText) {
+      this.pgClient = pgClient;
+      this.originalSql = sqlText;
+    }
+
+    translate(sqlText, args) {
+      let count = 0;
+      let pgSql = sqlText.replace(/\?/g, () => {
+        count++;
+        return `$${count}`;
+      });
+
+      pgSql = pgSql.replace(/datetime\('now'\s*,\s*'localtime'\)/gi, 'CURRENT_TIMESTAMP');
+      pgSql = pgSql.replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP');
+      
+      if (/INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i.test(pgSql)) {
+        pgSql = pgSql.replace(/INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)/i, 'INSERT INTO $1');
+        if (pgSql.toLowerCase().includes('business_profile')) {
+          pgSql += ' ON CONFLICT (id) DO NOTHING';
+        } else {
+          pgSql += ' ON CONFLICT DO NOTHING';
+        }
+      }
+
+      if (pgSql.toLowerCase().includes('sqlite_sequence')) {
+        pgSql = 'SELECT 1';
+      }
+
+      const pgArgs = args.map(arg => {
+        if (arg !== null && typeof arg === 'object') {
+          return JSON.stringify(arg);
+        }
+        return arg;
+      });
+
+      return { pgSql, pgArgs };
+    }
+
+    async get(...args) {
+      const { pgSql, pgArgs } = this.translate(this.originalSql, args);
+      try {
+        const rows = await this.pgClient.unsafe(pgSql, pgArgs);
+        return rows[0] || undefined;
+      } catch (err) {
+        console.error("❌ Postgres Compat GET error:", err.message, "Query:", pgSql, "Args:", pgArgs);
+        throw err;
+      }
+    }
+
+    async all(...args) {
+      const { pgSql, pgArgs } = this.translate(this.originalSql, args);
+      try {
+        const rows = await this.pgClient.unsafe(pgSql, pgArgs);
+        return rows;
+      } catch (err) {
+        console.error("❌ Postgres Compat ALL error:", err.message, "Query:", pgSql, "Args:", pgArgs);
+        throw err;
+      }
+    }
+
+    async run(...args) {
+      let sqlText = this.originalSql;
+      const isInsert = /^\s*INSERT\s+/i.test(sqlText);
+      if (isInsert && !/RETURNING/i.test(sqlText)) {
+        sqlText += ' RETURNING id';
+      }
+
+      const { pgSql, pgArgs } = this.translate(sqlText, args);
+      try {
+        const result = await this.pgClient.unsafe(pgSql, pgArgs);
+        
+        let lastInsertRowid = 0;
+        if (isInsert && result && result[0]) {
+          lastInsertRowid = result[0].id || 0;
+        }
+        
+        return {
+          lastInsertRowid: Number(lastInsertRowid),
+          changes: result.count !== undefined ? result.count : result.length
+        };
+      } catch (err) {
+        console.error("❌ Postgres Compat RUN error:", err.message, "Query:", pgSql, "Args:", pgArgs);
+        throw err;
+      }
+    }
+  }
+
+  class PostgresDatabaseCompat {
+    constructor(url) {
+      this.url = url || process.env.DATABASE_URL;
+      if (!this.url) {
+        console.warn("DATABASE_URL is not set but application is running in Web Mode.");
+      }
+      if (this.url) {
+        const cleanUrl = this.url.split('?')[0];
+        this.pgClient = postgres(cleanUrl, {
+          ssl: { rejectUnauthorized: false },
+          connect_timeout: 10,
+          max: 10,
+          types: {
+            numeric: {
+              from: [1700],
+              serialize: x => x.toString(),
+              parse: x => parseFloat(x)
+            },
+            bigint: {
+              from: [20],
+              serialize: x => x.toString(),
+              parse: x => Number(x)
+            }
+          }
+        });
+      }
+    }
+
+    pragma(cmd) {
+      return [];
+    }
+
+    exec(sqlText) {
+      return (async () => {
+        try {
+          if (!this.pgClient) return;
+          const statements = sqlText.split(';').map(s => s.trim()).filter(s => s.length > 0);
+          for (const stmt of statements) {
+            await this.pgClient.unsafe(stmt);
+          }
+        } catch (err) {
+          console.warn("⚠️ Postgres compat exec info:", err.message);
+        }
+      })();
+    }
+
+    prepare(sqlText) {
+      if (!this.pgClient) {
+        return {
+          get: () => ({}),
+          all: () => [],
+          run: () => ({ lastInsertRowid: 1, changes: 1 })
+        };
+      }
+      return new PostgresStatementCompat(this.pgClient, sqlText);
+    }
+  }
+
+  Database = PostgresDatabaseCompat;
+} else {
+  try {
+    Database = require('better-sqlite3');
+  } catch (e) {
+    console.warn("⚠️ better-sqlite3 not found, initializing mock sqlite db:", e.message);
+    Database = class MockDatabase {
+      pragma() {}
+      exec() {}
+      prepare() {
+        return {
+          get: () => ({}),
+          all: () => [],
+          run: () => ({ lastInsertRowid: 1, changes: 1 })
+        };
+      }
+    };
+  }
+}
+
 const dbPath = process.env.INBILL_DB_PATH || (isDev 
   ? path.join(__dirname, '../store.db') 
   : path.join(app.getPath('userData'), 'store.db'));
@@ -52,8 +223,9 @@ const getSql = (forceUrl = null) => {
 
     if (!sql) {
       try {
+        const cleanUrl = url.split('?')[0];
         // Neon requires SSL
-        sql = postgres(url, { 
+        sql = postgres(cleanUrl, { 
           ssl: { rejectUnauthorized: false },
           connect_timeout: 10,
           max: 10
@@ -71,6 +243,10 @@ const getSql = (forceUrl = null) => {
 
 /* ───────── Schema ───────── */
 const initDB = () => {
+  if (isWebEnv) {
+    ensurePostgresSchema(db.pgClient).catch(err => console.error("❌ Postgres Schema verification failed:", err.message));
+    return;
+  }
   db.exec(`
     CREATE TABLE IF NOT EXISTS products (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2451,6 +2627,9 @@ let isSyncing = false;
 let syncQueued = false;
 
 const syncToCloud = async () => {
+  if (isWebEnv) {
+    return { success: true };
+  }
   if (isSyncing) {
     syncQueued = true;
     return;
