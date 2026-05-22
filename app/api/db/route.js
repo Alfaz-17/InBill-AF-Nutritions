@@ -359,7 +359,7 @@ export async function POST(req) {
         result = await partyOps.add(...args);
         break;
       case 'parties:update':
-        result = await partyOps.update(...args, args[1]); // Ensure full args map
+        result = await partyOps.update(...args);
         break;
       case 'parties:delete':
         result = await partyOps.delete(...args);

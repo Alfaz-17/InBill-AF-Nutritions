@@ -193,7 +193,7 @@ export default function Dashboard({ onNavigate, profile }) {
                           </td>
                           <td className="font-bold text-slate-900">{sale.customer_name || 'Counter Sale'}</td>
                           <td className="text-right font-black text-slate-900">
-                            {CURRENCY}{sale.total_amount.toLocaleString('en-IN')}
+                            {CURRENCY}{(sale.total_amount || 0).toLocaleString('en-IN')}
                             {sale.returned_total > 0 && (
                               <div className="mt-1 text-[10px] font-black text-amber-500 uppercase tracking-widest">Adjusted Total</div>
                             )}

@@ -29,8 +29,33 @@ if (isWebEnv) {
         return `$${count}`;
       });
 
+      // SQLite specific datetime conversions
       pgSql = pgSql.replace(/datetime\('now'\s*,\s*'localtime'\)/gi, 'CURRENT_TIMESTAMP');
       pgSql = pgSql.replace(/datetime\('now'\)/gi, 'CURRENT_TIMESTAMP');
+
+      // SQLite specific date conversions
+      pgSql = pgSql.replace(/date\('now'\s*,\s*'localtime'\)/gi, 'CURRENT_DATE');
+      pgSql = pgSql.replace(/date\('now'\)/gi, 'CURRENT_DATE');
+      
+      // date('now', '-30 days') -> (CURRENT_DATE - INTERVAL '30 days')::date
+      pgSql = pgSql.replace(/date\('now'\s*,\s*'-(\d+)\s+days'\)/gi, "(CURRENT_DATE - INTERVAL '$1 days')::date");
+      
+      // julianday(expr) -> (expr)::date (supporting one level of nested parentheses)
+      pgSql = pgSql.replace(/julianday\(\s*((?:[^()]+|\([^()]*\))+)\s*\)/gi, '($1)::date');
+      
+      // date(expr) -> (expr)::date (supporting one level of nested parentheses)
+      // Make sure we only capture function calls, e.g. date(column) or date(MIN(due_date)), not column references like s.date
+      // Also make sure we don't convert data types like ::date
+      pgSql = pgSql.replace(/\bdate\(\s*((?:[^()]+|\([^()]*\))+)\s*\)/gi, '($1)::date');
+
+      // strftime('%m', expr) -> TO_CHAR((expr)::timestamp, 'MM')
+      pgSql = pgSql.replace(/strftime\(\s*'%m'\s*,\s*((?:[^()]+|\([^()]*\))+)\)/gi, "TO_CHAR(($1)::timestamp, 'MM')");
+
+      // strftime('%Y', expr) -> TO_CHAR((expr)::timestamp, 'YYYY')
+      pgSql = pgSql.replace(/strftime\(\s*'%Y'\s*,\s*((?:[^()]+|\([^()]*\))+)\)/gi, "TO_CHAR(($1)::timestamp, 'YYYY')");
+
+      // Translate SQLite scalar MAX(0, expr) to Postgres GREATEST(0, expr)
+      pgSql = pgSql.replace(/MAX\(\s*0\s*,\s*([^)]+)\)/gi, 'GREATEST(0, $1)');
       
       if (/INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i.test(pgSql)) {
         pgSql = pgSql.replace(/INSERT\s+OR\s+IGNORE\s+INTO\s+(\w+)/i, 'INSERT INTO $1');
@@ -116,25 +141,35 @@ if (isWebEnv) {
 
     connect(newUrl) {
       if (newUrl && newUrl !== this.url) {
+        if (!newUrl.startsWith('postgresql://') && !newUrl.startsWith('postgres://')) {
+          console.warn("⚠️ Invalid database connection URL protocol ignored:", newUrl);
+          return;
+        }
         this.url = newUrl;
         const cleanUrl = this.url.split('?')[0];
-        this.pgClient = postgres(cleanUrl, {
-          ssl: { rejectUnauthorized: false },
-          connect_timeout: 10,
-          max: 10,
-          types: {
-            numeric: {
-              from: [1700],
-              serialize: x => x.toString(),
-              parse: x => parseFloat(x)
-            },
-            bigint: {
-              from: [20],
-              serialize: x => x.toString(),
-              parse: x => Number(x)
+        try {
+          this.pgClient = postgres(cleanUrl, {
+            ssl: { rejectUnauthorized: false },
+            connect_timeout: 10,
+            max: 10,
+            types: {
+              numeric: {
+                from: [1700],
+                serialize: x => x.toString(),
+                parse: x => parseFloat(x)
+              },
+              bigint: {
+                from: [20],
+                serialize: x => x.toString(),
+                parse: x => Number(x)
+              }
             }
-          }
-        });
+          });
+        } catch (err) {
+          console.error("❌ Failed to initialize compatibility Postgres client:", err.message);
+          this.pgClient = null;
+          this.url = null;
+        }
       }
     }
 
@@ -203,6 +238,7 @@ db.pragma('temp_store = MEMORY');
 let sql = null;
 let currentUrl = null;
 const getSql = (forceUrl = null) => {
+  if (isWebEnv) return null;
   let url = forceUrl;
   
   if (!url) {
@@ -218,6 +254,10 @@ const getSql = (forceUrl = null) => {
   }
 
   if (url) {
+    if (!url.startsWith('postgresql://') && !url.startsWith('postgres://')) {
+      console.warn("⚠️ Invalid cloud database connection URL protocol ignored:", url);
+      return null;
+    }
     // If URL has changed, reset the connection
     if (url !== currentUrl) {
       if (sql) {
@@ -685,17 +725,28 @@ const initDB = () => {
   // resetDB() remains available from Settings for fresh start.
 };
 
-const resetDB = () => {
+const resetDB = async () => {
+  const tables = [
+    'return_items', 'purchase_return_items', 'returns', 'purchase_returns',
+    'sale_items', 'purchase_items', 'party_transactions',
+    'sales', 'purchases', 'products', 'parties',
+    'custom_categories', 'expense_categories', 'product_attribute_defs',
+    'expenses'
+  ];
+
+  if (isWebEnv) {
+    for (const t of tables) {
+      try { await db.prepare(`DELETE FROM ${t}`).run(); } catch(e) {}
+    }
+    // Postgres doesn't have sqlite_sequence, sequence reset is handled by TRUNCATE RESTART IDENTITY in sync,
+    // but a DELETE call on Postgres doesn't reset serials. That's fine for simple reset since we don't have sqlite_sequence anyway.
+    try { await db.prepare('UPDATE business_profile SET business_type=NULL, business_name=NULL WHERE id=1').run(); } catch(e) {}
+    return;
+  }
+
   db.exec('PRAGMA foreign_keys = OFF');
   try {
     const txn = db.transaction(() => {
-      const tables = [
-        'return_items', 'purchase_return_items', 'returns', 'purchase_returns',
-        'sale_items', 'purchase_items', 'party_transactions',
-        'sales', 'purchases', 'products', 'parties',
-        'custom_categories', 'expense_categories', 'product_attribute_defs',
-        'expenses'
-      ];
       tables.forEach(t => {
         try { db.prepare(`DELETE FROM ${t}`).run(); } catch(e) {}
       });
@@ -717,11 +768,11 @@ const closeDB = () => {
 };
 
 /* ───────── Helpers ───────── */
-const generateInvoiceNumber = () => {
-  const profile = db.prepare('SELECT invoice_prefix FROM business_profile WHERE id = 1').get();
+const generateInvoiceNumber = async () => {
+  const profile = await db.prepare('SELECT invoice_prefix FROM business_profile WHERE id = 1').get();
   const prefix = profile?.invoice_prefix || 'INV';
   
-  const row = db.prepare(`SELECT invoice_number FROM sales ORDER BY id DESC LIMIT 1`).get();
+  const row = await db.prepare(`SELECT invoice_number FROM sales ORDER BY id DESC LIMIT 1`).get();
   if (!row) return `${prefix}-001`;
   
   // Extract number even if prefix has changed
@@ -733,7 +784,7 @@ const generateInvoiceNumber = () => {
 
 /* ───────── Party Ops ───────── */
 const partyOps = {
-  getAll: (type) => {
+  getAll: async (type) => {
     const baseSelect = `
       SELECT p.*,
         (
@@ -756,27 +807,27 @@ const partyOps = {
       FROM parties p
       WHERE p.is_deleted = 0
     `;
-    if (type) return db.prepare(`${baseSelect} AND p.type = ? ORDER BY p.name ASC`).all(type);
-    return db.prepare(`${baseSelect} ORDER BY p.name ASC`).all();
+    if (type) return await db.prepare(`${baseSelect} AND p.type = ? ORDER BY p.name ASC`).all(type);
+    return await db.prepare(`${baseSelect} ORDER BY p.name ASC`).all();
   },
-  getById: (id) => db.prepare('SELECT * FROM parties WHERE id = ?').get(id),
-  add: (p) => {
+  getById: async (id) => await db.prepare('SELECT * FROM parties WHERE id = ?').get(id),
+  add: async (p) => {
     let openingBalance = parseFloat(p.opening_balance) || 0;
     // For Suppliers, positive opening balance is treated as debt (Payable)
     if (p.type === 'Supplier' && openingBalance > 0) {
       openingBalance = -openingBalance;
     }
 
-    const res = db.prepare(`
+    const res = await db.prepare(`
       INSERT INTO parties (name, phone, address, gstin, type, opening_balance, current_balance)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(p.name, p.phone || '', p.address || '', p.gstin || '', p.type || 'Customer', openingBalance, openingBalance);
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return { ...res, id: Number(res.lastInsertRowid) };
   },
-  update: (id, p) => {
-    const oldParty = db.prepare('SELECT opening_balance, current_balance FROM parties WHERE id = ?').get(id);
+  update: async (id, p) => {
+    const oldParty = await db.prepare('SELECT opening_balance, current_balance FROM parties WHERE id = ?').get(id);
     let openingBalance = parseFloat(p.opening_balance) || 0;
     
     // For Suppliers, positive opening balance is treated as debt (Payable)
@@ -787,38 +838,38 @@ const partyOps = {
     // Calculate balance delta if opening balance changed
     const delta = openingBalance - (oldParty?.opening_balance || 0);
     
-    const res = db.prepare(`
+    const res = await db.prepare(`
       UPDATE parties SET name=?, phone=?, address=?, gstin=?, type=?, opening_balance=?, current_balance = current_balance + ?
       WHERE id=?
     `).run(p.name, p.phone || '', p.address || '', p.gstin || '', p.type || 'Customer', openingBalance, delta, id);
     
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
-  delete: (id) => {
+  delete: async (id) => {
     // Soft delete to preserve foreign key integrity and history
-    const res = db.prepare('UPDATE parties SET is_deleted = 1 WHERE id = ?').run(id);
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const res = await db.prepare('UPDATE parties SET is_deleted = 1 WHERE id = ?').run(id);
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
-  updateBalance: (id, amount) => db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(amount, id),
+  updateBalance: async (id, amount) => await db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(amount, id),
   
-  getLedger: (partyId) => db.prepare(`
+  getLedger: async (partyId) => await db.prepare(`
     SELECT * FROM party_transactions 
     WHERE party_id = ? 
     ORDER BY date DESC, id DESC
   `).all(partyId),
 
-  recordPayment: (data) => {
+  recordPayment: async (data) => {
     const now = new Date();
     const today = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
     
-    const txn = db.transaction(() => {
+    const executeTx = async () => {
       const amount = Number(data.amount || 0);
       if (amount <= 0) throw new Error('Payment amount must be greater than zero');
-      const party = db.prepare('SELECT type, current_balance FROM parties WHERE id = ?').get(data.party_id);
+      const party = await db.prepare('SELECT type, current_balance FROM parties WHERE id = ?').get(data.party_id);
       if (!party) throw new Error('Party not found');
 
       if (party.type === 'Supplier') {
@@ -834,7 +885,7 @@ const partyOps = {
       }
 
       // Record payment in transaction ledger
-      db.prepare(`
+      await db.prepare(`
         INSERT INTO party_transactions (party_id, type, total_amount, paid_amount, payment_mode, note, date)
         VALUES (?, 'Payment', ?, ?, ?, ?, ?)
       `).run(data.party_id, amount, amount, data.payment_mode || 'Cash', data.note || '', data.date || today);
@@ -844,11 +895,11 @@ const partyOps = {
       // If payment to supplier: current_balance increases (we owe less, balance moves from negative toward zero)
       const direction = party.type === 'Supplier' ? 1 : -1;
       
-      db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
+      await db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
         .run(amount * direction, data.party_id);
 
       let remaining = amount;
-      const openDues = db.prepare(`
+      const openDues = await db.prepare(`
         SELECT id, reference_id, type, due_amount
         FROM party_transactions
         WHERE party_id = ?
@@ -860,22 +911,23 @@ const partyOps = {
       for (const due of openDues) {
         if (remaining <= 0) break;
         const applied = Math.min(remaining, Number(due.due_amount || 0));
-        db.prepare('UPDATE party_transactions SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+        await db.prepare('UPDATE party_transactions SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
           .run(applied, due.id);
         if (due.type === 'Sale' && due.reference_id) {
-          db.prepare('UPDATE sales SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+          await db.prepare('UPDATE sales SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
             .run(applied, due.reference_id);
         } else if (due.type === 'Purchase' && due.reference_id) {
-          db.prepare('UPDATE purchases SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+          await db.prepare('UPDATE purchases SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
             .run(applied, due.reference_id);
         }
         remaining -= applied;
       }
 
       return { success: true };
-    });
-    const result = txn();
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    };
+
+    const result = await executeTx();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return result;
   }
@@ -883,21 +935,21 @@ const partyOps = {
 
 /* ───────── Product Ops ───────── */
 const productOps = {
-  getAll: () => db.prepare('SELECT * FROM products WHERE COALESCE(is_deleted, 0) = 0 ORDER BY product_name ASC').all(),
+  getAll: async () => await db.prepare('SELECT * FROM products WHERE COALESCE(is_deleted, 0) = 0 ORDER BY product_name ASC').all(),
   
-  getById: (id) => db.prepare('SELECT * FROM products WHERE id = ?').get(id),
+  getById: async (id) => await db.prepare('SELECT * FROM products WHERE id = ?').get(id),
 
-  search: (term) => db.prepare(
+  search: async (term) => await db.prepare(
     `SELECT * FROM products WHERE COALESCE(is_deleted, 0) = 0 AND (product_name LIKE ? OR brand LIKE ? OR category LIKE ? OR product_size LIKE ?) ORDER BY product_name ASC`
   ).all(`%${term}%`, `%${term}%`, `%${term}%`, `%${term}%`),
 
-  add: (p) => {
+  add: async (p) => {
     const trimmedName = (p.product_name || '').trim();
     const gst = p.gst_rate || 0;
     const cgst = p.cgst ?? (gst / 2);
     const sgst = p.sgst ?? (gst / 2);
 
-    const existing = db.prepare(`
+    const existing = await db.prepare(`
       SELECT id FROM products 
       WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', '')) 
       ORDER BY is_deleted DESC
@@ -906,7 +958,7 @@ const productOps = {
 
     // NIGHTMARE PREVENTION: Duplicate Barcode Check
     if (p.barcode && p.barcode.trim() !== '') {
-      const barcodeExists = db.prepare('SELECT id, product_name FROM products WHERE barcode = ? AND is_deleted = 0 AND id != ?').get(p.barcode, existing?.id || 0);
+      const barcodeExists = await db.prepare('SELECT id, product_name FROM products WHERE barcode = ? AND is_deleted = 0 AND id != ?').get(p.barcode, existing?.id || 0);
       if (barcodeExists) {
         throw new Error(`Barcode '${p.barcode}' is already assigned to '${barcodeExists.product_name}'.`);
       }
@@ -919,7 +971,7 @@ const productOps = {
 
     if (existing) {
       console.log(`[DB] Manually re-activating product: ${trimmedName}`);
-      const res = db.prepare(`
+      const res = await db.prepare(`
         UPDATE products SET 
           brand=?, category=?, product_size=?, unit=?, mrp=?, selling_price=?, cost_price=?, 
           barcode=?, gst_rate=?, cgst=?, sgst=?, quantity=?, min_stock_alert=?, batch_number=?, expiry_date=?,
@@ -930,12 +982,12 @@ const productOps = {
              gst, cgst, sgst, p.quantity || 0, p.min_stock_alert ?? 0, p.batch_number || '', p.expiry_date || '', 
              p.custom_fields || '{}',
              existing.id);
-      const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+      const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
       if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
       return res;
     }
 
-    const res = db.prepare(`
+    const res = await db.prepare(`
       INSERT INTO products (product_name, brand, category, product_size, unit, mrp, selling_price, cost_price, barcode, gst_rate, cgst, sgst, quantity, min_stock_alert, batch_number, expiry_date, is_deleted, custom_fields)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
     `).run(trimmedName, p.brand || '', p.category || '', p.product_size || '', p.unit || 'pcs',
@@ -943,16 +995,16 @@ const productOps = {
            gst, cgst, sgst, p.quantity || 0, p.min_stock_alert ?? 0, p.batch_number || '', p.expiry_date || '', 
            p.custom_fields || '{}');
            
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
 
-  update: (id, p) => {
+  update: async (id, p) => {
     const gst = p.gst_rate || 0;
     const cgst = p.cgst ?? (gst / 2);
     const sgst = p.sgst ?? (gst / 2);
-    const res = db.prepare(`
+    const res = await db.prepare(`
       UPDATE products SET 
         product_name=?, brand=?, category=?, product_size=?, unit=?, mrp=?, selling_price=?, cost_price=?, 
         barcode=?, gst_rate=?, cgst=?, sgst=?, quantity=?, min_stock_alert=?, batch_number=?, expiry_date=?, custom_fields=?
@@ -962,13 +1014,13 @@ const productOps = {
            gst, cgst, sgst, p.quantity || 0, p.min_stock_alert ?? 0, p.batch_number || '', p.expiry_date || '', 
            p.custom_fields || '{}', id);
 
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
 
-  getLastPurchasePrice: (productName) => {
-    const row = db.prepare(`
+  getLastPurchasePrice: async (productName) => {
+    const row = await db.prepare(`
       SELECT price FROM purchase_items 
       WHERE product_name = ? 
       ORDER BY id DESC LIMIT 1
@@ -976,22 +1028,22 @@ const productOps = {
     return row ? row.price : 0;
   },
 
-  delete: (id) => {
-    const result = db.prepare('UPDATE products SET is_deleted = 1 WHERE id = ?').run(id);
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  delete: async (id) => {
+    const result = await db.prepare('UPDATE products SET is_deleted = 1 WHERE id = ?').run(id);
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return result;
   },
 
-  getLowStock: (threshold = 10) => db.prepare(
+  getLowStock: async (threshold = 10) => await db.prepare(
     'SELECT * FROM products WHERE is_deleted = 0 AND quantity <= ? AND quantity >= 0 ORDER BY quantity ASC'
   ).all(threshold),
 
-  getExpiring: (days = 30) => {
+  getExpiring: async (days = 30) => {
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + days);
     const dateStr = futureDate.toISOString().split('T')[0];
-    return db.prepare(
+    return await db.prepare(
       `SELECT * FROM products WHERE is_deleted = 0 AND expiry_date != '' AND expiry_date <= ? ORDER BY expiry_date ASC`
     ).all(dateStr);
   },
@@ -1000,9 +1052,8 @@ const productOps = {
 /* ───────── Sale Ops ───────── */
 const saleOps = {
   create: async (saleData) => {
-    const txn = db.transaction(() => {
-      // ... (existing logic remains same)
-      const invoiceNumber = generateInvoiceNumber();
+    const executeTx = async () => {
+      const invoiceNumber = await generateInvoiceNumber();
       let subtotal = 0;
       let totalGst = 0;
 
@@ -1016,7 +1067,7 @@ const saleOps = {
         if (item.quantity <= 0) throw new Error(`Invalid quantity for ${item.product_name}.`);
         if (item.price < 0) throw new Error(`Invalid price for ${item.product_name}.`);
 
-        const stock = getAvailableStock.get(item.product_id);
+        const stock = await getAvailableStock.get(item.product_id);
         if (!stock) throw new Error(`Product not found: ${item.product_name || item.product_id}.`);
         if (Number(stock.quantity || 0) < Number(item.quantity || 0)) {
           throw new Error(`Insufficient stock for ${stock.product_name}. Available: ${stock.quantity}, requested: ${item.quantity}`);
@@ -1061,7 +1112,7 @@ const saleOps = {
         dueDate = promised.getFullYear() + '-' + String(promised.getMonth() + 1).padStart(2, '0') + '-' + String(promised.getDate()).padStart(2, '0');
       }
 
-      const saleInfo = db.prepare(`
+      const saleInfo = await db.prepare(`
         INSERT INTO sales (invoice_number, party_id, customer_name, customer_phone, customer_address, subtotal, total_gst, misc_charges, total_amount, total_discount, payment_mode, paid_amount, due_amount, credit_days, due_date, tax_mode)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
@@ -1073,8 +1124,8 @@ const saleOps = {
       const saleId = saleInfo.lastInsertRowid;
 
       if (saleData.party_id) {
-        db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(dueAmount, saleData.party_id);
-        db.prepare(`
+        await db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(dueAmount, saleData.party_id);
+        await db.prepare(`
           INSERT INTO party_transactions (party_id, type, reference_id, total_amount, paid_amount, due_amount, credit_days, due_date, date)
           VALUES (?, 'Sale', ?, ?, ?, ?, ?, ?, datetime('now','localtime'))
         `).run(saleData.party_id, saleId, totalAmount, saleData.paid_amount || 0, dueAmount, creditDays, dueDate);
@@ -1091,25 +1142,25 @@ const saleOps = {
       for (const item of saleData.items) {
         let pName = item.product_name;
         if (!pName && item.product_id) {
-          const p = db.prepare('SELECT product_name FROM products WHERE id = ?').get(item.product_id);
+          const p = await db.prepare('SELECT product_name FROM products WHERE id = ?').get(item.product_id);
           pName = p?.product_name || 'Unknown Product';
         }
 
-        const product = getCost.get(item.product_id);
+        const product = await getCost.get(item.product_id);
         const costPrice = product ? product.cost_price : 0;
-        insertItem.run(saleId, item.product_id, pName, item.quantity, item.mrp || item.price, item.base_price, costPrice, item.discount || 0, item.gst_rate, item.gst_amount, item.total_price);
-        reduceStock.run(item.quantity, item.product_id);
+        await insertItem.run(saleId, item.product_id, pName, item.quantity, item.mrp || item.price, item.base_price, costPrice, item.discount || 0, item.gst_rate, item.gst_amount, item.total_price);
+        await reduceStock.run(item.quantity, item.product_id);
       }
 
-      const createdSale = db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId);
-      createdSale.items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(saleId);
+      const createdSale = await db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId);
+      createdSale.items = await db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(saleId);
       return createdSale;
-    });
+    };
 
-    const result = txn();
+    const result = await executeTx();
     
     // Auto-Sync to Cloud in background if enabled in settings
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) {
       syncToCloud().catch(err => console.error("Auto-Sync Failed:", err));
     }
@@ -1117,52 +1168,53 @@ const saleOps = {
     return result;
   },
 
-  delete: (id) => {
-    const txn = db.transaction(() => {
-      const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
+  delete: async (id) => {
+    const executeTx = async () => {
+      const sale = await db.prepare('SELECT * FROM sales WHERE id = ?').get(id);
       if (!sale) return;
 
-      const items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(id);
+      const items = await db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all(id);
       
       // 1. Restore Stock (Only restore what wasn't already returned)
       const restoreStock = db.prepare('UPDATE products SET quantity = quantity + ? WHERE id = ?');
       for (const item of items) {
-        const returnedQty = db.prepare(`
+        const returnedQtyRow = await db.prepare(`
           SELECT COALESCE(SUM(ri.quantity), 0) as qty 
           FROM return_items ri
           JOIN returns r ON ri.return_id = r.id
           WHERE r.sale_id = ? AND ri.product_id = ?
-        `).get(id, item.product_id).qty;
+        `).get(id, item.product_id);
+        const returnedQty = returnedQtyRow ? returnedQtyRow.qty : 0;
         
         const netRestorable = item.quantity - returnedQty;
         if (netRestorable > 0) {
-          restoreStock.run(netRestorable, item.product_id);
+          await restoreStock.run(netRestorable, item.product_id);
         }
       }
 
       // 2. Adjust Party Balance
       if (sale.party_id) {
         // Reverse the entire sale impact. If they paid part of it, that payment now becomes a credit on their account.
-        db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
+        await db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
           .run(sale.total_amount, sale.party_id);
         
-        db.prepare("DELETE FROM party_transactions WHERE type = 'Sale' AND reference_id = ?")
+        await db.prepare("DELETE FROM party_transactions WHERE type = 'Sale' AND reference_id = ?")
           .run(id);
       }
 
       // 3. Delete sale records (including returns to prevent orphans)
-      const returns = db.prepare('SELECT id FROM returns WHERE sale_id = ?').all(id);
+      const returns = await db.prepare('SELECT id FROM returns WHERE sale_id = ?').all(id);
       for (const ret of returns) {
-        db.prepare('DELETE FROM return_items WHERE return_id = ?').run(ret.id);
+        await db.prepare('DELETE FROM return_items WHERE return_id = ?').run(ret.id);
       }
-      db.prepare('DELETE FROM returns WHERE sale_id = ?').run(id);
-      db.prepare('DELETE FROM sale_items WHERE sale_id = ?').run(id);
-      db.prepare('DELETE FROM sales WHERE id = ?').run(id);
-    });
-    return txn();
+      await db.prepare('DELETE FROM returns WHERE sale_id = ?').run(id);
+      await db.prepare('DELETE FROM sale_items WHERE sale_id = ?').run(id);
+      await db.prepare('DELETE FROM sales WHERE id = ?').run(id);
+    };
+    return await executeTx();
   },
 
-  getAll: () => db.prepare(`
+  getAll: async () => await db.prepare(`
     SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name, COALESCE(p.phone, s.customer_phone) as customer_phone,
            (s.total_amount - s.returned_total) as net_amount
     FROM sales s
@@ -1170,15 +1222,15 @@ const saleOps = {
     ORDER BY s.date DESC
   `).all(),
 
-  getById: (id) => {
-    const sale = db.prepare(`
+  getById: async (id) => {
+    const sale = await db.prepare(`
       SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name, COALESCE(p.phone, s.customer_phone) as customer_phone, p.address as customer_address, p.gstin as customer_gstin
       FROM sales s
       LEFT JOIN parties p ON s.party_id = p.id
       WHERE s.id = ?
     `).get(id);
     if (!sale) return null;
-    sale.items = db.prepare(`
+    sale.items = await db.prepare(`
       SELECT 
         si.*,
         si.returned_quantity,
@@ -1197,15 +1249,15 @@ const saleOps = {
     return sale;
   },
 
-  getByInvoice: (invoiceNumber) => {
-    const sale = db.prepare(`
+  getByInvoice: async (invoiceNumber) => {
+    const sale = await db.prepare(`
       SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name, COALESCE(p.phone, s.customer_phone) as customer_phone, p.address as customer_address, p.gstin as customer_gstin
       FROM sales s
       LEFT JOIN parties p ON s.party_id = p.id
       WHERE s.invoice_number = ?
     `).get(invoiceNumber);
     if (!sale) return null;
-    sale.items = db.prepare(`
+    sale.items = await db.prepare(`
       SELECT 
         si.*,
         si.returned_quantity,
@@ -1224,7 +1276,7 @@ const saleOps = {
     return sale;
   },
 
-  getByDateRange: (from, to) => db.prepare(`
+  getByDateRange: async (from, to) => await db.prepare(`
     SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name
     FROM sales s
     LEFT JOIN parties p ON s.party_id = p.id
@@ -1232,9 +1284,9 @@ const saleOps = {
     ORDER BY s.date DESC
   `).all(from, to),
 
-  getTodaySales: () => {
+  getTodaySales: async () => {
     const today = new Date().toISOString().split('T')[0];
-    const row = db.prepare(
+    const row = await db.prepare(
       `SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count FROM sales WHERE date(date) = ?`
     ).get(today);
     return row;
@@ -1244,7 +1296,7 @@ const saleOps = {
 /* ───────── Purchase Ops ───────── */
 const purchaseOps = {
   create: async (purchaseData) => {
-    const txn = db.transaction(() => {
+    const executeTx = async () => {
       let totalAmount = 0;
       for (const item of purchaseData.items) {
         totalAmount += (item.price || 0) * (item.quantity || 0);
@@ -1258,7 +1310,7 @@ const purchaseOps = {
       const paidAmount = parseFloat(purchaseData.paid_amount) || 0;
       const dueAmount = totalAmount - paidAmount;
 
-      const info = db.prepare(`
+      const info = await db.prepare(`
         INSERT INTO purchases (party_id, supplier_name, total_amount, paid_amount, due_amount, other_charges) VALUES (?, ?, ?, ?, ?, ?)
       `).run(purchaseData.party_id || null, purchaseData.supplier_name || '', totalAmount, paidAmount, dueAmount, otherCharges);
 
@@ -1267,10 +1319,10 @@ const purchaseOps = {
       // Update party balance & record transaction if it's a party-linked purchase
       if (purchaseData.party_id) {
         // Decrease balance because we now owe more money (Negative balance = Payable)
-        db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
+        await db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
           .run(totalAmount - (purchaseData.paid_amount || 0), purchaseData.party_id);
 
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO party_transactions (party_id, type, reference_id, total_amount, paid_amount, due_amount, date)
           VALUES (?, 'Purchase', ?, ?, ?, ?, datetime('now','localtime'))
         `).run(purchaseData.party_id, purchaseId, totalAmount, purchaseData.paid_amount || 0, totalAmount - (purchaseData.paid_amount || 0));
@@ -1286,7 +1338,7 @@ const purchaseOps = {
         const purchasePrice = parseFloat(item.price) || 0;
 
         // Robust matching: Ignore spaces and case. Prioritize deleted rows for resurrection.
-        let existing = db.prepare(`
+        let existing = await db.prepare(`
           SELECT id FROM products 
           WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', '')) 
           ORDER BY is_deleted DESC
@@ -1294,7 +1346,7 @@ const purchaseOps = {
         `).get(trimmedName);
 
         if (!existing) {
-          existing = db.prepare(`
+          existing = await db.prepare(`
             SELECT id FROM products 
             WHERE LOWER(product_name) LIKE ? OR ? LIKE '%' || LOWER(product_name) || '%' 
             ORDER BY is_deleted DESC
@@ -1304,7 +1356,7 @@ const purchaseOps = {
 
         let targetId;
         if (existing) {
-          const existingProduct = db.prepare('SELECT quantity, cost_price, custom_fields FROM products WHERE id = ?').get(existing.id);
+          const existingProduct = await db.prepare('SELECT quantity, cost_price, custom_fields FROM products WHERE id = ?').get(existing.id);
           const currentCost = existingProduct.cost_price || 0;
           if (purchasePrice > currentCost) {
              console.log(`[DB] Price increase detected. Updating cost price.`);
@@ -1314,12 +1366,12 @@ const purchaseOps = {
         const gstRate = parseFloat(item.gst_rate) || 0;
         if (existing) {
           targetId = existing.id;
-          const existingProduct = db.prepare('SELECT custom_fields FROM products WHERE id = ?').get(targetId);
+          const existingProduct = await db.prepare('SELECT custom_fields FROM products WHERE id = ?').get(targetId);
           let mergedFields = {};
           try { mergedFields = JSON.parse(existingProduct?.custom_fields || '{}'); } catch (e) {}
           Object.assign(mergedFields, item.custom_fields || {});
 
-          db.prepare(`
+          await db.prepare(`
             UPDATE products 
             SET quantity = quantity + ?, batch_number = ?, expiry_date = ?,
                 cost_price = ?, mrp = ?, selling_price = ?, product_size = ?,
@@ -1331,7 +1383,7 @@ const purchaseOps = {
                  JSON.stringify(mergedFields), targetId);
           updatedCount++;
         } else {
-          const info = db.prepare(`
+          const info = await db.prepare(`
             INSERT INTO products (product_name, brand, category, product_size, unit, cost_price, mrp, selling_price, gst_rate, cgst, sgst, quantity, batch_number, expiry_date, custom_fields)
             VALUES (?, '', ?, ?, 'pcs', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(trimmedName, item.category || '', item.product_size || '', purchasePrice, item.mrp || purchasePrice, item.selling_price || purchasePrice * 1.2, 
@@ -1342,17 +1394,18 @@ const purchaseOps = {
         }
 
         // Now save the purchase item linked by ID
-        insertItem.run(purchaseId, targetId, trimmedName, item.quantity || 0,
+        await insertItem.run(purchaseId, targetId, trimmedName, item.quantity || 0,
                        item.price || 0, item.batch_number || '', item.expiry_date || '');
       }
       console.log(`[DB] Purchase ${purchaseId} recorded. Updated: ${updatedCount}, Created: ${createdCount}`);
 
       return { purchaseId, totalAmount, updatedCount, createdCount };
-    });
-    const result = txn();
+    };
+
+    const result = await executeTx();
     
     // Auto-Sync to Cloud in background if enabled in settings
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) {
       syncToCloud().catch(err => console.error("Auto-Sync Failed:", err));
     }
@@ -1360,22 +1413,22 @@ const purchaseOps = {
     return result;
   },
 
-  getAll: () => db.prepare(`
+  getAll: async () => await db.prepare(`
     SELECT p.*, pt.name as supplier_name 
     FROM purchases p 
     LEFT JOIN parties pt ON p.party_id = pt.id 
     ORDER BY p.date DESC
   `).all(),
 
-  getById: (id) => {
-    const purchase = db.prepare(`
+  getById: async (id) => {
+    const purchase = await db.prepare(`
       SELECT p.*, pt.name as supplier_name, pt.phone as supplier_phone, pt.address as supplier_address
       FROM purchases p
       LEFT JOIN parties pt ON p.party_id = pt.id
       WHERE p.id = ?
     `).get(id);
     if (!purchase) return null;
-    purchase.items = db.prepare(`
+    purchase.items = await db.prepare(`
       SELECT 
         pi.*,
         (SELECT COALESCE(SUM(pri.quantity), 0) FROM purchase_return_items pri JOIN purchase_returns pr ON pri.purchase_return_id = pr.id WHERE pr.purchase_id = ? AND pri.product_id = pi.product_id) as returned_quantity
@@ -1385,27 +1438,28 @@ const purchaseOps = {
     return purchase;
   },
 
-  delete: (id) => {
-    const txn = db.transaction(() => {
-      const purchase = db.prepare('SELECT * FROM purchases WHERE id = ?').get(id);
+  delete: async (id) => {
+    const executeTx = async () => {
+      const purchase = await db.prepare('SELECT * FROM purchases WHERE id = ?').get(id);
       if (!purchase) return { success: false, error: 'Purchase not found' };
 
-      const items = db.prepare('SELECT * FROM purchase_items WHERE purchase_id = ?').all(id);
+      const items = await db.prepare('SELECT * FROM purchase_items WHERE purchase_id = ?').all(id);
 
       // 1. Reverse Stock (Decrease what was added, minus what was returned)
       const reduceStock = db.prepare('UPDATE products SET quantity = MAX(0, quantity - ?) WHERE id = ?');
       for (const item of items) {
         if (item.product_id) {
-          const returnedQty = db.prepare(`
+          const returnedQtyRow = await db.prepare(`
             SELECT COALESCE(SUM(pri.quantity), 0) as qty 
             FROM purchase_return_items pri
             JOIN purchase_returns pr ON pri.purchase_return_id = pr.id
             WHERE pr.purchase_id = ? AND pri.product_id = ?
-          `).get(id, item.product_id).qty;
+          `).get(id, item.product_id);
+          const returnedQty = returnedQtyRow ? returnedQtyRow.qty : 0;
 
           const netToReduce = item.quantity - returnedQty;
           if (netToReduce > 0) {
-            reduceStock.run(netToReduce, item.product_id);
+            await reduceStock.run(netToReduce, item.product_id);
           }
         }
       }
@@ -1413,43 +1467,43 @@ const purchaseOps = {
       // 2. Reverse Party Balance
       if (purchase.party_id) {
         // Reverse the entire purchase impact.
-        db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
+        await db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
           .run(purchase.total_amount, purchase.party_id);
         
-        db.prepare("DELETE FROM party_transactions WHERE type = 'Purchase' AND reference_id = ?")
+        await db.prepare("DELETE FROM party_transactions WHERE type = 'Purchase' AND reference_id = ?")
           .run(id);
       }
 
       // 3. Delete purchase records (including returns)
-      const returns = db.prepare('SELECT id FROM purchase_returns WHERE purchase_id = ?').all(id);
+      const returns = await db.prepare('SELECT id FROM purchase_returns WHERE purchase_id = ?').all(id);
       for (const ret of returns) {
-        db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ?').run(ret.id);
+        await db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ?').run(ret.id);
       }
-      db.prepare('DELETE FROM purchase_returns WHERE purchase_id = ?').run(id);
-      db.prepare('DELETE FROM purchase_items WHERE purchase_id = ?').run(id);
-      db.prepare('DELETE FROM purchases WHERE id = ?').run(id);
+      await db.prepare('DELETE FROM purchase_returns WHERE purchase_id = ?').run(id);
+      await db.prepare('DELETE FROM purchase_items WHERE purchase_id = ?').run(id);
+      await db.prepare('DELETE FROM purchases WHERE id = ?').run(id);
 
       return { success: true };
-    });
+    };
 
-    const result = txn();
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const result = await executeTx();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return result;
   },
 
-  getByDateRange: (from, to) => db.prepare(
+  getByDateRange: async (from, to) => await db.prepare(
     `SELECT * FROM purchases WHERE date(date) BETWEEN ? AND ? ORDER BY date DESC`
   ).all(from, to),
 };
 
 /* ───────── Dashboard / Stats ───────── */
 const statsOps = {
-  getDashboard: () => {
+  getDashboard: async () => {
     const today = new Date().toISOString().split('T')[0];
 
     // 1. Gross Sales today
-    const salesStats = db.prepare(`
+    const salesStats = await db.prepare(`
       SELECT 
         COALESCE(SUM(total_amount), 0) as gross_total,
         COUNT(*) as total_count,
@@ -1458,10 +1512,10 @@ const statsOps = {
         COALESCE(SUM(due_amount), 0) as credit_from_sales
       FROM sales 
       WHERE date(date) = date('now', 'localtime')
-    `).get();
+    `).get() || { gross_total: 0, total_count: 0, cash_from_sales: 0, digital_from_sales: 0, credit_from_sales: 0 };
 
     // 2. Returns today (using the smart debt-refund split)
-    const returnStats = db.prepare(`
+    const returnStats = await db.prepare(`
       SELECT 
         COALESCE(SUM(r.total_amount), 0) as total_returned,
         COUNT(*) as return_count,
@@ -1470,19 +1524,19 @@ const statsOps = {
         COALESCE(SUM(r.debt_cleared_amount + CASE WHEN r.payment_mode = 'Credit' THEN r.refund_amount ELSE 0 END), 0) as credit_impact
       FROM returns r
       WHERE date(r.date) = date('now', 'localtime')
-    `).get();
+    `).get() || { total_returned: 0, return_count: 0, cash_refunded: 0, digital_refunded: 0, credit_impact: 0 };
 
     // 3. Party Transactions today (Payments from customers)
-    const partyStats = db.prepare(`
+    const partyStats = await db.prepare(`
       SELECT 
         COALESCE(SUM(CASE WHEN pt.payment_mode = 'Cash' THEN pt.paid_amount ELSE 0 END), 0) as cash_payments,
         COALESCE(SUM(CASE WHEN pt.payment_mode != 'Cash' THEN pt.paid_amount ELSE 0 END), 0) as digital_payments
       FROM party_transactions pt
       JOIN parties p ON pt.party_id = p.id
       WHERE date(pt.date) = date('now', 'localtime') AND pt.type = 'Payment' AND p.type = 'Customer'
-    `).get();
+    `).get() || { cash_payments: 0, digital_payments: 0 };
 
-    const creditStats = db.prepare(`
+    const creditStats = await db.prepare(`
       SELECT COALESCE(SUM(
         CASE 
           WHEN pt.type = 'Sale' THEN pt.due_amount
@@ -1494,39 +1548,48 @@ const statsOps = {
       FROM party_transactions pt
       JOIN parties p ON pt.party_id = p.id
       WHERE date(pt.date) = date('now', 'localtime') AND p.type = 'Customer'
-    `).get();
+    `).get() || { net_change: 0 };
 
     // Consolidated Metrics. Money values are net of returns; bill count remains stable.
-    const todaySalesTotal = salesStats.gross_total - returnStats.total_returned;
-    const todaySalesCount = salesStats.total_count;
+    const todaySalesTotal = (salesStats.gross_total || 0) - (returnStats.total_returned || 0);
+    const todaySalesCount = salesStats.total_count || 0;
     
-    const todayCash = (salesStats.cash_from_sales + partyStats.cash_payments) - returnStats.cash_refunded;
-    const todayDigital = (salesStats.digital_from_sales + partyStats.digital_payments) - returnStats.digital_refunded;
+    const todayCash = ((salesStats.cash_from_sales || 0) + (partyStats.cash_payments || 0)) - (returnStats.cash_refunded || 0);
+    const todayDigital = ((salesStats.digital_from_sales || 0) + (partyStats.digital_payments || 0)) - (returnStats.digital_refunded || 0);
     
-    const todayCredit = Math.max(0, creditStats.net_change);
+    const todayCredit = Math.max(0, creditStats.net_change || 0);
 
-    const totalProducts = db.prepare('SELECT COUNT(*) as count FROM products WHERE is_deleted = 0').get().count;
-    const lowStockItems = db.prepare(`
+    const totalProductsRow = await db.prepare('SELECT COUNT(*) as count FROM products WHERE is_deleted = 0').get();
+    const totalProducts = totalProductsRow ? totalProductsRow.count : 0;
+
+    const lowStockItems = await db.prepare(`
       SELECT * FROM products
       WHERE is_deleted = 0
         AND quantity >= 0
         AND quantity <= CASE WHEN COALESCE(min_stock_alert, 0) > 0 THEN min_stock_alert ELSE 10 END
       ORDER BY quantity ASC
-    `).all();
+    `).all() || [];
     const lowStock = lowStockItems.length;
 
     const futureDate = new Date();
     futureDate.setDate(futureDate.getDate() + 30);
     const dateStr = futureDate.toISOString().split('T')[0];
-    const expiring = db.prepare(
+
+    const expiringRow = await db.prepare(
       `SELECT COUNT(*) as count FROM products WHERE expiry_date != '' AND expiry_date <= ?`
-    ).get(dateStr).count;
+    ).get(dateStr);
+    const expiring = expiringRow ? expiringRow.count : 0;
 
-    const receivable = db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance > 0.1 AND is_deleted = 0').get().total;
-    const payable = Math.abs(db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance < -0.1 AND is_deleted = 0').get().total);
+    const receivableRow = await db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance > 0.1 AND is_deleted = 0').get();
+    const receivable = receivableRow ? receivableRow.total : 0;
 
-    const totalRevenue = db.prepare('SELECT COALESCE(SUM(total_amount - returned_total), 0) as total FROM sales').get().total;
-    const paymentReminders = db.prepare(`
+    const payableRow = await db.prepare('SELECT COALESCE(SUM(current_balance), 0) as total FROM parties WHERE current_balance < -0.1 AND is_deleted = 0').get();
+    const payable = payableRow ? Math.abs(payableRow.total) : 0;
+
+    const totalRevenueRow = await db.prepare('SELECT COALESCE(SUM(total_amount - returned_total), 0) as total FROM sales').get();
+    const totalRevenue = totalRevenueRow ? totalRevenueRow.total : 0;
+
+    const paymentReminders = await db.prepare(`
       SELECT 
         p.id as party_id,
         p.name,
@@ -1547,7 +1610,20 @@ const statsOps = {
       HAVING COALESCE(SUM(pt.due_amount), 0) > 0.1
       ORDER BY date(MIN(pt.due_date)) ASC, due_amount DESC
       LIMIT 5
-    `).all();
+    `).all() || [];
+
+    const rawRecentSales = await db.prepare(`
+      SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name,
+             (SELECT COALESCE(SUM(total_amount), 0) FROM returns WHERE sale_id = s.id) as returned_total
+      FROM sales s
+      LEFT JOIN parties p ON s.party_id = p.id
+      ORDER BY s.date DESC LIMIT 5
+    `).all() || [];
+
+    const recentSales = rawRecentSales.map(s => ({
+      ...s,
+      total_amount: (s.total_amount || 0) - (s.returned_total || 0)
+    }));
 
     return {
       todaySalesTotal,
@@ -1563,24 +1639,15 @@ const statsOps = {
       todayDigital,
       todayCredit,
       paymentReminders,
-      recentSales: db.prepare(`
-        SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name,
-               (SELECT COALESCE(SUM(total_amount), 0) FROM returns WHERE sale_id = s.id) as returned_total
-        FROM sales s
-        LEFT JOIN parties p ON s.party_id = p.id
-        ORDER BY s.date DESC LIMIT 5
-      `).all().map(s => ({
-        ...s,
-        total_amount: s.total_amount - (s.returned_total || 0)
-      }))
+      recentSales
     };
   },
 
-  getMonthlyStats: () => {
+  getMonthlyStats: async () => {
     const currentYear = new Date().getFullYear().toString();
     
     // Monthly Sales
-    const sales = db.prepare(`
+    const sales = await db.prepare(`
       SELECT 
         strftime('%m', date) as month,
         COALESCE(SUM(total_amount), 0) as gross_sales,
@@ -1589,9 +1656,9 @@ const statsOps = {
       WHERE strftime('%Y', date) = ?
       GROUP BY month
       ORDER BY month ASC
-    `).all(currentYear);
+    `).all(currentYear) || [];
 
-    const returns = db.prepare(`
+    const returns = await db.prepare(`
       SELECT 
         strftime('%m', date) as month,
         COALESCE(SUM(total_amount), 0) as total_returns
@@ -1599,10 +1666,10 @@ const statsOps = {
       WHERE strftime('%Y', date) = ?
       GROUP BY month
       ORDER BY month ASC
-    `).all(currentYear);
+    `).all(currentYear) || [];
 
     // Monthly Purchases
-    const purchases = db.prepare(`
+    const purchases = await db.prepare(`
       SELECT 
         strftime('%m', date) as month,
         COALESCE(SUM(total_amount), 0) as gross_purchases
@@ -1610,9 +1677,9 @@ const statsOps = {
       WHERE strftime('%Y', date) = ?
       GROUP BY month
       ORDER BY month ASC
-    `).all(currentYear);
+    `).all(currentYear) || [];
 
-    const purchaseReturns = db.prepare(`
+    const purchaseReturns = await db.prepare(`
       SELECT 
         strftime('%m', date) as month,
         COALESCE(SUM(total_amount), 0) as total_returns
@@ -1620,10 +1687,10 @@ const statsOps = {
       WHERE strftime('%Y', date) = ?
       GROUP BY month
       ORDER BY month ASC
-    `).all(currentYear);
+    `).all(currentYear) || [];
 
     // Monthly Expenses
-    const expenses = db.prepare(`
+    const expenses = await db.prepare(`
       SELECT 
         strftime('%m', date) as month,
         SUM(amount) as total_expenses
@@ -1631,13 +1698,15 @@ const statsOps = {
       WHERE strftime('%Y', date) = ?
       GROUP BY month
       ORDER BY month ASC
-    `).all(currentYear);
+    `).all(currentYear) || [];
 
     // Merge them
     const months = ['01','02','03','04','05','06','07','08','09','10','11','12'];
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     
-    return months.map((m, idx) => {
+    const results = [];
+    for (let idx = 0; idx < months.length; idx++) {
+      const m = months[idx];
       const s = sales.find(x => x.month === m);
       const r = returns.find(x => x.month === m);
       const p = purchases.find(x => x.month === m);
@@ -1648,75 +1717,77 @@ const statsOps = {
       const totalPurchases = (p ? p.gross_purchases : 0) - (pr ? pr.total_returns : 0);
       const totalExpenses = e ? e.total_expenses : 0;
 
-      const salesMargin = db.prepare(`
+      const salesMarginRow = await db.prepare(`
         SELECT COALESCE(SUM((si.price - si.cost_price) * si.quantity), 0) as margin
         FROM sale_items si
         JOIN sales s ON si.sale_id = s.id
         WHERE strftime('%m', s.date) = ? AND strftime('%Y', s.date) = ?
-      `).get(m, currentYear).margin;
+      `).get(m, currentYear);
+      const salesMargin = salesMarginRow ? salesMarginRow.margin : 0;
 
-      const returnMargin = db.prepare(`
+      const returnMarginRow = await db.prepare(`
         SELECT COALESCE(SUM((ri.price - COALESCE(si.cost_price, p.cost_price, 0)) * ri.quantity), 0) as margin
         FROM return_items ri
         JOIN returns r ON ri.return_id = r.id
         LEFT JOIN sale_items si ON si.sale_id = r.sale_id AND si.product_id = ri.product_id
         LEFT JOIN products p ON p.id = ri.product_id
         WHERE strftime('%m', r.date) = ? AND strftime('%Y', r.date) = ?
-      `).get(m, currentYear).margin;
+      `).get(m, currentYear);
+      const returnMargin = returnMarginRow ? returnMarginRow.margin : 0;
 
       const netMargin = salesMargin - returnMargin;
 
-      return {
+      results.push({
         month: monthNames[idx],
-        monthNum: m,
-        sales: totalSales,
-        salesCount: s ? s.count : 0,
-        purchases: totalPurchases,
-        expenses: totalExpenses,
-        profit: netMargin - totalExpenses
-      };
-    });
+        sales: Number(totalSales),
+        purchases: Number(totalPurchases),
+        expenses: Number(totalExpenses),
+        profit: Number(totalSales - totalPurchases - totalExpenses),
+        margin: Number(netMargin)
+      });
+    }
+    return results;
   },
 
-  getAiSnapshot: () => {
-    const last30Days = db.prepare(`
+  getAiSnapshot: async () => {
+    const last30Days = await db.prepare(`
       SELECT date(date) as day, SUM(total_amount) as total 
       FROM sales 
       WHERE date(date) > date('now', '-30 days')
       GROUP BY day ORDER BY day ASC
-    `).all();
+    `).all() || [];
 
-      const topProducts = db.prepare(`
-        SELECT product_name, SUM(quantity) as total_qty, SUM(total_price) as revenue
-        FROM sale_items
-        GROUP BY product_name
-        ORDER BY total_qty DESC
-        LIMIT 5
-      `).all();
+    const topProducts = await db.prepare(`
+      SELECT product_name, SUM(quantity) as total_qty, SUM(total_price) as revenue
+      FROM sale_items
+      GROUP BY product_name
+      ORDER BY total_qty DESC
+      LIMIT 5
+    `).all() || [];
 
     let lowStock = [];
     try {
-      lowStock = db.prepare(`
+      lowStock = await db.prepare(`
         SELECT product_name, quantity, min_stock_alert 
         FROM products 
         WHERE quantity <= min_stock_alert AND is_deleted = 0
-      `).all();
+      `).all() || [];
     } catch (e) {
       console.warn("Low stock query failed (migration might be pending):", e.message);
       // Fallback query without the missing column
-      lowStock = db.prepare(`
+      lowStock = await db.prepare(`
         SELECT product_name, quantity, 0 as min_stock_alert 
         FROM products 
         WHERE quantity <= 10 AND is_deleted = 0
-      `).all();
+      `).all() || [];
     }
 
-    const overdueParties = db.prepare(`
+    const overdueParties = await db.prepare(`
       SELECT name, current_balance 
       FROM parties 
       WHERE current_balance > 0 AND type = 'Customer' AND is_deleted = 0
       ORDER BY current_balance DESC LIMIT 5
-    `).all();
+    `).all() || [];
 
     return { last30Days, topProducts, lowStock, overdueParties };
   },
@@ -1724,27 +1795,25 @@ const statsOps = {
 
 /* ───────── Expense Ops ───────── */
 const expenseOps = {
-  getAll: () => db.prepare('SELECT * FROM expenses ORDER BY date DESC').all(),
-  add: (e) => {
-    const res = db.prepare(`INSERT INTO expenses (category, description, amount) VALUES (?, ?, ?)`).run(e.category, e.description || '', e.amount);
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  getAll: async () => await db.prepare('SELECT * FROM expenses ORDER BY date DESC').all(),
+  add: async (e) => {
+    const res = await db.prepare(`INSERT INTO expenses (category, description, amount) VALUES (?, ?, ?)`).run(e.category, e.description || '', e.amount);
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
-  delete: (id) => {
-    const res = db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  delete: async (id) => {
+    const res = await db.prepare('DELETE FROM expenses WHERE id = ?').run(id);
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
 };
 
 /* ───────── Reports ───────── */
-
-
 const reportOps = {
-  salesReport: (from, to) => {
-    const sales = db.prepare(
+  salesReport: async (from, to) => {
+    const sales = await db.prepare(
       `SELECT s.*, COALESCE(p.name, s.customer_name) as customer_name, COALESCE(p.phone, s.customer_phone) as customer_phone,
               (SELECT COALESCE(SUM(total_amount), 0) FROM returns WHERE sale_id = s.id) as returned_total
        FROM sales s 
@@ -1752,31 +1821,33 @@ const reportOps = {
        WHERE date(s.date) BETWEEN ? AND ? 
        ORDER BY s.date DESC`
     ).all(from, to);
-    const expensesSummary = db.prepare(
+    const expensesSummary = await db.prepare(
       `SELECT COALESCE(SUM(amount), 0) as total FROM expenses WHERE date(date) BETWEEN ? AND ?`
     ).get(from, to);
 
-    const summary = db.prepare(
+    const summary = await db.prepare(
       `SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count,
               COALESCE(SUM(total_gst), 0) as gst, COALESCE(SUM(total_discount), 0) as discount,
               COALESCE(SUM(paid_amount), 0) as sales_cash
        FROM sales WHERE date(date) BETWEEN ? AND ?`
     ).get(from, to);
 
-    const partyCollections = db.prepare(
+    const partyCollectionsRow = await db.prepare(
       `SELECT COALESCE(SUM(paid_amount), 0) as total 
        FROM party_transactions 
        WHERE type = 'Payment' AND date(date) BETWEEN ? AND ?`
-    ).get(from, to).total;
+    ).get(from, to);
+    const partyCollections = partyCollectionsRow ? partyCollectionsRow.total : 0;
 
-    const margin = db.prepare(`
+    const marginRow = await db.prepare(`
       SELECT COALESCE(SUM((COALESCE(si.price, 0) - COALESCE(si.cost_price, 0)) * COALESCE(si.quantity, 0)), 0) as margin
       FROM sale_items si
       JOIN sales s ON si.sale_id = s.id
       WHERE date(s.date) BETWEEN ? AND ?
-    `).get(from, to).margin;
+    `).get(from, to);
+    const margin = marginRow ? marginRow.margin : 0;
 
-    const returnsStats = db.prepare(
+    const returnsStats = await db.prepare(
       `SELECT 
         COALESCE(SUM(total_amount), 0) as total,
         COALESCE(SUM(debt_cleared_amount), 0) as debt_cleared,
@@ -1785,13 +1856,14 @@ const reportOps = {
        FROM returns WHERE date(date) BETWEEN ? AND ?`
     ).get(from, to);
 
-    const returnMargin = db.prepare(`
+    const returnMarginRow = await db.prepare(`
       SELECT COALESCE(SUM((ri.price - COALESCE(p.cost_price, 0)) * ri.quantity), 0) as margin
       FROM return_items ri
       JOIN returns r ON ri.return_id = r.id
       JOIN products p ON ri.product_id = p.id
       WHERE date(r.date) BETWEEN ? AND ?
-    `).get(from, to).margin;
+    `).get(from, to);
+    const returnMargin = returnMarginRow ? returnMarginRow.margin : 0;
 
     const netMargin = margin - returnMargin;
 
@@ -1815,8 +1887,8 @@ const reportOps = {
     };
   },
 
-  purchaseReport: (from, to) => {
-    const purchases = db.prepare(
+  purchaseReport: async (from, to) => {
+    const purchases = await db.prepare(
       `SELECT p.*, pt.name as supplier_name,
               (SELECT COALESCE(SUM(total_amount), 0) FROM purchase_returns WHERE purchase_id = p.id) as returned_total
        FROM purchases p 
@@ -1825,14 +1897,15 @@ const reportOps = {
        ORDER BY p.date DESC`
     ).all(from, to);
 
-    const summary = db.prepare(
+    const summary = await db.prepare(
       `SELECT COALESCE(SUM(total_amount), 0) as total, COUNT(*) as count
        FROM purchases WHERE date(date) BETWEEN ? AND ?`
     ).get(from, to);
 
-    const returnsTotal = db.prepare(
+    const returnsTotalRow = await db.prepare(
       `SELECT COALESCE(SUM(total_amount), 0) as total FROM purchase_returns WHERE date(date) BETWEEN ? AND ?`
-    ).get(from, to).total;
+    ).get(from, to);
+    const returnsTotal = returnsTotalRow ? returnsTotalRow.total : 0;
 
     return { 
       purchases, 
@@ -1844,8 +1917,8 @@ const reportOps = {
     };
   },
 
-  stockReport: () => {
-    return db.prepare(
+  stockReport: async () => {
+    return await db.prepare(
       `SELECT id, product_name, brand, category, quantity, cost_price, selling_price, batch_number, expiry_date
        FROM products WHERE is_deleted = 0 ORDER BY product_name ASC`
     ).all();
@@ -1854,20 +1927,20 @@ const reportOps = {
 
 /* ───────── Return Ops ───────── */
 const returnOps = {
-  createSaleReturn: (data) => {
-    const txn = db.transaction(() => {
-      // 1. Insert into returns table
+  createSaleReturn: async (data) => {
+    const executeTx = async () => {
       // 1. Validate remaining returnable quantity
       for (const item of data.items) {
-        const soldItem = db.prepare('SELECT quantity FROM sale_items WHERE sale_id = ? AND product_id = ?')
+        const soldItem = await db.prepare('SELECT quantity FROM sale_items WHERE sale_id = ? AND product_id = ?')
           .get(data.sale_id, item.product_id);
         
-        const alreadyReturned = db.prepare(`
+        const alreadyReturnedRow = await db.prepare(`
           SELECT COALESCE(SUM(ri.quantity), 0) as qty 
           FROM return_items ri
           JOIN returns r ON ri.return_id = r.id
           WHERE r.sale_id = ? AND ri.product_id = ?
-        `).get(data.sale_id, item.product_id).qty;
+        `).get(data.sale_id, item.product_id);
+        const alreadyReturned = alreadyReturnedRow ? alreadyReturnedRow.qty : 0;
 
         const remaining = (soldItem?.quantity || 0) - alreadyReturned;
         if (item.quantity > remaining) {
@@ -1881,7 +1954,7 @@ const returnOps = {
       let originalSale = null;
 
       if (data.sale_id) {
-        originalSale = db.prepare('SELECT due_amount, paid_amount FROM sales WHERE id = ?').get(data.sale_id);
+        originalSale = await db.prepare('SELECT due_amount, paid_amount FROM sales WHERE id = ?').get(data.sale_id);
         if (originalSale) {
           debtCleared = Math.min(data.total_amount, originalSale.due_amount);
           refundAmount = data.total_amount - debtCleared;
@@ -1890,7 +1963,7 @@ const returnOps = {
         refundAmount = data.total_amount;
       }
 
-      const info = db.prepare(`
+      const info = await db.prepare(`
         INSERT INTO returns (sale_id, party_id, total_amount, debt_cleared_amount, refund_amount, payment_mode, reason)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(data.sale_id || null, data.party_id || null, data.total_amount, debtCleared, refundAmount, data.payment_mode || 'Credit', data.reason || '');
@@ -1907,19 +1980,19 @@ const returnOps = {
       for (const item of data.items) {
         let pName = item.product_name;
         if (!pName && item.product_id) {
-          const p = db.prepare('SELECT product_name FROM products WHERE id = ?').get(item.product_id);
+          const p = await db.prepare('SELECT product_name FROM products WHERE id = ?').get(item.product_id);
           pName = p?.product_name || 'Unknown Product';
         }
-        insertItem.run(returnId, item.product_id, pName, item.quantity, item.price, item.quantity * item.price);
-        addStock.run(item.quantity, item.product_id);
+        await insertItem.run(returnId, item.product_id, pName, item.quantity, item.price, item.quantity * item.price);
+        await addStock.run(item.quantity, item.product_id);
       }
 
       // 3. Update Party Balance and Record Ledger
       if (data.party_id) {
         // ALWAYS clear the debt first in the ledger
         if (debtCleared > 0) {
-          db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?').run(debtCleared, data.party_id);
-          db.prepare(`
+          await db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?').run(debtCleared, data.party_id);
+          await db.prepare(`
             INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
             VALUES (?, 'Sales Return', ?, ?, ?, datetime('now','localtime'))
           `).run(data.party_id, returnId, debtCleared, `Debt Cleared for Sale ID: ${data.sale_id || 'N/A'}`);
@@ -1927,8 +2000,8 @@ const returnOps = {
 
         // If Credit mode selected, extra refund becomes Store Credit
         if (refundAmount > 0 && (data.payment_mode === 'Credit' || !data.payment_mode)) {
-          db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?').run(refundAmount, data.party_id);
-          db.prepare(`
+          await db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?').run(refundAmount, data.party_id);
+          await db.prepare(`
             INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
             VALUES (?, 'Sales Return', ?, ?, ?, datetime('now','localtime'))
           `).run(data.party_id, returnId, refundAmount, `Store Credit from Return ID: ${returnId}`);
@@ -1938,28 +2011,28 @@ const returnOps = {
       // 4. Update Original Sale Record
       if (data.sale_id) {
         // Reduce due amount by the debt cleared
-        db.prepare('UPDATE sales SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+        await db.prepare('UPDATE sales SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
           .run(debtCleared, data.sale_id);
-        db.prepare("UPDATE party_transactions SET due_amount = MAX(0, due_amount - ?) WHERE type = 'Sale' AND reference_id = ?")
+        await db.prepare("UPDATE party_transactions SET due_amount = MAX(0, due_amount - ?) WHERE type = 'Sale' AND reference_id = ?")
           .run(debtCleared, data.sale_id);
         
         // Track returned total on the original sale
-        db.prepare('UPDATE sales SET returned_total = returned_total + ? WHERE id = ?')
+        await db.prepare('UPDATE sales SET returned_total = returned_total + ? WHERE id = ?')
           .run(data.total_amount, data.sale_id);
         
         const updateSaleItem = db.prepare('UPDATE sale_items SET returned_quantity = returned_quantity + ? WHERE sale_id = ? AND product_id = ?');
         for (const item of data.items) {
-           updateSaleItem.run(item.quantity, data.sale_id, item.product_id);
+           await updateSaleItem.run(item.quantity, data.sale_id, item.product_id);
         }
       }
 
       return { success: true, returnId };
-    });
+    };
     
-    const result = txn();
+    const result = await executeTx();
 
     // Trigger Cloud Sync
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) {
       syncToCloud().catch(err => console.error("Auto-Sync Failed:", err));
     }
@@ -1967,7 +2040,7 @@ const returnOps = {
     return result;
   },
 
-  getAllSaleReturns: () => db.prepare(`
+  getAllSaleReturns: async () => await db.prepare(`
     SELECT r.*, s.invoice_number, p.name as customer_name 
     FROM returns r
     LEFT JOIN sales s ON r.sale_id = s.id
@@ -1975,17 +2048,17 @@ const returnOps = {
     ORDER BY r.date DESC
   `).all(),
 
-  deleteSaleReturn: (id) => {
-    const txn = db.transaction(() => {
-      const ret = db.prepare('SELECT * FROM returns WHERE id = ?').get(id);
+  deleteSaleReturn: async (id) => {
+    const executeTx = async () => {
+      const ret = await db.prepare('SELECT * FROM returns WHERE id = ?').get(id);
       if (!ret) return { success: false, error: 'Return not found' };
       
-      const items = db.prepare('SELECT * FROM return_items WHERE return_id = ?').all(id);
+      const items = await db.prepare('SELECT * FROM return_items WHERE return_id = ?').all(id);
 
       // 1. Reverse Stock (Subtract what was returned)
       const reduceStock = db.prepare('UPDATE products SET quantity = quantity - ? WHERE id = ?');
       for (const item of items) {
-        reduceStock.run(item.quantity, item.product_id);
+        await reduceStock.run(item.quantity, item.product_id);
       }
 
       // 2. Reverse Smart Reconciliation
@@ -1993,56 +2066,56 @@ const returnOps = {
         // Add back the debt cleared and the store credit (if any)
         const totalCreditImpact = ret.debt_cleared_amount + (ret.payment_mode === 'Credit' ? ret.refund_amount : 0);
         if (totalCreditImpact > 0) {
-          db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
+          await db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?')
             .run(totalCreditImpact, ret.party_id);
         }
         
         // Remove ledger entries
-        db.prepare("DELETE FROM party_transactions WHERE type = 'Sales Return' AND reference_id = ?")
+        await db.prepare("DELETE FROM party_transactions WHERE type = 'Sales Return' AND reference_id = ?")
           .run(id);
       }
 
       // 3. Reverse Original Sale Due
       if (ret.sale_id && ret.debt_cleared_amount > 0) {
-        db.prepare('UPDATE sales SET due_amount = due_amount + ? WHERE id = ?')
+        await db.prepare('UPDATE sales SET due_amount = due_amount + ? WHERE id = ?')
           .run(ret.debt_cleared_amount, ret.sale_id);
-        db.prepare("UPDATE party_transactions SET due_amount = due_amount + ? WHERE type = 'Sale' AND reference_id = ?")
+        await db.prepare("UPDATE party_transactions SET due_amount = due_amount + ? WHERE type = 'Sale' AND reference_id = ?")
           .run(ret.debt_cleared_amount, ret.sale_id);
       }
 
       // 4. Update Sales Table Tracking (Reverse Rollback)
       if (ret.sale_id) {
-        db.prepare('UPDATE sales SET returned_total = MAX(0, returned_total - ?) WHERE id = ?')
+        await db.prepare('UPDATE sales SET returned_total = MAX(0, returned_total - ?) WHERE id = ?')
           .run(ret.total_amount, ret.sale_id);
         
         const updateSaleItem = db.prepare('UPDATE sale_items SET returned_quantity = MAX(0, returned_quantity - ?) WHERE sale_id = ? AND product_id = ?');
         for (const item of items) {
-           updateSaleItem.run(item.quantity, ret.sale_id, item.product_id);
+           await updateSaleItem.run(item.quantity, ret.sale_id, item.product_id);
         }
       }
 
       // 5. Delete return records
-      db.prepare('DELETE FROM return_items WHERE return_id = ?').run(id);
-      db.prepare('DELETE FROM returns WHERE id = ?').run(id);
+      await db.prepare('DELETE FROM return_items WHERE return_id = ?').run(id);
+      await db.prepare('DELETE FROM returns WHERE id = ?').run(id);
 
       return { success: true };
-    });
+    };
 
-    const result = txn();
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const result = await executeTx();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return result;
   },
 
-  createPurchaseReturn: (data) => {
-    const txn = db.transaction(() => {
+  createPurchaseReturn: async (data) => {
+    const executeTx = async () => {
       // 1. Calculate Smart Split (Debt first, then Refund)
       let debtCleared = 0;
       let refundAmount = 0;
       let originalPurchase = null;
 
       if (data.purchase_id) {
-        originalPurchase = db.prepare('SELECT due_amount FROM purchases WHERE id = ?').get(data.purchase_id);
+        originalPurchase = await db.prepare('SELECT due_amount FROM purchases WHERE id = ?').get(data.purchase_id);
         if (originalPurchase) {
           debtCleared = Math.min(data.total_amount, originalPurchase.due_amount);
           refundAmount = data.total_amount - debtCleared;
@@ -2051,7 +2124,7 @@ const returnOps = {
         refundAmount = data.total_amount;
       }
 
-      const info = db.prepare(`
+      const info = await db.prepare(`
         INSERT INTO purchase_returns (purchase_id, party_id, total_amount, debt_cleared_amount, refund_amount, payment_mode, reason)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(data.purchase_id || null, data.party_id || null, data.total_amount, debtCleared, refundAmount, data.payment_mode || 'Credit', data.reason || '');
@@ -2068,22 +2141,19 @@ const returnOps = {
       for (const item of data.items) {
         let pName = item.product_name;
         if (!pName && item.product_id) {
-          const p = db.prepare('SELECT product_name FROM products WHERE id = ?').get(item.product_id);
+          const p = await db.prepare('SELECT product_name FROM products WHERE id = ?').get(item.product_id);
           pName = p?.product_name || 'Unknown Product';
         }
-        insertItem.run(pReturnId, item.product_id, pName, item.quantity, item.price, item.quantity * item.price);
-        reduceStock.run(item.quantity, item.product_id);
+        await insertItem.run(pReturnId, item.product_id, pName, item.quantity, item.price, item.quantity * item.price);
+        await reduceStock.run(item.quantity, item.product_id);
       }
 
       // 3. Update Party Balance and Record Ledger
       if (data.party_id) {
         // ALWAYS clear the debt first (Supplier balance decreases means we owe them less, so current_balance increases towards 0)
-        // Wait, supplier balances are usually negative or tracked differently. 
-        // In this system: Customer debt is +, Supplier debt is -. 
-        // So Purchase Return (returning item) should INCREASE balance (e.g. -1000 to -500).
         if (debtCleared > 0) {
-          db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(debtCleared, data.party_id);
-          db.prepare(`
+          await db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(debtCleared, data.party_id);
+          await db.prepare(`
             INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
             VALUES (?, 'Purchase Return', ?, ?, ?, datetime('now','localtime'))
           `).run(data.party_id, pReturnId, debtCleared, `Debt Cleared for Purchase ID: ${data.purchase_id || 'N/A'}`);
@@ -2091,8 +2161,8 @@ const returnOps = {
 
         // If Credit mode selected, extra refund becomes Store Credit with supplier
         if (refundAmount > 0 && (data.payment_mode === 'Credit' || !data.payment_mode)) {
-          db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(refundAmount, data.party_id);
-          db.prepare(`
+          await db.prepare('UPDATE parties SET current_balance = current_balance + ? WHERE id = ?').run(refundAmount, data.party_id);
+          await db.prepare(`
             INSERT INTO party_transactions (party_id, type, reference_id, total_amount, note, date)
             VALUES (?, 'Purchase Return', ?, ?, ?, datetime('now','localtime'))
           `).run(data.party_id, pReturnId, refundAmount, `Supplier Credit from Return ID: ${pReturnId}`);
@@ -2101,17 +2171,17 @@ const returnOps = {
 
       // 4. Update Original Purchase Record (Reduce its due amount)
       if (data.purchase_id) {
-        db.prepare('UPDATE purchases SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
+        await db.prepare('UPDATE purchases SET due_amount = MAX(0, due_amount - ?) WHERE id = ?')
           .run(debtCleared, data.purchase_id);
       }
 
       return { success: true, pReturnId };
-    });
+    };
     
-    const result = txn();
+    const result = await executeTx();
 
     // Trigger Cloud Sync
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) {
       syncToCloud().catch(err => console.error("Auto-Sync Failed:", err));
     }
@@ -2119,7 +2189,7 @@ const returnOps = {
     return result;
   },
 
-  getAllPurchaseReturns: () => db.prepare(`
+  getAllPurchaseReturns: async () => await db.prepare(`
     SELECT r.*, p.invoice_number as purchase_invoice, pr.name as supplier_name 
     FROM purchase_returns r
     LEFT JOIN purchases p ON r.purchase_id = p.id
@@ -2127,21 +2197,21 @@ const returnOps = {
     ORDER BY r.date DESC
   `).all(),
 
-  deletePurchaseReturn: (id) => {
-    const txn = db.transaction(() => {
-      const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id);
+  deletePurchaseReturn: async (id) => {
+    const executeTx = async () => {
+      const ret = await db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id);
       if (!ret) return { success: false, error: 'Return not found' };
 
-      const items = db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(id);
+      const items = await db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(id);
 
       // 1. Reverse Stock (Add back what was sent back)
       const addStock = db.prepare(`UPDATE products SET quantity = quantity + ? WHERE id = ?`);
       for (const item of items) {
         if (item.product_id) {
-          addStock.run(item.quantity, item.product_id);
+          await addStock.run(item.quantity, item.product_id);
         } else {
           // Fallback for legacy items without IDs
-          db.prepare(`UPDATE products SET quantity = quantity + ? WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', ''))`)
+          await db.prepare(`UPDATE products SET quantity = quantity + ? WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', ''))`)
             .run(item.quantity, item.product_name);
         }
       }
@@ -2151,30 +2221,30 @@ const returnOps = {
         // Subtract back the debt cleared and the store credit (if any)
         const totalCreditImpact = (ret.debt_cleared_amount || 0) + (ret.payment_mode === 'Credit' ? (ret.refund_amount || 0) : 0);
         if (totalCreditImpact > 0) {
-          db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
+          await db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
             .run(totalCreditImpact, ret.party_id);
         }
         
         // Remove ledger entries
-        db.prepare("DELETE FROM party_transactions WHERE type = 'Purchase Return' AND reference_id = ?")
+        await db.prepare("DELETE FROM party_transactions WHERE type = 'Purchase Return' AND reference_id = ?")
           .run(id);
       }
 
       // 3. Reverse Original Purchase Due
       if (ret.purchase_id) {
-        db.prepare('UPDATE purchases SET due_amount = due_amount + ? WHERE id = ?')
+        await db.prepare('UPDATE purchases SET due_amount = due_amount + ? WHERE id = ?')
           .run(ret.total_amount, ret.purchase_id);
       }
 
       // 4. Delete return records
-      db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ?').run(id);
-      db.prepare('DELETE FROM purchase_returns WHERE id = ?').run(id);
+      await db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ?').run(id);
+      await db.prepare('DELETE FROM purchase_returns WHERE id = ?').run(id);
 
       return { success: true };
-    });
+    };
 
-    const result = txn();
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const result = await executeTx();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return result;
   },
@@ -2183,9 +2253,9 @@ const returnOps = {
 
 /* ───────── Configuration Ops ───────── */
 const businessProfileOps = {
-  get: () => db.prepare('SELECT * FROM business_profile WHERE id = 1').get(),
-  update: (p) => {
-    const result = db.prepare(`
+  get: async () => await db.prepare('SELECT * FROM business_profile WHERE id = 1').get(),
+  update: async (p) => {
+    const result = await db.prepare(`
       UPDATE business_profile SET 
         business_name=?, business_short=?, tagline=?, address_line1=?, address_line2=?, 
         city=?, state=?, pincode=?, phone=?, email=?, gstin=?, 
@@ -2207,56 +2277,56 @@ const businessProfileOps = {
       p.pan_number || ''
     );
 
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return result;
   },
 };
 
 const authOps = {
-  getPassword: () => {
-    const row = db.prepare('SELECT software_password FROM business_profile WHERE id = 1').get();
+  getPassword: async () => {
+    const row = await db.prepare('SELECT software_password FROM business_profile WHERE id = 1').get();
     return row?.software_password || '';
   },
-  setPassword: (password) => {
-    return db.prepare('UPDATE business_profile SET software_password = ? WHERE id = 1').run(password);
+  setPassword: async (password) => {
+    return await db.prepare('UPDATE business_profile SET software_password = ? WHERE id = 1').run(password);
   },
-  verify: (input) => {
-    const actual = authOps.getPassword();
+  verify: async (input) => {
+    const actual = await authOps.getPassword();
     if (!actual) return true; // If no password set, it's always verified
     return actual === input;
   }
 };
 
 const categoryOps = {
-  getAll: () => db.prepare('SELECT * FROM custom_categories WHERE is_active = 1 ORDER BY sort_order, name ASC').all(),
-  add: (name) => {
-    const res = db.prepare('INSERT INTO custom_categories (name) VALUES (?)').run(name);
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  getAll: async () => await db.prepare('SELECT * FROM custom_categories WHERE is_active = 1 ORDER BY sort_order, name ASC').all(),
+  add: async (name) => {
+    const res = await db.prepare('INSERT INTO custom_categories (name) VALUES (?)').run(name);
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
-  delete: (id) => {
-    const res = db.prepare('UPDATE custom_categories SET is_active = 0 WHERE id = ?').run(id);
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  delete: async (id) => {
+    const res = await db.prepare('UPDATE custom_categories SET is_active = 0 WHERE id = ?').run(id);
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
 };
 
 const expenseCategoryOps = {
-  getAll: () => db.prepare('SELECT * FROM expense_categories ORDER BY name ASC').all(),
-  add: (name) => db.prepare('INSERT INTO expense_categories (name) VALUES (?)').run(name),
-  delete: (id) => db.prepare('DELETE FROM expense_categories WHERE id = ?').run(id),
+  getAll: async () => await db.prepare('SELECT * FROM expense_categories ORDER BY name ASC').all(),
+  add: async (name) => await db.prepare('INSERT INTO expense_categories (name) VALUES (?)').run(name),
+  delete: async (id) => await db.prepare('DELETE FROM expense_categories WHERE id = ?').run(id),
 };
 
 /* ---------- Attribute Defs Ops ---------- */
 const attributeOps = {
-  getAll: () => db.prepare('SELECT * FROM product_attribute_defs').all(),
-  add: (attr) => db.prepare('INSERT INTO product_attribute_defs (name, type, required, options) VALUES (?, ?, ?, ?)').run(attr.name, attr.type, attr.required || 0, attr.options || '[]'),
-  delete: (id) => {
-    const res = db.prepare('DELETE FROM product_attribute_defs WHERE id = ?').run(id);
-    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  getAll: async () => await db.prepare('SELECT * FROM product_attribute_defs').all(),
+  add: async (attr) => await db.prepare('INSERT INTO product_attribute_defs (name, type, required, options) VALUES (?, ?, ?, ?)').run(attr.name, attr.type, attr.required || 0, attr.options || '[]'),
+  delete: async (id) => {
+    const res = await db.prepare('DELETE FROM product_attribute_defs WHERE id = ?').run(id);
+    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   }
@@ -2264,32 +2334,32 @@ const attributeOps = {
 
 /* ---------- Global Storage Ops ---------- */
 const storageOps = {
-  exportAll: () => {
+  exportAll: async () => {
     return {
-      products: db.prepare('SELECT * FROM products').all(),
-      sales: db.prepare('SELECT * FROM sales').all(),
-      sale_items: db.prepare('SELECT * FROM sale_items').all(),
-      purchases: db.prepare('SELECT * FROM purchases').all(),
-      purchase_items: db.prepare('SELECT * FROM purchase_items').all(),
-      returns: db.prepare('SELECT * FROM returns').all(),
-      return_items: db.prepare('SELECT * FROM return_items').all(),
-      purchase_returns: db.prepare('SELECT * FROM purchase_returns').all(),
-      purchase_return_items: db.prepare('SELECT * FROM purchase_return_items').all(),
-      expenses: db.prepare('SELECT * FROM expenses').all(),
-      parties: db.prepare('SELECT * FROM parties').all(),
-      party_transactions: db.prepare('SELECT * FROM party_transactions').all(),
-      categories: db.prepare('SELECT * FROM custom_categories').all(),
-      expense_categories: db.prepare('SELECT * FROM expense_categories').all(),
-      attribute_defs: db.prepare('SELECT * FROM product_attribute_defs').all(),
-      profile: db.prepare('SELECT * FROM business_profile LIMIT 1').get(),
+      products: await db.prepare('SELECT * FROM products').all(),
+      sales: await db.prepare('SELECT * FROM sales').all(),
+      sale_items: await db.prepare('SELECT * FROM sale_items').all(),
+      purchases: await db.prepare('SELECT * FROM purchases').all(),
+      purchase_items: await db.prepare('SELECT * FROM purchase_items').all(),
+      returns: await db.prepare('SELECT * FROM returns').all(),
+      return_items: await db.prepare('SELECT * FROM return_items').all(),
+      purchase_returns: await db.prepare('SELECT * FROM purchase_returns').all(),
+      purchase_return_items: await db.prepare('SELECT * FROM purchase_return_items').all(),
+      expenses: await db.prepare('SELECT * FROM expenses').all(),
+      parties: await db.prepare('SELECT * FROM parties').all(),
+      party_transactions: await db.prepare('SELECT * FROM party_transactions').all(),
+      categories: await db.prepare('SELECT * FROM custom_categories').all(),
+      expense_categories: await db.prepare('SELECT * FROM expense_categories').all(),
+      attribute_defs: await db.prepare('SELECT * FROM product_attribute_defs').all(),
+      profile: await db.prepare('SELECT * FROM business_profile LIMIT 1').get(),
     };
   },
-  importAll: (data) => {
-    const dynamicInsert = (table, rows) => {
+  importAll: async (data) => {
+    const dynamicInsert = async (table, rows) => {
       if (!rows || rows.length === 0) return;
       
       // Get current table columns
-      const tableInfo = db.prepare(`PRAGMA table_info(${table})`).all();
+      const tableInfo = await db.prepare(`PRAGMA table_info(${table})`).all();
       const validCols = tableInfo.map(c => c.name);
 
       for (const row of rows) {
@@ -2297,14 +2367,14 @@ const storageOps = {
         const placeholders = rowCols.map(() => '?').join(', ');
         const values = rowCols.map(k => row[k]);
         
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO ${table} (${rowCols.join(', ')})
           VALUES (${placeholders})
         `).run(...values);
       }
     };
 
-    const trx = db.transaction((d) => {
+    const executeTx = async (d) => {
       // Clear existing tables in correct order for foreign keys
       const tables = [
         'return_items', 'purchase_return_items', 'returns', 'purchase_returns',
@@ -2313,40 +2383,42 @@ const storageOps = {
         'expenses', 'custom_categories', 'expense_categories', 'product_attribute_defs'
       ];
       
-      tables.forEach(t => db.prepare(`DELETE FROM ${t}`).run());
-      db.prepare("DELETE FROM sqlite_sequence").run();
+      for (const t of tables) {
+        await db.prepare(`DELETE FROM ${t}`).run();
+      }
+      await db.prepare("DELETE FROM sqlite_sequence").run();
 
       // Import tables dynamically
-      dynamicInsert('products', d.products);
-      dynamicInsert('expense_categories', d.expense_categories);
-      dynamicInsert('custom_categories', d.categories);
-      dynamicInsert('parties', d.parties);
-      dynamicInsert('party_transactions', d.party_transactions);
-      dynamicInsert('sales', d.sales);
-      dynamicInsert('sale_items', d.sale_items);
-      dynamicInsert('purchases', d.purchases);
-      dynamicInsert('purchase_items', d.purchase_items);
-      dynamicInsert('returns', d.returns);
-      dynamicInsert('return_items', d.return_items);
-      dynamicInsert('purchase_returns', d.purchase_returns);
-      dynamicInsert('purchase_return_items', d.purchase_return_items);
-      dynamicInsert('product_attribute_defs', d.attribute_defs);
-      dynamicInsert('expenses', d.expenses);
+      await dynamicInsert('products', d.products);
+      await dynamicInsert('expense_categories', d.expense_categories);
+      await dynamicInsert('custom_categories', d.categories);
+      await dynamicInsert('parties', d.parties);
+      await dynamicInsert('party_transactions', d.party_transactions);
+      await dynamicInsert('sales', d.sales);
+      await dynamicInsert('sale_items', d.sale_items);
+      await dynamicInsert('purchases', d.purchases);
+      await dynamicInsert('purchase_items', d.purchase_items);
+      await dynamicInsert('returns', d.returns);
+      await dynamicInsert('return_items', d.return_items);
+      await dynamicInsert('purchase_returns', d.purchase_returns);
+      await dynamicInsert('purchase_return_items', d.purchase_return_items);
+      await dynamicInsert('product_attribute_defs', d.attribute_defs);
+      await dynamicInsert('expenses', d.expenses);
 
       // Import profile settings (row 1 only)
       if (d.profile) {
         const p = d.profile;
-        const profileInfo = db.prepare(`PRAGMA table_info(business_profile)`).all();
+        const profileInfo = await db.prepare(`PRAGMA table_info(business_profile)`).all();
         const validCols = profileInfo.map(c => c.name).filter(c => c !== 'id');
         
         const updates = validCols.map(c => `${c} = ?`).join(', ');
         const values = validCols.map(c => p[c]);
         
-        db.prepare(`UPDATE business_profile SET ${updates} WHERE id = 1`).run(...values);
+        await db.prepare(`UPDATE business_profile SET ${updates} WHERE id = 1`).run(...values);
       }
-    });
+    };
     
-    trx(data);
+    await executeTx(data);
     return true;
   }
 };
@@ -2778,9 +2850,9 @@ module.exports = {
   businessProfileOps, categoryOps, expenseCategoryOps,
   attributeOps, storageOps, syncToCloud, authOps,
   mobileAccessOps: {
-    get: () => {
+    get: async () => {
       try {
-        const row = db.prepare('SELECT mobile_access_code, mobile_secret FROM business_profile WHERE id = 1').get();
+        const row = await db.prepare('SELECT mobile_access_code, mobile_secret FROM business_profile WHERE id = 1').get();
         return {
           mobile_access_code: row?.mobile_access_code || '',
           mobile_secret: row?.mobile_secret || ''
@@ -2791,14 +2863,14 @@ module.exports = {
         return { mobile_access_code: '', mobile_secret: '' };
       }
     },
-    generate: () => {
+    generate: async () => {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
       const secret = require('crypto').randomBytes(32).toString('hex');
-      db.prepare('UPDATE business_profile SET mobile_access_code = ?, mobile_secret = ? WHERE id = 1').run(code, secret);
+      await db.prepare('UPDATE business_profile SET mobile_access_code = ?, mobile_secret = ? WHERE id = 1').run(code, secret);
       return { mobile_access_code: code, mobile_secret: secret };
     },
-    revoke: () => {
-      db.prepare("UPDATE business_profile SET mobile_access_code = '', mobile_secret = '' WHERE id = 1").run();
+    revoke: async () => {
+      await db.prepare("UPDATE business_profile SET mobile_access_code = '', mobile_secret = '' WHERE id = 1").run();
       return { success: true };
     }
   }

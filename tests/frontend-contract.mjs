@@ -236,8 +236,8 @@ const backendIntegrityContracts = [
   [/returned_total/, 'sales and reports must track returned totals'],
   [/deleteSaleReturn/, 'sales return undo must exist'],
   [/deletePurchaseReturn/, 'purchase return undo must exist'],
-  [/returns:\s*db\.prepare\('SELECT \* FROM returns'\)/, 'backup export must include sales returns'],
-  [/purchase_returns:\s*db\.prepare\('SELECT \* FROM purchase_returns'\)/, 'backup export must include purchase returns'],
+  [/returns:\s*(?:await\s+)?db\.prepare\('SELECT \* FROM returns'\)/, 'backup export must include sales returns'],
+  [/purchase_returns:\s*(?:await\s+)?db\.prepare\('SELECT \* FROM purchase_returns'\)/, 'backup export must include purchase returns'],
   [/ensurePostgresSchema/, 'cloud sync must provision schema before upload'],
 ];
 
