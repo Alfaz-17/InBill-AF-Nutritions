@@ -106,11 +106,17 @@ if (isWebEnv) {
 
   class PostgresDatabaseCompat {
     constructor(url) {
-      this.url = url || process.env.DATABASE_URL;
+      this.url = null;
+      this.pgClient = null;
+      this.connect(url || process.env.DATABASE_URL);
       if (!this.url) {
         console.warn("DATABASE_URL is not set but application is running in Web Mode.");
       }
-      if (this.url) {
+    }
+
+    connect(newUrl) {
+      if (newUrl && newUrl !== this.url) {
+        this.url = newUrl;
         const cleanUrl = this.url.split('?')[0];
         this.pgClient = postgres(cleanUrl, {
           ssl: { rejectUnauthorized: false },

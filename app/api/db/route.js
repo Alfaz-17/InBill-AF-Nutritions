@@ -202,6 +202,10 @@ export async function POST(req) {
     const neonUrlHeader = req.headers.get('x-neon-url');
     const geminiKeyHeader = req.headers.get('x-gemini-key');
     
+    if (neonUrlHeader && typeof db.connect === 'function') {
+      db.connect(neonUrlHeader);
+    }
+    
     if (neonUrlHeader) {
       const currentProfile = await db.prepare('SELECT neon_db_url, use_cloud FROM business_profile WHERE id = 1').get();
       if (!currentProfile) {
