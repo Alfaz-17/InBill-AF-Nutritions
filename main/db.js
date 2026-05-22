@@ -165,6 +165,19 @@ if (isWebEnv) {
               }
             }
           });
+
+          // Schedule dynamic background verification and sequence self-healing on connect
+          setTimeout(() => {
+            if (this.pgClient) {
+              ensurePostgresSchema(this.pgClient)
+                .then(() => {
+                  console.log("⚡ [InBill Web Mode] Aligning Postgres sequences...");
+                  return resetPostgresSequences(this.pgClient);
+                })
+                .catch(err => console.error("❌ Postgres Schema/Sequence verification failed:", err.message));
+            }
+          }, 0);
+
         } catch (err) {
           console.error("❌ Failed to initialize compatibility Postgres client:", err.message);
           this.pgClient = null;
@@ -290,7 +303,14 @@ const getSql = (forceUrl = null) => {
 /* ───────── Schema ───────── */
 const initDB = () => {
   if (isWebEnv) {
-    ensurePostgresSchema(db.pgClient).catch(err => console.error("❌ Postgres Schema verification failed:", err.message));
+    if (db.pgClient) {
+      ensurePostgresSchema(db.pgClient)
+        .then(() => {
+          console.log("⚡ [InBill Web Mode] Aligning Postgres sequences on startup...");
+          return resetPostgresSequences(db.pgClient);
+        })
+        .catch(err => console.error("❌ Postgres Schema/Sequence verification failed:", err.message));
+    }
     return;
   }
   db.exec(`
@@ -2419,11 +2439,47 @@ const storageOps = {
     };
     
     await executeTx(data);
+    if (isWebEnv && db.pgClient) {
+      console.log("⚡ [InBill Web Mode] Aligning Postgres sequences after import...");
+      await resetPostgresSequences(db.pgClient);
+    }
     return true;
   }
 };
 
-const ensurePostgresSchema = async (cloud) => {
+async function resetPostgresSequences(cloud) {
+  const tables = [
+    'business_profile', 'custom_categories', 'product_attribute_defs', 
+    'expense_categories',
+    'products', 'parties', 'expenses', 'sales', 'sale_items', 
+    'purchases', 'purchase_items', 'party_transactions',
+    'returns', 'return_items', 'purchase_returns', 'purchase_return_items'
+  ];
+
+  for (const table of tables) {
+    try {
+      const res = await cloud.unsafe(`SELECT COALESCE(MAX(id), 0) as max_id FROM ${table}`);
+      const maxId = res[0] ? Number(res[0].max_id) : 0;
+      if (maxId > 0) {
+        await cloud.unsafe(`
+          DO $$
+          DECLARE
+            seq_name text;
+          BEGIN
+            seq_name := pg_get_serial_sequence('${table}', 'id');
+            IF seq_name IS NOT NULL THEN
+              PERFORM setval(seq_name, ${maxId});
+            END IF;
+          END $$;
+        `);
+      }
+    } catch (err) {
+      console.warn(`⚠️ Warning: Resetting sequence for ${table} failed:`, err.message);
+    }
+  }
+};
+
+async function ensurePostgresSchema(cloud) {
   // We recreate the core schema in Postgres to ensure tables exist before sync
   await cloud`
     CREATE TABLE IF NOT EXISTS products (
@@ -2826,6 +2882,13 @@ const syncToCloud = async () => {
         }
       });
       
+      try {
+        console.log("Resetting PostgreSQL sequences to align identities...");
+        await resetPostgresSequences(cloud);
+      } catch (seqErr) {
+        console.warn("⚠️ Resetting Postgres sequences failed during sync (non-blocking):", seqErr.message);
+      }
+
       console.log("☁️ Cloud Sync Completed Successfully.");
       return { success: true };
     } finally {
