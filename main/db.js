@@ -2217,21 +2217,21 @@ const returnOps = {
     ORDER BY r.date DESC
   `).all(),
 
-  deletePurchaseReturn: async (id) => {
-    const executeTx = async () => {
-      const ret = await db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id);
+  deletePurchaseReturn: (id) => {
+    const executeTx = () => {
+      const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id);
       if (!ret) return { success: false, error: 'Return not found' };
 
-      const items = await db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(id);
+      const items = db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(id);
 
       // 1. Reverse Stock (Add back what was sent back)
       const addStock = db.prepare(`UPDATE products SET quantity = quantity + ? WHERE id = ?`);
       for (const item of items) {
         if (item.product_id) {
-          await addStock.run(item.quantity, item.product_id);
+          addStock.run(item.quantity, item.product_id);
         } else {
           // Fallback for legacy items without IDs
-          await db.prepare(`UPDATE products SET quantity = quantity + ? WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', ''))`)
+          db.prepare(`UPDATE products SET quantity = quantity + ? WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', ''))`)
             .run(item.quantity, item.product_name);
         }
       }
@@ -2241,42 +2241,116 @@ const returnOps = {
         // Subtract back the debt cleared and the store credit (if any)
         const totalCreditImpact = (ret.debt_cleared_amount || 0) + (ret.payment_mode === 'Credit' ? (ret.refund_amount || 0) : 0);
         if (totalCreditImpact > 0) {
-          await db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
+          db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
             .run(totalCreditImpact, ret.party_id);
         }
         
         // Remove ledger entries
-        await db.prepare("DELETE FROM party_transactions WHERE type = 'Purchase Return' AND reference_id = ?")
+        db.prepare("DELETE FROM party_transactions WHERE type = 'Purchase Return' AND reference_id = ?")
           .run(id);
       }
 
       // 3. Reverse Original Purchase Due
       if (ret.purchase_id) {
-        await db.prepare('UPDATE purchases SET due_amount = due_amount + ? WHERE id = ?')
+        db.prepare('UPDATE purchases SET due_amount = due_amount + ? WHERE id = ?')
           .run(ret.total_amount, ret.purchase_id);
       }
 
       // 4. Delete return records
-      await db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ?').run(id);
-      await db.prepare('DELETE FROM purchase_returns WHERE id = ?').run(id);
+      db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ?').run(id);
+      db.prepare('DELETE FROM purchase_returns WHERE id = ?').run(id);
 
       return { success: true };
     };
 
-    const result = await executeTx();
-    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
-    if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
+    if (isWebEnv) {
+      return (async () => {
+        const ret = await db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(id);
+        if (!ret) return { success: false, error: 'Return not found' };
+
+        const items = await db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(id);
+
+        const addStock = db.prepare(`UPDATE products SET quantity = quantity + ? WHERE id = ?`);
+        for (const item of items) {
+          if (item.product_id) {
+            await addStock.run(item.quantity, item.product_id);
+          } else {
+            await db.prepare(`UPDATE products SET quantity = quantity + ? WHERE LOWER(REPLACE(product_name, ' ', '')) = LOWER(REPLACE(?, ' ', ''))`)
+              .run(item.quantity, item.product_name);
+          }
+        }
+
+        if (ret.party_id) {
+          const totalCreditImpact = (ret.debt_cleared_amount || 0) + (ret.payment_mode === 'Credit' ? (ret.refund_amount || 0) : 0);
+          if (totalCreditImpact > 0) {
+            await db.prepare('UPDATE parties SET current_balance = current_balance - ? WHERE id = ?')
+              .run(totalCreditImpact, ret.party_id);
+          }
+          await db.prepare("DELETE FROM party_transactions WHERE type = 'Purchase Return' AND reference_id = ?")
+            .run(id);
+        }
+
+        if (ret.purchase_id) {
+          await db.prepare('UPDATE purchases SET due_amount = due_amount + ? WHERE id = ?')
+            .run(ret.total_amount, ret.purchase_id);
+        }
+
+        await db.prepare('DELETE FROM purchase_return_items WHERE purchase_return_id = ?').run(id);
+        await db.prepare('DELETE FROM purchase_returns WHERE id = ?').run(id);
+
+        const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+        if (config?.use_cloud) syncToCloud().catch(err => console.error("Auto-Sync Failed:", err));
+
+        return { success: true };
+      })();
+    }
+
+    const result = executeTx();
+    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    if (config?.use_cloud) syncToCloud().catch(err => console.error("Auto-Sync Failed:", err));
     return result;
-  },
+  }
 };
 
-
-/* ───────── Configuration Ops ───────── */
 const businessProfileOps = {
-  get: async () => await db.prepare('SELECT * FROM business_profile WHERE id = 1').get(),
-  update: async (p) => {
-    const result = await db.prepare(`
-      UPDATE business_profile SET 
+  get: () => {
+    if (isWebEnv) {
+      return (async () => {
+        return await db.prepare('SELECT * FROM business_profile WHERE id = 1').get();
+      })();
+    }
+    return db.prepare('SELECT * FROM business_profile WHERE id = 1').get();
+  },
+  update: (p) => {
+    if (isWebEnv) {
+      return (async () => {
+        const result = await db.prepare(`
+          UPDATE business_profile SET
+            business_name=?, business_short=?, tagline=?, address_line1=?, address_line2=?, 
+            city=?, state=?, pincode=?, phone=?, email=?, gstin=?, 
+            logo_path=?, invoice_prefix=?, invoice_footer=?, currency_symbol=?, business_type=?,
+            invoice_settings=?, master_data=?, bank_details=?, whatsapp_settings=?,
+            terms_and_conditions=?, whatsapp_number=?, instagram_id=?, pan_number=?
+          WHERE id=1
+        `).run(
+          p.business_name || '', p.business_short || '', p.tagline || '', p.address_line1 || '', p.address_line2 || '',
+          p.city || '', p.state || '', p.pincode || '', p.phone || '', p.email || '', p.gstin || '',
+          p.logo_path || '', p.invoice_prefix || 'INV', p.invoice_footer || '', p.currency_symbol || '₹', p.business_type || 'General',
+          typeof p.invoice_settings === 'object' ? JSON.stringify(p.invoice_settings) : (p.invoice_settings || '{}'),
+          typeof p.master_data === 'object' ? JSON.stringify(p.master_data) : (p.master_data || '{}'),
+          p.bank_details || '',
+          typeof p.whatsapp_settings === 'object' ? JSON.stringify(p.whatsapp_settings) : (p.whatsapp_settings || '{}'),
+          p.terms_and_conditions || '',
+          p.whatsapp_number || '',
+          p.instagram_id || '',
+          p.pan_number || ''
+        );
+        return result;
+      })();
+    }
+
+    const result = db.prepare(`
+      UPDATE business_profile SET
         business_name=?, business_short=?, tagline=?, address_line1=?, address_line2=?, 
         city=?, state=?, pincode=?, phone=?, email=?, gstin=?, 
         logo_path=?, invoice_prefix=?, invoice_footer=?, currency_symbol=?, business_type=?,
@@ -2297,23 +2371,41 @@ const businessProfileOps = {
       p.pan_number || ''
     );
 
-    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return result;
-  },
+  }
 };
 
 const authOps = {
-  getPassword: async () => {
-    const row = await db.prepare('SELECT software_password FROM business_profile WHERE id = 1').get();
+  getPassword: () => {
+    if (isWebEnv) {
+      return (async () => {
+        const row = await db.prepare('SELECT software_password FROM business_profile WHERE id = 1').get();
+        return row?.software_password || '';
+      })();
+    }
+    const row = db.prepare('SELECT software_password FROM business_profile WHERE id = 1').get();
     return row?.software_password || '';
   },
-  setPassword: async (password) => {
-    return await db.prepare('UPDATE business_profile SET software_password = ? WHERE id = 1').run(password);
+  setPassword: (password) => {
+    if (isWebEnv) {
+      return (async () => {
+        return await db.prepare('UPDATE business_profile SET software_password = ? WHERE id = 1').run(password);
+      })();
+    }
+    return db.prepare('UPDATE business_profile SET software_password = ? WHERE id = 1').run(password);
   },
-  verify: async (input) => {
-    const actual = await authOps.getPassword();
-    if (!actual) return true; // If no password set, it's always verified
+  verify: (input) => {
+    if (isWebEnv) {
+      return (async () => {
+        const actual = await authOps.getPassword();
+        if (!actual) return true;
+        return actual === input;
+      })();
+    }
+    const actual = authOps.getPassword();
+    if (!actual) return true;
     return actual === input;
   }
 };
