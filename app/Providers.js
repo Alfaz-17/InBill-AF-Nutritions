@@ -108,12 +108,24 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
       headers,
       body: JSON.stringify({ channel, args }),
     });
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'Database operation failed');
+    let responseText = '';
+    try {
+      responseText = await res.text();
+    } catch (e) {
+      throw new Error('Failed to read response text');
     }
-    const data = await res.json();
-    return data.result;
+
+    let responseData;
+    try {
+      responseData = JSON.parse(responseText);
+    } catch (e) {
+      throw new Error(responseText || `Server returned error status ${res.status}`);
+    }
+
+    if (!res.ok) {
+      throw new Error(responseData?.error || responseData?.message || 'Database operation failed');
+    }
+    return responseData.result;
   };
 
   window.electronAPI = {

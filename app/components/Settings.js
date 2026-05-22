@@ -710,7 +710,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                     });
                     if (!ok) return;
                     
-                    const res = await window.electronAPI.storage.resetData();
+                    const res = await window.electronAPI.settings.resetData();
                     if (res.success) {
                       toast('System wiped! Restarting...', 'success');
                       setTimeout(() => location.reload(), 1500);
