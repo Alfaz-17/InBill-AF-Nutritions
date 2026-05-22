@@ -21,12 +21,25 @@ Before deploying, choose how you want to manage data persistence:
 
 ---
 
-## ☁️ Method A: Deploying to Vercel (Neon Postgres)
+## ☁️ Method A: Deploying to Vercel (Neon / Supabase Postgres)
 
-### Step 1: Set Up your Neon Postgres Database
+### Step 1: Set Up your Cloud Postgres Database
+
+#### Option 1: Supabase Postgres (Recommended for high stability)
+1. Go to [Supabase.com](https://supabase.com/) and sign up for a free account.
+2. Create a new project. Remember to store your database password safely.
+3. Once the database is ready, go to **Project Settings** > **Database** and scroll down to the **Connection String** section.
+4. Click on the **Pooler** tab (which uses IPv4 and is fully compatible with local and serverless network routes).
+5. Set the **Mode** to **Transaction** (highly recommended for serverless to prevent connection exhaustion).
+6. Copy the connection string. It will look like this:
+   `postgresql://postgres.svmsbnknyyegkcrzivhx:[YOUR-PASSWORD]@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres`
+7. Replace `[YOUR-PASSWORD]` with your actual database password (e.g., `Alfaz.78600`).
+8. **Note**: Always use port `6543` for connection pooling. Avoid using the direct connection string (port `5432` on the raw database host) because Supabase free tier enforces IPv6 for direct connections, which is blocked by many local ISPs and cloud environments.
+
+#### Option 2: Neon Postgres
 1. Go to [Neon.tech](https://neon.tech/) and sign up for a free account.
 2. Create a new project and select your preferred region.
-3. Copy the **Connection String** (it will look like `postgresql://username:password@ep-host-name.pooler.neon.tech/neondb?sslmode=require`).
+3. Copy the **Connection String** (it will look like `postgresql://username:password@ep-host-name.pooler.neon.tech/neondb`).
 
 ### Step 2: Push your Repository to GitHub
 Make sure your project is pushed to a private or public GitHub repository.
