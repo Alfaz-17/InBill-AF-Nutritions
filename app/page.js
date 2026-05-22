@@ -4,15 +4,17 @@ import {
   LayoutDashboard, ShoppingCart, Package, Truck,
   ScanLine, FileBarChart, Settings, Wallet, Users, RotateCcw
 } from 'lucide-react';
-import Dashboard from './components/Dashboard';
-import Billing from './components/Billing';
-import Products from './components/Products';
-import Purchases from './components/Purchases';
-import Parties from './components/Parties';
-import AIUpload from './components/AIUpload';
-import Reports from './components/Reports';
-import Expenses from './components/Expenses';
-import SettingsPage from './components/Settings';
+import dynamic from 'next/dynamic';
+
+const Dashboard = dynamic(() => import('./components/Dashboard'), { ssr: false });
+const Billing = dynamic(() => import('./components/Billing'), { ssr: false });
+const Products = dynamic(() => import('./components/Products'), { ssr: false });
+const Purchases = dynamic(() => import('./components/Purchases'), { ssr: false });
+const Parties = dynamic(() => import('./components/Parties'), { ssr: false });
+const AIUpload = dynamic(() => import('./components/AIUpload'), { ssr: false });
+const Reports = dynamic(() => import('./components/Reports'), { ssr: false });
+const Expenses = dynamic(() => import('./components/Expenses'), { ssr: false });
+const SettingsPage = dynamic(() => import('./components/Settings'), { ssr: false });
 
 const navSections = [
   {
@@ -40,8 +42,8 @@ const navSections = [
   },
 ];
 
-import SetupWizard from './components/SetupWizard';
-import LockScreen from './components/LockScreen';
+const SetupWizard = dynamic(() => import('./components/SetupWizard'), { ssr: false });
+const LockScreen = dynamic(() => import('./components/LockScreen'), { ssr: false });
 
 const pages = {
   dashboard: Dashboard,

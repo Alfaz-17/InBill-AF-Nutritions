@@ -2,14 +2,9 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const root = path.resolve(__dirname, '..');
-const electronBin = require('electron');
-
-const result = spawnSync(electronBin, [path.join('tests', 'report-dashboard-consistency.mjs')], {
+const result = spawnSync(process.execPath, [path.join('tests', 'report-dashboard-consistency.mjs')], {
   cwd: root,
-  env: {
-    ...process.env,
-    ELECTRON_RUN_AS_NODE: '1',
-  },
+  env: process.env,
   stdio: 'inherit',
   shell: false,
 });
