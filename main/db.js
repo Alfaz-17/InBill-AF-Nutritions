@@ -2411,34 +2411,79 @@ const authOps = {
 };
 
 const categoryOps = {
-  getAll: async () => await db.prepare('SELECT * FROM custom_categories WHERE is_active = 1 ORDER BY sort_order, name ASC').all(),
-  add: async (name) => {
-    const res = await db.prepare('INSERT INTO custom_categories (name) VALUES (?)').run(name);
-    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  getAll: () => db.prepare('SELECT * FROM custom_categories WHERE is_active = 1 ORDER BY sort_order, name ASC').all(),
+  add: (name) => {
+    if (isWebEnv) {
+      return (async () => {
+        const res = await db.prepare('INSERT INTO custom_categories (name) VALUES (?)').run(name);
+        const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+        if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
+        return res;
+      })();
+    }
+    const res = db.prepare('INSERT INTO custom_categories (name) VALUES (?)').run(name);
+    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
-  delete: async (id) => {
-    const res = await db.prepare('UPDATE custom_categories SET is_active = 0 WHERE id = ?').run(id);
-    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  delete: (id) => {
+    if (isWebEnv) {
+      return (async () => {
+        const res = await db.prepare('UPDATE custom_categories SET is_active = 0 WHERE id = ?').run(id);
+        const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+        if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
+        return res;
+      })();
+    }
+    const res = db.prepare('UPDATE custom_categories SET is_active = 0 WHERE id = ?').run(id);
+    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   },
 };
 
 const expenseCategoryOps = {
-  getAll: async () => await db.prepare('SELECT * FROM expense_categories ORDER BY name ASC').all(),
-  add: async (name) => await db.prepare('INSERT INTO expense_categories (name) VALUES (?)').run(name),
-  delete: async (id) => await db.prepare('DELETE FROM expense_categories WHERE id = ?').run(id),
+  getAll: () => db.prepare('SELECT * FROM expense_categories ORDER BY name ASC').all(),
+  add: (name) => {
+    if (isWebEnv) {
+      return (async () => {
+        return await db.prepare('INSERT INTO expense_categories (name) VALUES (?)').run(name);
+      })();
+    }
+    return db.prepare('INSERT INTO expense_categories (name) VALUES (?)').run(name);
+  },
+  delete: (id) => {
+    if (isWebEnv) {
+      return (async () => {
+        return await db.prepare('DELETE FROM expense_categories WHERE id = ?').run(id);
+      })();
+    }
+    return db.prepare('DELETE FROM expense_categories WHERE id = ?').run(id);
+  },
 };
 
 /* ---------- Attribute Defs Ops ---------- */
 const attributeOps = {
-  getAll: async () => await db.prepare('SELECT * FROM product_attribute_defs').all(),
-  add: async (attr) => await db.prepare('INSERT INTO product_attribute_defs (name, type, required, options) VALUES (?, ?, ?, ?)').run(attr.name, attr.type, attr.required || 0, attr.options || '[]'),
-  delete: async (id) => {
-    const res = await db.prepare('DELETE FROM product_attribute_defs WHERE id = ?').run(id);
-    const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+  getAll: () => db.prepare('SELECT * FROM product_attribute_defs').all(),
+  add: (attr) => {
+    if (isWebEnv) {
+      return (async () => {
+        return await db.prepare('INSERT INTO product_attribute_defs (name, type, required, options) VALUES (?, ?, ?, ?)').run(attr.name, attr.type, attr.required || 0, attr.options || '[]');
+      })();
+    }
+    return db.prepare('INSERT INTO product_attribute_defs (name, type, required, options) VALUES (?, ?, ?, ?)').run(attr.name, attr.type, attr.required || 0, attr.options || '[]');
+  },
+  delete: (id) => {
+    if (isWebEnv) {
+      return (async () => {
+        const res = await db.prepare('DELETE FROM product_attribute_defs WHERE id = ?').run(id);
+        const config = await db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
+        if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
+        return res;
+      })();
+    }
+    const res = db.prepare('DELETE FROM product_attribute_defs WHERE id = ?').run(id);
+    const config = db.prepare('SELECT use_cloud FROM business_profile WHERE id = 1').get();
     if (config?.use_cloud) syncToCloud().catch(e => console.error(e));
     return res;
   }
