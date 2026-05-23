@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, Fragment, useMemo, useDeferredValue } from 'react';
 import {
   Plus, Trash2, X, Check, TruckIcon, Search, ScanLine, 
   Calendar, CreditCard, ChevronDown, Package, IndianRupee,
@@ -50,8 +50,12 @@ export default function Purchases({ profile }) {
   const [supplierSearch, setSupplierSearch] = useState('');
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
   const [productSearch, setProductSearch] = useState('');
+  const [purchaseSearch, setPurchaseSearch] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const deferredPurchaseSearch = useDeferredValue(purchaseSearch);
 
   const CURRENCY = profile?.currency_symbol || '₹';
+  const purchasesPerPage = 25;
 
   useEffect(() => { 
     loadPurchases();
@@ -96,6 +100,37 @@ export default function Purchases({ profile }) {
     }
     setLoading(false);
   };
+
+  const purchaseSummary = useMemo(() => {
+    const recentCutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    return purchases.reduce((acc, purchase) => {
+      acc.totalAmount += Number(purchase.total_amount || 0);
+      if (new Date(purchase.date).getTime() > recentCutoff) acc.recentCount += 1;
+      return acc;
+    }, { totalAmount: 0, recentCount: 0 });
+  }, [purchases]);
+
+  const filteredPurchases = useMemo(() => {
+    const q = deferredPurchaseSearch.trim().toLowerCase();
+    if (!q) return purchases;
+    return purchases.filter((purchase) => (
+      String(purchase.supplier_name || '').toLowerCase().includes(q) ||
+      String(purchase.id || '').includes(q)
+    ));
+  }, [purchases, deferredPurchaseSearch]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredPurchases.length / purchasesPerPage));
+  const visiblePurchases = useMemo(() => (
+    filteredPurchases.slice((currentPage - 1) * purchasesPerPage, currentPage * purchasesPerPage)
+  ), [filteredPurchases, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [deferredPurchaseSearch]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const addRow = () => {
     setItems([...items, { ...emptyItem }]);
@@ -239,14 +274,14 @@ export default function Purchases({ profile }) {
           <div className="metric-icon green"><IndianRupee size={24} /></div>
           <div>
             <p className="metric-sub">Stock Value</p>
-            <h3 className="metric-value">{CURRENCY}{purchases.reduce((acc, p) => acc + p.total_amount, 0).toLocaleString('en-IN')}</h3>
+            <h3 className="metric-value">{CURRENCY}{purchaseSummary.totalAmount.toLocaleString('en-IN')}</h3>
           </div>
         </div>
         <div className="metric-card">
           <div className="metric-icon teal"><Calendar size={24} /></div>
           <div>
             <p className="metric-sub">Recent Activity</p>
-            <h3 className="metric-value">{purchases.filter(p => new Date(p.date) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)).length} New Bills</h3>
+            <h3 className="metric-value">{purchaseSummary.recentCount} New Bills</h3>
           </div>
         </div>
       </div>
@@ -256,12 +291,14 @@ export default function Purchases({ profile }) {
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
         <Input 
           placeholder="Search by supplier or bill ID..." 
+          value={purchaseSearch}
+          onChange={(e) => setPurchaseSearch(e.target.value)}
           className="form-input h-14 pl-12 rounded-2xl shadow-sm border-slate-200"
         />
       </div>      {/* Purchase List */}
       <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
         <div className="table-wrap border-none shadow-none rounded-none">
-          {purchases.length > 0 ? (
+          {filteredPurchases.length > 0 ? (
             <>
               {/* Desktop View */}
               <div className="hidden md:block">
@@ -275,7 +312,7 @@ export default function Purchases({ profile }) {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {purchases.map((p) => (
+                    {visiblePurchases.map((p) => (
                       <Fragment key={p.id}>
                         <tr onClick={() => toggleExpand(p.id)} className="group hover:bg-slate-50/50 transition-all cursor-pointer">
                           <td>
@@ -358,7 +395,7 @@ export default function Purchases({ profile }) {
 
               {/* Mobile View */}
               <div className="block md:hidden divide-y divide-slate-100">
-                {purchases.map((p) => (
+                {visiblePurchases.map((p) => (
                   <div key={p.id} className="p-4 space-y-3 hover:bg-slate-50/50 transition-colors">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-2">
@@ -431,11 +468,31 @@ export default function Purchases({ profile }) {
           ) : (
             <div className="flex flex-col items-center justify-center py-32 text-slate-300">
               <TruckIcon size={64} strokeWidth={1} />
-              <p className="mt-4 font-black text-lg">No stock entries found</p>
-              <Button variant="link" className="text-primary font-black mt-2" onClick={() => setShowModal(true)}>Record First Bill</Button>
+              <p className="mt-4 font-black text-lg">{purchases.length ? 'No stock entries match your search' : 'No stock entries found'}</p>
+              <Button variant="link" className="text-primary font-black mt-2" onClick={() => purchases.length ? setPurchaseSearch('') : setShowModal(true)}>
+                {purchases.length ? 'Reset Search' : 'Record First Bill'}
+              </Button>
             </div>
           )}
         </div>
+        {filteredPurchases.length > purchasesPerPage && (
+          <div className="p-4 md:p-6 bg-slate-50 border-t flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs font-bold text-slate-500">
+              Showing <span className="text-slate-900">{((currentPage - 1) * purchasesPerPage) + 1}</span> to <span className="text-slate-900">{Math.min(currentPage * purchasesPerPage, filteredPurchases.length)}</span> of <span className="text-slate-900">{filteredPurchases.length}</span> bills
+            </p>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 md:flex">
+              <Button variant="outline" size="sm" className="h-10 px-4 rounded-xl font-bold" disabled={currentPage === 1} onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}>
+                Previous
+              </Button>
+              <div className="flex items-center justify-center px-2 md:px-4 text-xs md:text-sm font-black whitespace-nowrap">
+                Page {currentPage} of {totalPages}
+              </div>
+              <Button variant="outline" size="sm" className="h-10 px-4 rounded-xl font-bold" disabled={currentPage === totalPages} onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}>
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* New Purchase Modal */}

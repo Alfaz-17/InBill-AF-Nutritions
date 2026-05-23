@@ -238,14 +238,24 @@ body {
 
 .page {
   width: 210mm;
-  min-height: 297mm;
+  height: 297mm;
+  min-height: 0;
   margin: auto;
   background: #ffffff;
-  padding: 15mm;
+  overflow: hidden;
+  padding: 9mm;
 }
 
 table {
   border-collapse: collapse;
+}
+
+a,
+.plain-phone,
+a[x-apple-data-detectors],
+span[x-apple-data-detectors] {
+  color: #000000 !important;
+  text-decoration: none !important;
 }
 
 @media print {
@@ -254,7 +264,7 @@ table {
   }
   .page {
     margin: 0 !important;
-    padding: 10mm !important;
+    padding: 9mm !important;
     box-shadow: none !important;
   }
 }
@@ -295,28 +305,28 @@ export const getInvoiceHTML = (data, profile = {}) => {
 
       return `
         <tr>
-          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500;">
+          <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px; font-weight: 500;">
             ${index + 1}
           </td>
-          <td style="border: 1px solid #000000; padding: 10px 8px; text-align: left; font-size: 11px; font-weight: 500; line-height: 1.4; color: #1e293b;">
+          <td style="border: 1px solid #000000; padding: 6px 7px; text-align: left; font-size: 10px; font-weight: 500; line-height: 1.25; color: #1e293b;">
             ${escapeHtml(item.product_name || item.name)}
           </td>
           ${
             model.gstEnabled
               ? `
-              <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500;">
+              <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px; font-weight: 500;">
                 ${escapeHtml(item.hsn_code || '-')}
               </td>
             `
               : ''
           }
-          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500; white-space: nowrap;">
+          <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px; font-weight: 500; white-space: nowrap;">
             ${qty.toFixed(2)} ${escapeHtml(item.unit || 'Units')}
           </td>
-          <td style="border: 1px solid #000000; padding: 10px 6px; text-align: center; font-size: 11px; font-weight: 500;">
+          <td style="border: 1px solid #000000; padding: 6px 5px; text-align: right; font-size: 10px; font-weight: 500;">
             ${formatMoney(originalPrice)}
           </td>
-          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500; line-height: 1.25;">
+          <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px; font-weight: 500; line-height: 1.15;">
             ${discountPercent > 0
               ? `${discountPercent.toFixed(1)}%<br><span style="font-size: 9px; color: #475569; font-weight: 500;">(${model.currency}${formatMoney(totalRowDiscount)})</span>`
               : '0%'
@@ -325,13 +335,13 @@ export const getInvoiceHTML = (data, profile = {}) => {
           ${
             model.gstEnabled
               ? `
-              <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500;">
+              <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px; font-weight: 500;">
                 ${gstPercent.toFixed(1)}
               </td>
             `
               : ''
           }
-          <td style="border: 1px solid #000000; padding: 10px 8px; text-align: right; font-size: 11px; font-weight: 600; color: #1e293b;">
+          <td style="border: 1px solid #000000; padding: 6px 7px; text-align: right; font-size: 10px; font-weight: 600; color: #1e293b;">
             ${model.currency} ${formatMoney(rowUntaxedTotal)}
           </td>
         </tr>
@@ -340,32 +350,32 @@ export const getInvoiceHTML = (data, profile = {}) => {
     .join('');
 
   let allRowsHtml = rowsHtml;
-  const minRows = 8;
+  const minRows = 6;
   if (model.items.length < minRows) {
     const emptyRowsCount = minRows - model.items.length;
     for (let i = 0; i < emptyRowsCount; i++) {
       allRowsHtml += `
-        <tr style="height: 38px;">
-          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
-          <td style="border: 1px solid #000000; padding: 10px 8px; text-align: left; font-size: 11px;"></td>
+        <tr style="height: 26px;">
+          <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px;"></td>
+          <td style="border: 1px solid #000000; padding: 6px 7px; text-align: left; font-size: 10px;"></td>
           ${
             model.gstEnabled
               ? `
-              <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
+              <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px;"></td>
             `
               : ''
           }
-          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
-          <td style="border: 1px solid #000000; padding: 10px 6px; text-align: center; font-size: 11px;"></td>
-          <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
+          <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px;"></td>
+          <td style="border: 1px solid #000000; padding: 6px 5px; text-align: center; font-size: 10px;"></td>
+          <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px;"></td>
           ${
             model.gstEnabled
               ? `
-              <td style="border: 1px solid #000000; padding: 10px 4px; text-align: center; font-size: 11px;"></td>
+              <td style="border: 1px solid #000000; padding: 6px 4px; text-align: center; font-size: 10px;"></td>
             `
               : ''
           }
-          <td style="border: 1px solid #000000; padding: 10px 8px; text-align: right; font-size: 11px;"></td>
+          <td style="border: 1px solid #000000; padding: 6px 7px; text-align: right; font-size: 10px;"></td>
         </tr>
       `;
     }
@@ -388,6 +398,7 @@ export const getInvoiceHTML = (data, profile = {}) => {
 <html>
 <head>
   <meta charset="UTF-8" />
+  <meta name="format-detection" content="telephone=no" />
   <style>${baseStyles}</style>
 </head>
 <body>
@@ -395,14 +406,14 @@ export const getInvoiceHTML = (data, profile = {}) => {
 <div class="page">
 
   <!-- HEADER -->
-  <table style="width: 100%; border-collapse: collapse; margin-bottom: 24px;">
+  <table style="width: 100%; border-collapse: collapse; margin-bottom: 12px;">
     <tr>
       <td style="width: 40%; vertical-align: top; border: none !important; padding: 0;">
         ${
           profile.logo_path
             ? `
             <img
-              style="max-height: 80px; object-fit: contain;"
+              style="max-height: 58px; object-fit: contain;"
               src="${
                 profile.logo_path.startsWith('/') || profile.logo_path.startsWith('http')
                   ? profile.logo_path
@@ -414,16 +425,16 @@ export const getInvoiceHTML = (data, profile = {}) => {
         }
       </td>
       <td style="width: 60%; text-align: right; vertical-align: top; border: none !important; padding: 0; line-height: 1.45;">
-        <div style="color: #000000; font-size: 22px; font-weight: 700; margin-bottom: 3px;">
+        <div style="color: #000000; font-size: 19px; font-weight: 700; margin-bottom: 2px;">
           ${escapeHtml(profile.business_name || 'P M Nutrition')}
         </div>
-        <div style="font-size: 10.5px; color: #334155; font-weight: 500;">
+        <div style="font-size: 9.5px; color: #334155; font-weight: 500;">
           ${companyAddress(profile)}
         </div>
         ${
           profile.phone
             ? `
-            <div style="font-size: 10.5px; color: #334155; font-weight: 700; margin-top: 2px;">
+            <div class="plain-phone" style="font-size: 9.5px; color: #000000; font-weight: 700; margin-top: 2px;">
               MO: ${escapeHtml(profile.phone)}
             </div>
           `
@@ -432,7 +443,7 @@ export const getInvoiceHTML = (data, profile = {}) => {
         ${
           profile.email
             ? `
-            <div style="font-size: 10.5px; color: #334155; font-weight: 700; margin-top: 2px;">
+            <div style="font-size: 9.5px; color: #334155; font-weight: 700; margin-top: 2px;">
               Email: ${escapeHtml(profile.email)}
             </div>
           `
@@ -441,7 +452,7 @@ export const getInvoiceHTML = (data, profile = {}) => {
         ${
           profile.pan_number
             ? `
-            <div style="font-size: 10.5px; color: #334155; font-weight: 700; margin-top: 2px;">
+            <div style="font-size: 9.5px; color: #334155; font-weight: 700; margin-top: 2px;">
               PAN: ${escapeHtml(profile.pan_number)}
             </div>
           `
@@ -450,7 +461,7 @@ export const getInvoiceHTML = (data, profile = {}) => {
         ${
           model.gstEnabled && profile.gstin
             ? `
-            <div style="font-size: 10.5px; color: #334155; font-weight: 700; margin-top: 2px;">
+            <div style="font-size: 9.5px; color: #334155; font-weight: 700; margin-top: 2px;">
               GSTIN: ${escapeHtml(profile.gstin)}
             </div>
           `
@@ -461,17 +472,17 @@ export const getInvoiceHTML = (data, profile = {}) => {
   </table>
 
   <!-- CUSTOMER & INVOICE METADATA BOX (Strict Bordered Box) -->
-  <table style="width: 100%; border: 1.5px solid #000000; border-collapse: collapse; margin-bottom: 20px;">
+  <table style="width: 100%; border: 1.5px solid #000000; border-collapse: collapse; margin-bottom: 12px;">
     <tr>
       <!-- Customer Column (No "Bill To" header, exact font-weight and layout) -->
-      <td style="width: 58%; border: 1.5px solid #000000 !important; padding: 10px 12px; vertical-align: top; font-size: 11px; line-height: 1.5; color: #1e293b;">
-        <div style="font-weight: 700; font-size: 12.5px; margin-bottom: 2px; color: #000000; text-transform: lowercase;">
+      <td style="width: 58%; border: 1.5px solid #000000 !important; padding: 7px 10px; vertical-align: top; font-size: 10px; line-height: 1.35; color: #1e293b;">
+        <div style="font-weight: 700; font-size: 11.5px; margin-bottom: 2px; color: #000000; text-transform: lowercase;">
           ${escapeHtml(model.customerName)}
         </div>
         ${
           model.customerPhone
             ? `
-            <div style="font-weight: 700; color: #000000; margin-bottom: 2px;">
+            <div class="plain-phone" style="font-weight: 700; color: #000000; margin-bottom: 2px;">
               ${escapeHtml(model.customerPhone)}
             </div>
           `
@@ -489,7 +500,7 @@ export const getInvoiceHTML = (data, profile = {}) => {
         ${
           model.customerPhone
             ? `
-            <div style="font-weight: 400; color: #334155;">
+            <div class="plain-phone" style="font-weight: 400; color: #000000;">
               Mobile: +91 ${escapeHtml(
                 model.customerPhone.replace(/^\+?91\s*/, '')
               )}
@@ -499,7 +510,7 @@ export const getInvoiceHTML = (data, profile = {}) => {
         }
       </td>
       <!-- Invoice Meta Column (Right side of divided box) -->
-      <td style="width: 42%; border: 1.5px solid #000000 !important; padding: 10px 12px; vertical-align: top; font-size: 11.5px; line-height: 1.6; color: #1e293b;">
+      <td style="width: 42%; border: 1.5px solid #000000 !important; padding: 7px 10px; vertical-align: top; font-size: 10.5px; line-height: 1.45; color: #1e293b;">
         <div>
           <strong>Invoice No:</strong>
           ${escapeHtml(model.invoiceNumber)}
@@ -517,29 +528,29 @@ export const getInvoiceHTML = (data, profile = {}) => {
   </table>
 
   <!-- ITEMS TABLE -->
-  <table style="width: 100%; border: 1.5px solid #000000; border-collapse: collapse; margin-bottom: 18px;">
+  <table style="width: 100%; border: 1.5px solid #000000; border-collapse: collapse; margin-bottom: 10px;">
     <thead>
       <tr style="background-color: #ffffff;">
-        <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 4%; color: #334155;">#</th>
-        <th style="border: 1.5px solid #000000 !important; padding: 8px 8px; font-size: 10px; font-weight: 700; text-align: left; width: 44%; color: #334155;">DESCRIPTION</th>
+        <th style="border: 1.5px solid #000000 !important; padding: 6px 4px; font-size: 9.5px; font-weight: 700; text-align: center; width: 4%; color: #334155;">#</th>
+        <th style="border: 1.5px solid #000000 !important; padding: 6px 7px; font-size: 9.5px; font-weight: 700; text-align: left; width: 44%; color: #334155;">DESCRIPTION</th>
         ${
           model.gstEnabled
             ? `
-            <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 10%; color: #334155;">HSN/SAC</th>
+            <th style="border: 1.5px solid #000000 !important; padding: 6px 4px; font-size: 9.5px; font-weight: 700; text-align: center; width: 10%; color: #334155;">HSN/SAC</th>
           `
             : ''
         }
-        <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 10%; color: #334155;">QUANTITY</th>
-        <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: right; width: 9%; color: #334155;">PRICE</th>
-        <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 8%; color: #334155;">DISC.%</th>
+        <th style="border: 1.5px solid #000000 !important; padding: 6px 4px; font-size: 9.5px; font-weight: 700; text-align: center; width: 10%; color: #334155;">QUANTITY</th>
+        <th style="border: 1.5px solid #000000 !important; padding: 6px 4px; font-size: 9.5px; font-weight: 700; text-align: right; width: 9%; color: #334155;">PRICE</th>
+        <th style="border: 1.5px solid #000000 !important; padding: 6px 4px; font-size: 9.5px; font-weight: 700; text-align: center; width: 8%; color: #334155;">DISC.%</th>
         ${
           model.gstEnabled
             ? `
-            <th style="border: 1.5px solid #000000 !important; padding: 8px 4px; font-size: 10px; font-weight: 700; text-align: center; width: 5%; color: #334155;">GST</th>
+            <th style="border: 1.5px solid #000000 !important; padding: 6px 4px; font-size: 9.5px; font-weight: 700; text-align: center; width: 5%; color: #334155;">GST</th>
           `
             : ''
         }
-        <th style="border: 1.5px solid #000000 !important; padding: 8px 6px; font-size: 10px; font-weight: 700; text-align: right; width: 10%; color: #334155; line-height: 1.2;">TOTAL<br>PRICE</th>
+        <th style="border: 1.5px solid #000000 !important; padding: 6px 6px; font-size: 9.5px; font-weight: 700; text-align: right; width: 10%; color: #334155; line-height: 1.15;">TOTAL<br>PRICE</th>
       </tr>
     </thead>
     <tbody>
@@ -548,11 +559,11 @@ export const getInvoiceHTML = (data, profile = {}) => {
   </table>
 
   <!-- TOTAL & SUMMARY SECTION -->
-  <table style="width: 100%; border-collapse: collapse; margin-top: 15px;">
+  <table style="width: 100%; border-collapse: collapse; margin-top: 8px;">
     <tr>
       <!-- Amount in Words (Left) -->
       <td style="width: 55%; vertical-align: top; padding-right: 20px; border: none !important;">
-        <div style="font-size: 11.5px; font-weight: 700; line-height: 1.6; color: #000000;">
+        <div style="font-size: 10.5px; font-weight: 700; line-height: 1.4; color: #000000;">
           Total (In Words): ${escapeHtml(numberToWords(model.grandTotal))} Only
         </div>
       </td>
@@ -560,8 +571,8 @@ export const getInvoiceHTML = (data, profile = {}) => {
       <td style="width: 45%; vertical-align: top; padding: 0; border: none !important;">
         <table style="width: 100%; border: 1.5px solid #000000; border-collapse: collapse;">
           <tr>
-            <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; font-weight: 500; color: #475569;">Sub Total</td>
-            <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; text-align: right; font-weight: 700; color: #000000;">
+            <td style="border: 1px solid #000000; padding: 4px 8px; font-size: 10px; font-weight: 500; color: #475569;">Sub Total</td>
+            <td style="border: 1px solid #000000; padding: 4px 8px; font-size: 10px; text-align: right; font-weight: 700; color: #000000;">
               ${model.currency} ${formatMoney(displayUntaxed)}
             </td>
           </tr>
@@ -569,8 +580,8 @@ export const getInvoiceHTML = (data, profile = {}) => {
             totalDiscountAmount > 0
               ? `
               <tr>
-                <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; font-weight: 500; color: #475569;">Total Discount</td>
-                <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; text-align: right; font-weight: 700; color: #000000;">
+                <td style="border: 1px solid #000000; padding: 4px 8px; font-size: 10px; font-weight: 500; color: #475569;">Total Discount</td>
+                <td style="border: 1px solid #000000; padding: 4px 8px; font-size: 10px; text-align: right; font-weight: 700; color: #000000;">
                   - ${model.currency} ${formatMoney(totalDiscountAmount)}
                 </td>
               </tr>
@@ -581,23 +592,23 @@ export const getInvoiceHTML = (data, profile = {}) => {
             model.gstEnabled
               ? `
               <tr>
-                <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; font-weight: 500; color: #475569;">SGST</td>
-                <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; text-align: right; font-weight: 700; color: #000000;">
+                <td style="border: 1px solid #000000; padding: 4px 8px; font-size: 10px; font-weight: 500; color: #475569;">SGST</td>
+                <td style="border: 1px solid #000000; padding: 4px 8px; font-size: 10px; text-align: right; font-weight: 700; color: #000000;">
                   ${model.currency} ${formatMoney(halfGst)}
                 </td>
               </tr>
               <tr>
-                <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; font-weight: 500; color: #475569;">CGST</td>
-                <td style="border: 1px solid #000000; padding: 6px 10px; font-size: 11px; text-align: right; font-weight: 700; color: #000000;">
+                <td style="border: 1px solid #000000; padding: 4px 8px; font-size: 10px; font-weight: 500; color: #475569;">CGST</td>
+                <td style="border: 1px solid #000000; padding: 4px 8px; font-size: 10px; text-align: right; font-weight: 700; color: #000000;">
                   ${model.currency} ${formatMoney(halfGst)}
                 </td>
               </tr>
             `
               : ''
           }
-          <tr style="font-weight: 800; font-size: 12.5px; color: #000000;">
-            <td style="border: 1.5px solid #000000 !important; padding: 8px 10px; font-weight: 800;">Total</td>
-            <td style="border: 1.5px solid #000000 !important; padding: 8px 10px; text-align: right; font-weight: 800; color: #000000;">
+          <tr style="font-weight: 800; font-size: 11.5px; color: #000000;">
+            <td style="border: 1.5px solid #000000 !important; padding: 6px 8px; font-weight: 800;">Total</td>
+            <td style="border: 1.5px solid #000000 !important; padding: 6px 8px; text-align: right; font-weight: 800; color: #000000;">
               ${model.currency} ${formatMoney(model.grandTotal)}
             </td>
           </tr>
@@ -607,16 +618,16 @@ export const getInvoiceHTML = (data, profile = {}) => {
   </table>
 
   <!-- TERMS AND SIGNATURE FOOTER -->
-  <table style="width: 100%; border-collapse: collapse; margin-top: 40px;">
+  <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
     <tr>
       <!-- Terms & Social Handles -->
-      <td style="width: 100%; vertical-align: top; border: none !important; font-size: 11px; color: #4b5563; line-height: 1.6; padding: 0;">
+      <td style="width: 100%; vertical-align: top; border: none !important; font-size: 10px; color: #4b5563; line-height: 1.35; padding: 0;">
         ${
           model.termsAndConditions
             ? `
-            <div style="margin-bottom: 12px;">
+            <div style="margin-bottom: 8px;">
               <strong style="color: #111827;">Terms & Conditions:</strong><br>
-              <span style="font-size: 9.5px; color: #4b5563;">${escapeHtml(
+              <span style="font-size: 8.8px; color: #4b5563;">${escapeHtml(
                 model.termsAndConditions
               )}</span>
             </div>
@@ -655,4 +666,3 @@ export const getInvoiceHTML = (data, profile = {}) => {
 </html>
 `;
 };
-

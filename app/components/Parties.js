@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import { 
   Plus, Search, Phone, User, Users, Trash2, Edit3, 
   ArrowUpRight, ArrowDownLeft, X, Check, Save, MapPin, 
@@ -25,7 +25,9 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
   const [parties, setParties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [filter, setFilter] = useState('All');
+  const [currentPage, setCurrentPage] = useState(1);
   const [showModal, setShowModal] = useState(false);
   const [editingParty, setEditingParty] = useState(null);
   
@@ -47,6 +49,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
   const [savingPayment, setSavingPayment] = useState(false);
 
   const CURRENCY = profile?.currency_symbol || '₹';
+  const partiesPerPage = 40;
 
   useEffect(() => {
     loadParties();
@@ -159,15 +162,45 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
     setSavingPayment(false);
   };
 
-  const filtered = parties.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.phone.includes(searchTerm);
-    const matchesFilter = filter === 'All' || p.type === filter;
-    return matchesSearch && matchesFilter;
-  });
+  const filtered = useMemo(() => {
+    const q = deferredSearchTerm.trim().toLowerCase();
+    return parties.filter(p => {
+      const matchesSearch = !q || p.name.toLowerCase().includes(q) || String(p.phone || '').includes(q);
+      const matchesFilter = filter === 'All' || p.type === filter;
+      return matchesSearch && matchesFilter;
+    });
+  }, [parties, deferredSearchTerm, filter]);
 
-  const receivable = parties.filter(p => p.current_balance > 0).reduce((sum, p) => sum + p.current_balance, 0);
-  const payable = Math.abs(parties.filter(p => p.current_balance < 0).reduce((sum, p) => sum + p.current_balance, 0));
-  const creditAlerts = parties.filter(p => p.type === 'Customer' && p.current_balance > 0 && p.due_alert_count > 0);
+  const partySummary = useMemo(() => parties.reduce((acc, p) => {
+    if (p.current_balance > 0) {
+      acc.receivable += p.current_balance;
+      acc.receivableCount += 1;
+    }
+    if (p.current_balance < 0) {
+      acc.payable += p.current_balance;
+      acc.payableCount += 1;
+    }
+    if (p.type === 'Customer' && p.current_balance > 0 && p.due_alert_count > 0) {
+      acc.creditAlerts.push(p);
+    }
+    return acc;
+  }, { receivable: 0, payable: 0, receivableCount: 0, payableCount: 0, creditAlerts: [] }), [parties]);
+
+  const receivable = partySummary.receivable;
+  const payable = Math.abs(partySummary.payable);
+  const creditAlerts = partySummary.creditAlerts;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / partiesPerPage));
+  const paginatedParties = useMemo(() => (
+    filtered.slice((currentPage - 1) * partiesPerPage, currentPage * partiesPerPage)
+  ), [filtered, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [deferredSearchTerm, filter]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   const formatDueDate = (date) => {
     if (!date) return '';
@@ -213,7 +246,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
             <p className="metric-sub">To Receive</p>
             <h3 className="metric-value">{CURRENCY}{receivable.toLocaleString('en-IN')}</h3>
             <div className="mt-2 flex items-center gap-2">
-              <Badge className="bg-emerald-50 text-emerald-600 border-emerald-100 rounded-lg">{parties.filter(p => p.current_balance > 0).length} Customers</Badge>
+              <Badge className="bg-emerald-50 text-emerald-600 border-emerald-100 rounded-lg">{partySummary.receivableCount} Customers</Badge>
             </div>
           </div>
         </div>
@@ -223,7 +256,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
             <p className="metric-sub">To Pay</p>
             <h3 className="metric-value">{CURRENCY}{payable.toLocaleString('en-IN')}</h3>
             <div className="mt-2 flex items-center gap-2">
-              <Badge className="bg-rose-50 text-rose-600 border-rose-100 rounded-lg">{parties.filter(p => p.current_balance < 0).length} Suppliers</Badge>
+              <Badge className="bg-rose-50 text-rose-600 border-rose-100 rounded-lg">{partySummary.payableCount} Suppliers</Badge>
             </div>
           </div>
         </div>
@@ -296,7 +329,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filtered.map((p) => (
+                {paginatedParties.map((p) => (
                   <tr key={p.id} className="group hover:bg-slate-50/50 transition-colors">
                     <td>
                       <div className="flex items-center gap-4">
@@ -382,7 +415,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
         <div className="block md:hidden p-4">
           {filtered.length > 0 ? (
             <div className="space-y-3">
-              {filtered.map((p) => (
+              {paginatedParties.map((p) => (
                 <div key={p.id} className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm flex flex-col gap-3">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -476,6 +509,24 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
             </div>
           )}
         </div>
+        {filtered.length > partiesPerPage && (
+          <div className="p-4 md:p-6 bg-slate-50 border-t flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <p className="text-xs font-bold text-slate-500">
+              Showing <span className="text-slate-900">{((currentPage - 1) * partiesPerPage) + 1}</span> to <span className="text-slate-900">{Math.min(currentPage * partiesPerPage, filtered.length)}</span> of <span className="text-slate-900">{filtered.length}</span> parties
+            </p>
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 md:flex">
+              <Button variant="outline" size="sm" className="h-10 px-4 rounded-xl font-bold" disabled={currentPage === 1} onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}>
+                Previous
+              </Button>
+              <div className="flex items-center justify-center px-2 md:px-4 text-xs md:text-sm font-black whitespace-nowrap">
+                Page {currentPage} of {totalPages}
+              </div>
+              <Button variant="outline" size="sm" className="h-10 px-4 rounded-xl font-bold" disabled={currentPage === totalPages} onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}>
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       {/* Party Modal */}

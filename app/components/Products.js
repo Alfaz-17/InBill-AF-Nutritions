@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useDeferredValue } from 'react';
 import {
   Plus, Search, Edit3, Trash2, X, Check, Package,
   AlertTriangle, Clock, Filter, Layers, Tag, Barcode, IndianRupee,
@@ -42,6 +42,7 @@ export default function Products({ profile }) {
   const [savingCategory, setSavingCategory] = useState(false);
   const [savingAttribute, setSavingAttribute] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [filterCat, setFilterCat] = useState('All');
   const [showModal, setShowModal] = useState(false);
   const [showCatModal, setShowCatModal] = useState(false);
@@ -49,7 +50,6 @@ export default function Products({ profile }) {
   const [newAttrName, setNewAttrName] = useState('');
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState({ ...emptyProduct });
-  const [showFilter, setShowFilter] = useState(false);
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -90,18 +90,35 @@ export default function Products({ profile }) {
     setLoading(false);
   };
 
-  const filtered = products.filter((p) => {
-    const q = searchTerm.toLowerCase();
-    const matchSearch = !searchTerm ||
+  const inventorySummary = useMemo(() => products.reduce((acc, p) => {
+    acc.total += 1;
+    if (p.quantity > 0 && p.quantity <= (p.min_stock_alert ?? 10)) acc.lowStock += 1;
+    if (p.quantity <= 0) acc.outOfStock += 1;
+    return acc;
+  }, { total: 0, lowStock: 0, outOfStock: 0 }), [products]);
+
+  const filtered = useMemo(() => {
+    const q = deferredSearchTerm.trim().toLowerCase();
+    return products.filter((p) => {
+      const matchSearch = !q ||
       p.product_name.toLowerCase().includes(q) ||
       (p.brand && p.brand.toLowerCase().includes(q));
-    const matchCat = filterCat === 'All' || p.category === filterCat;
-    return matchSearch && matchCat;
-  });
+      const matchCat = filterCat === 'All' || p.category === filterCat;
+      return matchSearch && matchCat;
+    });
+  }, [products, deferredSearchTerm, filterCat]);
+
+  const categoryCounts = useMemo(() => products.reduce((acc, product) => {
+    if (!product.category) return acc;
+    acc[product.category] = (acc[product.category] || 0) + 1;
+    return acc;
+  }, {}), [products]);
 
   // Pagination Logic
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
-  const paginated = filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginated = useMemo(() => (
+    filtered.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+  ), [filtered, currentPage]);
 
   useEffect(() => {
     setCurrentPage(1); // Reset to page 1 on search/filter
@@ -287,27 +304,27 @@ export default function Products({ profile }) {
           <div className="metric-icon blue"><Package size={24} /></div>
           <div>
             <p className="metric-sub">Total Items</p>
-            <h3 className="metric-value">{products.length} Products</h3>
+            <h3 className="metric-value">{inventorySummary.total} Products</h3>
           </div>
         </div>
         <div className="metric-card">
           <div className="metric-icon yellow"><AlertTriangle size={24} /></div>
           <div>
             <p className="metric-sub">Low Stock</p>
-            <h3 className="metric-value">{products.filter(p => p.quantity > 0 && p.quantity <= (p.min_stock_alert ?? 10)).length} Items</h3>
+            <h3 className="metric-value">{inventorySummary.lowStock} Items</h3>
           </div>
         </div>
         <div className="metric-card">
           <div className="metric-icon red"><Clock size={24} /></div>
           <div>
             <p className="metric-sub">Out of Stock</p>
-            <h3 className="metric-value">{products.filter(p => p.quantity <= 0).length} Items</h3>
+            <h3 className="metric-value">{inventorySummary.outOfStock} Items</h3>
           </div>
         </div>
       </div>
 
       {/* Filter & Search */}
-      <div className="flex flex-col md:flex-row items-center gap-4">
+      <div className="flex flex-col gap-3">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
           <Input 
@@ -317,29 +334,27 @@ export default function Products({ profile }) {
             className="form-input h-14 pl-12 rounded-2xl shadow-sm border-slate-200"
           />
         </div>
-        <div className="flex gap-2 w-full md:w-auto">
+        <div className="flex w-full gap-2 overflow-x-auto pb-2">
           <Button 
             variant={filterCat === 'All' ? 'default' : 'outline'} 
-            className={`h-14 px-8 rounded-2xl font-black ${filterCat === 'All' ? 'bg-primary shadow-lg shadow-primary/20' : 'border-slate-200'}`}
+            className={`h-11 shrink-0 px-5 rounded-xl text-xs font-black ${filterCat === 'All' ? 'bg-primary shadow-lg shadow-primary/20' : 'border-slate-200 bg-white'}`}
             onClick={() => setFilterCat('All')}
           >
-            All Items
+            All ({products.length})
           </Button>
-          {categories.slice(0, 3).map(cat => (
+          {categories.map(cat => (
             <Button 
               key={cat.id}
               variant={filterCat === cat.name ? 'default' : 'outline'}
-              className={`h-14 px-6 rounded-2xl font-black ${filterCat === cat.name ? 'bg-primary shadow-lg shadow-primary/20' : 'border-slate-200'}`}
+              className={`h-11 shrink-0 px-5 rounded-xl text-xs font-black ${filterCat === cat.name ? 'bg-primary shadow-lg shadow-primary/20' : 'border-slate-200 bg-white'}`}
               onClick={() => setFilterCat(cat.name)}
             >
-              {cat.name}
+              {cat.name} ({categoryCounts[cat.name] || 0})
             </Button>
           ))}
-          {categories.length > 3 && (
-            <Button variant="outline" className="h-14 px-4 rounded-2xl border-slate-200" onClick={() => setShowFilter(!showFilter)}>
-              <Filter size={18} />
-            </Button>
-          )}
+          <Button variant="outline" className="h-11 shrink-0 px-4 rounded-xl border-slate-200 bg-white gap-2 font-black text-xs" onClick={() => setShowCatModal(true)}>
+            <Filter size={15} /> Manage
+          </Button>
         </div>
       </div>
 
@@ -461,11 +476,11 @@ export default function Products({ profile }) {
         
         {/* Pagination Controls */}
         {totalPages > 1 && (
-          <div className="p-6 bg-slate-50 border-t flex items-center justify-between">
+          <div className="p-4 md:p-6 bg-slate-50 border-t flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <p className="text-xs font-bold text-slate-500">
               Showing <span className="text-slate-900">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="text-slate-900">{Math.min(currentPage * itemsPerPage, filtered.length)}</span> of <span className="text-slate-900">{filtered.length}</span> items
             </p>
-            <div className="flex gap-2">
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 md:flex">
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -475,7 +490,7 @@ export default function Products({ profile }) {
               >
                 Previous
               </Button>
-              <div className="flex items-center gap-1 px-4 text-sm font-black">
+              <div className="flex items-center justify-center gap-1 px-2 md:px-4 text-xs md:text-sm font-black whitespace-nowrap">
                 Page {currentPage} of {totalPages}
               </div>
               <Button 
@@ -696,14 +711,14 @@ export default function Products({ profile }) {
       </Dialog>
       {/* Categories Modal */}
       <Dialog open={showCatModal} onOpenChange={setShowCatModal}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+        <DialogContent className="max-w-[92vw] sm:max-w-lg rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
           <DialogHeader className="p-8 bg-slate-900 text-white">
             <DialogTitle className="font-black text-xl flex items-center gap-3">
               <Layers size={20} className="text-blue-400" /> Manage Categories
             </DialogTitle>
           </DialogHeader>
-          <div className="p-8 space-y-6 bg-white">
-            <div className="flex gap-2">
+          <div className="p-5 md:p-8 space-y-6 bg-white">
+            <div className="grid grid-cols-[1fr_auto] gap-2">
               <Input 
                 placeholder="New category name..." 
                 value={newCat} 
@@ -719,10 +734,13 @@ export default function Products({ profile }) {
                 )}
               </Button>
             </div>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {categories.map(c => (
-                <div key={c.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl group">
-                  <span className="font-bold text-slate-700">{c.name}</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[55vh] overflow-y-auto pr-1">
+              {categories.length > 0 ? categories.map(c => (
+                <div key={c.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-2xl group border border-slate-100">
+                  <div className="min-w-0">
+                    <span className="block truncate font-black text-slate-700">{c.name}</span>
+                    <span className="text-[10px] font-bold text-slate-400">{categoryCounts[c.name] || 0} products</span>
+                  </div>
                   <Button 
                     variant="ghost" 
                     disabled={savingCategory}
@@ -737,7 +755,11 @@ export default function Products({ profile }) {
                     <Trash2 size={16} />
                   </Button>
                 </div>
-              ))}
+              )) : (
+                <div className="sm:col-span-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm font-bold text-slate-400">
+                  No categories yet. Add one above to organize your catalog.
+                </div>
+              )}
             </div>
           </div>
         </DialogContent>

@@ -292,24 +292,24 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
       </header>
 
       <Tabs defaultValue="profile" className="w-full">
-        <TabsList className="settings-tabs-list w-full h-16 p-2 bg-slate-100 rounded-2xl mb-12 border border-slate-200/50 shadow-inner">
-          <TabsTrigger value="profile" className="settings-tab-trigger flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
+        <TabsList className="settings-tabs-list flex w-full h-auto min-h-14 overflow-x-auto whitespace-nowrap justify-start gap-1 p-1.5 md:p-2 bg-slate-100 rounded-2xl mb-6 md:mb-12 border border-slate-200/50 shadow-inner">
+          <TabsTrigger value="profile" className="settings-tab-trigger h-11 md:h-12 shrink-0 rounded-xl gap-2 md:gap-3 px-4 md:px-6 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Building2 size={16} /> Profile
           </TabsTrigger>
-          <TabsTrigger value="core" className="settings-tab-trigger flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
+          <TabsTrigger value="core" className="settings-tab-trigger h-11 md:h-12 shrink-0 rounded-xl gap-2 md:gap-3 px-4 md:px-6 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Layout size={16} /> Standards
           </TabsTrigger>
-          <TabsTrigger value="ai" className="settings-tab-trigger flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
+          <TabsTrigger value="ai" className="settings-tab-trigger h-11 md:h-12 shrink-0 rounded-xl gap-2 md:gap-3 px-4 md:px-6 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Zap size={16} /> AI Automation
           </TabsTrigger>
-          <TabsTrigger value="whatsapp" className="settings-tab-trigger flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
+          <TabsTrigger value="whatsapp" className="settings-tab-trigger h-11 md:h-12 shrink-0 rounded-xl gap-2 md:gap-3 px-4 md:px-6 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <MessageCircle size={16} /> WhatsApp
           </TabsTrigger>
-          <TabsTrigger value="data" className="settings-tab-trigger flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
+          <TabsTrigger value="data" className="settings-tab-trigger h-11 md:h-12 shrink-0 rounded-xl gap-2 md:gap-3 px-4 md:px-6 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all text-xs">
             <Database size={16} /> Data & Security
           </TabsTrigger>
 
-          <TabsTrigger value="safety" className="settings-tab-trigger flex-1 h-12 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-rose-600 data-[state=active]:shadow-lg transition-all text-xs">
+          <TabsTrigger value="safety" className="settings-tab-trigger h-11 md:h-12 shrink-0 rounded-xl gap-2 md:gap-3 px-4 md:px-6 font-black data-[state=active]:bg-white data-[state=active]:text-rose-600 data-[state=active]:shadow-lg transition-all text-xs">
             <AlertTriangle size={16} /> Safety Guide
           </TabsTrigger>
         </TabsList>

@@ -6,6 +6,13 @@ import {
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 
+const OFFLINE_NOTICE = 'You are offline. InBill is using local data. Cloud sync, AI and WhatsApp will resume when internet is back.';
+
+const isOfflineAppError = (error) =>
+  error?.code === 'INBILL_OFFLINE' ||
+  error?.isOffline ||
+  String(error?.message || '').toLowerCase().includes('offline');
+
 const Dashboard = dynamic(() => import('./components/Dashboard'), { ssr: false });
 const Billing = dynamic(() => import('./components/Billing'), { ssr: false });
 const Products = dynamic(() => import('./components/Products'), { ssr: false });
@@ -70,6 +77,7 @@ export default function Home() {
   const [showWizard, setShowWizard] = useState(false);
   const [isLocked, setIsLocked] = useState(false);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [offlineNotice, setOfflineNotice] = useState('');
 
   // Persistence Layer: Lifted Billing State
   const [cart, setCart] = useState([]);
@@ -84,7 +92,11 @@ export default function Home() {
         try {
           const stats = await window.electronAPI.stats.dashboard();
           setLowStockCount(stats.lowStockCount || 0);
-        } catch (e) { /* silent */ }
+        } catch (e) {
+          if (isOfflineAppError(e)) {
+            setOfflineNotice(OFFLINE_NOTICE);
+          }
+        }
       }
     };
     loadAlerts();
@@ -106,12 +118,20 @@ export default function Home() {
     if (typeof window !== 'undefined' && window.electronAPI) {
       try {
         const data = await window.electronAPI.business.getProfile();
+        setOfflineNotice('');
         setProfile(data);
         // Show wizard if business name is default "My Business"
         if (!data || data.business_name === 'My Business') {
           setShowWizard(true);
         }
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        if (isOfflineAppError(e)) {
+          setOfflineNotice(OFFLINE_NOTICE);
+          setProfile((prev) => prev || { business_name: 'InBill', business_short: 'IB', tagline: 'Offline mode' });
+          return;
+        }
+        console.error(e);
+      }
     }
   };
 
@@ -123,6 +143,10 @@ export default function Home() {
           setIsLocked(true);
         }
       } catch (e) {
+        if (isOfflineAppError(e)) {
+          setOfflineNotice(OFFLINE_NOTICE);
+          return;
+        }
         console.error('Auth check failed:', e);
       } finally {
         setIsAuthChecking(false);
@@ -227,6 +251,11 @@ export default function Home() {
 
       {/* Main Content */}
       <main className="main-content">
+        {offlineNotice && (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 shadow-sm">
+            {offlineNotice}
+          </div>
+        )}
         <ActiveComponent 
           key={activePage + '_' + syncTrigger}
           onNavigate={handleNavigate} 

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useDeferredValue, useCallback } from 'react';
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, Package,
   User, CreditCard, Printer, X, Check, FileText, ExternalLink, Wallet, ScanLine, Settings2, IndianRupee, MessageCircle, CalendarClock
@@ -24,7 +24,11 @@ export default function Billing({
 }) {
   const { toast } = useToast();
   const [products, setProducts] = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('All');
+  const [productPage, setProductPage] = useState(1);
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   
   // Destructure for internal use
   const { name: customerName, phone: customerPhone, address: customerAddress } = customerData;
@@ -47,9 +51,11 @@ export default function Billing({
   const [selectedParty, setSelectedParty] = useState(null);
   const [partySearch, setPartySearch] = useState('');
   const [showPartyDropdown, setShowPartyDropdown] = useState(false);
-  const masterData = typeof profile?.master_data === 'string' 
-    ? (JSON.parse(profile.master_data || '{}')) 
-    : (profile?.master_data || {});
+  const masterData = useMemo(() => (
+    typeof profile?.master_data === 'string' 
+      ? (JSON.parse(profile.master_data || '{}')) 
+      : (profile?.master_data || {})
+  ), [profile?.master_data]);
   
   const TAX_LABEL = masterData.tax_label || 'GST';
   const CURRENCY = profile?.currency_symbol || '₹';
@@ -74,24 +80,58 @@ export default function Billing({
 
   const loadProducts = async () => {
     if (typeof window !== 'undefined' && window.electronAPI) {
+      setProductsLoading(true);
       try {
         const data = await window.electronAPI.products.getAll();
         setProducts(data || []);
       } catch (e) { console.error(e); }
+      finally { setProductsLoading(false); }
+    } else {
+      setProductsLoading(false);
     }
   };
 
-  const filtered = products.filter((p) => {
-    if (!searchTerm) return true;
-    const q = searchTerm.toLowerCase();
-    return (
-      p.product_name.toLowerCase().includes(q) ||
-      (p.brand && p.brand.toLowerCase().includes(q)) ||
-      (p.category && p.category.toLowerCase().includes(q))
-    );
-  });
+  const { categories, categoryCounts } = useMemo(() => {
+    const counts = {};
+    products.forEach((product) => {
+      if (!product.category) return;
+      counts[product.category] = (counts[product.category] || 0) + 1;
+    });
+    return {
+      categories: Object.keys(counts).sort((a, b) => a.localeCompare(b)),
+      categoryCounts: counts,
+    };
+  }, [products]);
 
-  const addToCart = (product) => {
+  const filtered = useMemo(() => {
+    const q = deferredSearchTerm.trim().toLowerCase();
+    return products.filter((p) => {
+      const matchesSearch = !q || (
+        p.product_name.toLowerCase().includes(q) ||
+        (p.brand && p.brand.toLowerCase().includes(q)) ||
+        (p.category && p.category.toLowerCase().includes(q))
+      );
+      const matchesCategory = categoryFilter === 'All' || p.category === categoryFilter;
+      return matchesSearch && matchesCategory;
+    });
+  }, [products, deferredSearchTerm, categoryFilter]);
+
+  const billingItemsPerPage = 30;
+  const billingTotalPages = Math.max(1, Math.ceil(filtered.length / billingItemsPerPage));
+  const billingPageProducts = useMemo(() => filtered.slice(
+    (productPage - 1) * billingItemsPerPage,
+    productPage * billingItemsPerPage
+  ), [filtered, productPage]);
+
+  useEffect(() => {
+    setProductPage(1);
+  }, [searchTerm, categoryFilter]);
+
+  useEffect(() => {
+    if (productPage > billingTotalPages) setProductPage(billingTotalPages);
+  }, [productPage, billingTotalPages]);
+
+  const addToCart = useCallback((product) => {
     if (product.quantity <= 0) {
       toast.error("Item out of stock");
       return;
@@ -133,7 +173,7 @@ export default function Billing({
         },
       ]);
     }
-  };
+  }, [cart, setCart, toast]);
 
   const updateCartQty = (productId, delta) => {
     setCart((prev) =>
@@ -465,11 +505,11 @@ export default function Billing({
       </header>
 
       <Tabs value={viewMode} onValueChange={setViewMode} className="w-full">
-        <TabsList className="flex w-fit p-1.5 bg-slate-100 rounded-2xl mb-8 border border-slate-200/50">
-          <TabsTrigger value="browse" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
+        <TabsList className="flex w-full md:w-fit overflow-x-auto whitespace-nowrap p-1.5 bg-slate-100 rounded-2xl mb-6 md:mb-8 border border-slate-200/50 justify-start">
+          <TabsTrigger value="browse" className="h-11 md:h-12 px-5 md:px-8 rounded-xl gap-2 md:gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all shrink-0">
             <Package size={18} /> 1. Products
           </TabsTrigger>
-          <TabsTrigger value="invoice" className="h-12 px-8 rounded-xl gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all">
+          <TabsTrigger value="invoice" className="h-11 md:h-12 px-5 md:px-8 rounded-xl gap-2 md:gap-3 font-black data-[state=active]:bg-white data-[state=active]:text-primary data-[state=active]:shadow-lg transition-all shrink-0">
             <div className="relative">
               <ShoppingCart size={18} />
               {cart.length > 0 && (
@@ -495,45 +535,145 @@ export default function Billing({
                     onChange={(e) => setSearchTerm(e.target.value)}
                   />
                 </div>
+                <div className="mt-4 flex gap-2 overflow-x-auto pb-2">
+                  <Button
+                    type="button"
+                    variant={categoryFilter === 'All' ? 'default' : 'outline'}
+                    className={`h-9 shrink-0 rounded-xl px-4 text-xs font-black ${categoryFilter === 'All' ? 'bg-primary text-white' : 'border-slate-200 bg-white'}`}
+                    onClick={() => setCategoryFilter('All')}
+                  >
+                    All ({products.length})
+                  </Button>
+                  {categories.map((category) => {
+                    const count = categoryCounts[category] || 0;
+                    return (
+                      <Button
+                        key={category}
+                        type="button"
+                        variant={categoryFilter === category ? 'default' : 'outline'}
+                        className={`h-9 shrink-0 rounded-xl px-4 text-xs font-black ${categoryFilter === category ? 'bg-primary text-white' : 'border-slate-200 bg-white'}`}
+                        onClick={() => setCategoryFilter(category)}
+                      >
+                        {category} ({count})
+                      </Button>
+                    );
+                  })}
+                </div>
               </CardHeader>
               <CardContent className="p-6">
-                {filtered.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {filtered.map((p) => (
+                {productsLoading ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    {Array.from({ length: 10 }).map((_, index) => (
+                      <div key={index} className="rounded-xl border border-slate-100 bg-white p-3 shadow-sm">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="h-2.5 w-16 animate-pulse rounded bg-slate-200" />
+                            <div className="h-4 w-full animate-pulse rounded bg-slate-200" />
+                            <div className="h-4 w-2/3 animate-pulse rounded bg-slate-100" />
+                          </div>
+                          <div className="h-7 w-7 shrink-0 animate-pulse rounded-lg bg-slate-200" />
+                        </div>
+                        <div className="mt-4 flex items-end justify-between border-t border-slate-100 pt-3">
+                          <div className="space-y-2">
+                            <div className="h-5 w-20 animate-pulse rounded bg-slate-200" />
+                            <div className="h-2.5 w-24 animate-pulse rounded bg-slate-100" />
+                          </div>
+                          <div className="h-5 w-16 animate-pulse rounded-full bg-slate-200" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : filtered.length > 0 ? (
+                  <>
+                  <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-3 text-xs font-bold text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                    <span>
+                      Showing {((productPage - 1) * billingItemsPerPage) + 1}-{Math.min(productPage * billingItemsPerPage, filtered.length)} of {filtered.length} products
+                    </span>
+                    {categoryFilter !== 'All' && (
+                      <button type="button" className="text-left font-black text-primary" onClick={() => setCategoryFilter('All')}>
+                        Clear category filter
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                    {billingPageProducts.map((p) => (
                       <Card 
                         key={p.id} 
                         className={`group cursor-pointer hover:border-blue-500 hover:shadow-md transition-all ${p.quantity <= 0 ? 'opacity-60 grayscale' : ''}`}
                         onClick={() => addToCart(p)}
                       >
-                        <CardContent className="p-4 flex flex-col gap-3">
+                        <CardContent className="p-3 flex flex-col gap-2">
                           <div className="flex justify-between items-start gap-2">
                             <div className="min-w-0">
                               <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">{p.brand || 'Standard'}</p>
-                              <h4 className="font-bold text-slate-900 leading-tight line-clamp-2 mt-0.5">{p.product_name}</h4>
+                              <h4 className="font-bold text-sm text-slate-900 leading-tight line-clamp-2 mt-0.5">{p.product_name}</h4>
                             </div>
-                            {p.product_size && (
-                              <Badge variant="secondary" className="text-[10px] font-black uppercase py-0 px-1.5">{p.product_size}</Badge>
-                            )}
+                            <Button
+                              type="button"
+                              size="icon"
+                              disabled={p.quantity <= 0}
+                              className="h-8 w-8 shrink-0 rounded-xl shadow-sm"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                addToCart(p);
+                              }}
+                              aria-label={`Add ${p.product_name}`}
+                            >
+                              <Plus size={14} />
+                            </Button>
                           </div>
                           
-                          <div className="flex items-end justify-between pt-3 border-t border-slate-100">
+                          <div className="flex items-end justify-between gap-2 pt-2 border-t border-slate-100">
                             <div className="flex flex-col">
-                              <p className="text-xl font-black text-slate-900">{CURRENCY}{p.selling_price}</p>
-                              <div className="flex items-center gap-1.5 mt-0.5">
+                              <div className="flex flex-wrap items-center gap-1">
+                                <p className="text-lg font-black text-slate-900">{CURRENCY}{p.selling_price}</p>
+                                {p.product_size && (
+                                  <Badge variant="secondary" className="text-[9px] font-black uppercase py-0 px-1.5">{p.product_size}</Badge>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
                                 <p className="text-[9px] font-black text-slate-400 uppercase">Cost: {CURRENCY}{p.cost_price}</p>
                                 {p.batch_number && (
                                   <p className="text-[9px] font-black text-blue-500 bg-blue-50 px-1 rounded-sm uppercase">{p.batch_number}</p>
                                 )}
                               </div>
                             </div>
-                            <Badge className={`${p.quantity <= 0 ? 'bg-red-500' : 'bg-green-500'} hover:bg-opacity-100 text-[9px] font-black`}>
-                              {p.quantity <= 0 ? 'OUT' : `${p.quantity} IN STOCK`}
+                            <Badge className={`${p.quantity <= 0 ? 'bg-red-500' : 'bg-green-500'} hover:bg-opacity-100 text-[8px] font-black whitespace-nowrap px-1.5`}>
+                              {p.quantity <= 0 ? 'OUT' : `${p.quantity} LEFT`}
                             </Badge>
                           </div>
                         </CardContent>
                       </Card>
                     ))}
                   </div>
+                  {billingTotalPages > 1 && (
+                    <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-slate-100 bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs font-black text-slate-500">
+                        Page {productPage} of {billingTotalPages}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2 sm:flex">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 rounded-xl font-black"
+                          disabled={productPage === 1}
+                          onClick={() => setProductPage((prev) => Math.max(1, prev - 1))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-10 rounded-xl font-black"
+                          disabled={productPage === billingTotalPages}
+                          onClick={() => setProductPage((prev) => Math.min(billingTotalPages, prev + 1))}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  </>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-20 text-slate-400">
                     <Package size={48} strokeWidth={1.5} />

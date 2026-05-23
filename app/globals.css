@@ -744,14 +744,144 @@
     margin-bottom: 8px;
   }
 
+  .settings-page [class*="p-10"] {
+    padding: 14px !important;
+  }
+
+  .settings-page [class*="p-8"] {
+    padding: 12px !important;
+  }
+
+  .settings-page [class*="p-6"] {
+    padding: 12px !important;
+  }
+
+  .settings-page [class*="pt-0"] {
+    padding-top: 0 !important;
+  }
+
+  .settings-page [class*="pb-6"] {
+    padding-bottom: 8px !important;
+  }
+
+  .settings-page [class*="mb-12"],
+  .settings-page [class*="mb-8"] {
+    margin-bottom: 12px !important;
+  }
+
+  .settings-page [class*="gap-8"],
+  .settings-page [class*="gap-6"] {
+    gap: 10px !important;
+  }
+
+  .settings-page .space-y-8 > :not([hidden]) ~ :not([hidden]),
+  .settings-page .space-y-6 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 12px !important;
+  }
+
+  .settings-page [data-radix-tabs-content] > .grid,
+  .settings-page [data-radix-tabs-content] > div[class*="grid"] {
+    gap: 12px !important;
+  }
+
+  .settings-page [data-radix-tabs-content] [class*="rounded-"] {
+    border-radius: 12px !important;
+  }
+
+  .settings-page [data-radix-tabs-content] [class*="shadow-xl"],
+  .settings-page [data-radix-tabs-content] [class*="shadow-2xl"] {
+    box-shadow: var(--shadow-sm) !important;
+  }
+
+  .settings-page [data-radix-tabs-content] [data-slot="card-title"],
+  .settings-page [data-radix-tabs-content] h3,
+  .settings-page [data-radix-tabs-content] h4 {
+    overflow-wrap: anywhere;
+  }
+
+  .settings-page [data-radix-tabs-content] [data-slot="card-title"] {
+    font-size: 18px !important;
+    line-height: 1.2 !important;
+  }
+
+  .settings-page [data-radix-tabs-content] [data-slot="card-description"] {
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+  }
+
   .settings-page .form-label {
     font-size: 9px;
     letter-spacing: 0.08em;
   }
 
+  .settings-page input,
+  .settings-page textarea,
+  .settings-page button {
+    max-width: 100%;
+  }
+
+  .settings-page textarea {
+    min-height: 86px !important;
+    resize: vertical;
+  }
+
+  .settings-page input.form-input,
+  .settings-page textarea.form-input,
+  .settings-page [role="combobox"] {
+    width: 100% !important;
+    min-height: 44px !important;
+    font-size: 16px !important;
+    border-radius: 10px !important;
+  }
+
+  .settings-page [class*="tracking-"][class*="0.5em"] {
+    letter-spacing: 0.18em !important;
+  }
+
   .settings-page [class*="flex"][class*="justify-between"] {
     align-items: flex-start !important;
     gap: 10px !important;
+    flex-wrap: wrap !important;
+  }
+
+  .settings-page [class*="flex"][class*="justify-between"] > div {
+    min-width: 0;
+  }
+
+  .settings-page [class*="flex"][class*="gap-2"],
+  .settings-page [class*="flex"][class*="gap-3"],
+  .settings-page [class*="flex"][class*="gap-4"] {
+    flex-wrap: wrap;
+  }
+
+  .settings-page [class*="flex"][class*="gap-2"] > .flex-1,
+  .settings-page [class*="flex"][class*="gap-3"] > .flex-1,
+  .settings-page [class*="flex"][class*="gap-4"] > .flex-1 {
+    min-width: 160px;
+  }
+
+  .settings-page [class*="flex"][class*="gap-2"] > button,
+  .settings-page [class*="flex"][class*="gap-3"] > button,
+  .settings-page [class*="flex"][class*="gap-4"] > button,
+  .settings-page [class*="grid-cols-2"] > button {
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .settings-page [class*="h-14"],
+  .settings-page [class*="h-12"] {
+    min-height: 44px !important;
+    height: auto !important;
+  }
+
+  .settings-page [class*="text-2xl"] {
+    font-size: 20px !important;
+    line-height: 1.15 !important;
+  }
+
+  .settings-page [class*="text-lg"] {
+    font-size: 15px !important;
+    line-height: 1.25 !important;
   }
 
   .settings-page [class*="border-dashed"],
@@ -776,6 +906,21 @@
   .settings-page [class*="grid-cols-2"] button,
   .settings-page [class*="grid-cols-3"] button {
     width: 100%;
+  }
+
+  .settings-page [class*="bg-slate-900"] {
+    padding: 14px !important;
+  }
+
+  .settings-page [class*="bg-slate-900"] [class*="w-12"][class*="h-12"] {
+    width: 38px !important;
+    height: 38px !important;
+    border-radius: 10px !important;
+  }
+
+  .settings-page [class*="bg-slate-900"] svg {
+    width: 18px;
+    height: 18px;
   }
 
   .product-editor-dialog {

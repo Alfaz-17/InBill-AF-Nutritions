@@ -22,9 +22,12 @@ const isLikelyNetworkError = (error) => {
 };
 
 const friendlyError = (message = OFFLINE_MESSAGE) => {
-  const err = new Error(message);
-  err.code = 'INBILL_OFFLINE';
-  return err;
+  return {
+    name: 'InBillOffline',
+    message,
+    code: 'INBILL_OFFLINE',
+    isOffline: true,
+  };
 };
 
 // Browser-compatible window.electronAPI Polyfill
