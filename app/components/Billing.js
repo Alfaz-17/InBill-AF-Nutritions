@@ -298,6 +298,7 @@ export default function Billing({
         misc_charges: 0,
         paid_amount: paidAmount ? parseFloat(paidAmount) : grandTotal,
         credit_days: dueAmount > 0 ? parsedCreditDays : 0,
+        tax_mode: taxMode,
       });
       setCart([]);
       setCustomerData({ name: '', phone: '', address: '' });
@@ -326,11 +327,21 @@ export default function Billing({
       const html = generateInvoiceHTML(saleResult, profile);
       const res = await window.electronAPI.pdf.generate(html);
       if (res.success) {
-        await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${saleResult.invoice_number || saleResult.invoiceNumber}.pdf`);
-        toast.success("PDF Saved Successfully!");
-      } else { toast.error("Failed to generate PDF"); }
-    } catch (e) { console.error(e); toast.error("Error generating PDF"); }
-    setPdfGenerating(false);
+        const saveResult = await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${saleResult.invoice_number || saleResult.invoiceNumber}.pdf`);
+        if (saveResult?.success) {
+          toast.success("PDF saved successfully");
+        } else {
+          toast.info("PDF download cancelled");
+        }
+      } else {
+        toast.error(res.error || "Failed to generate PDF");
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error("Error generating PDF");
+    } finally {
+      setPdfGenerating(false);
+    }
   };
 
   const handlePrint = async () => {
@@ -369,10 +380,11 @@ export default function Billing({
       const pdfRes = await window.electronAPI.pdf.generate(html);
       
       if (pdfRes.success) {
+        const invoiceNo = saleResult.invoice_number || saleResult.invoiceNumber;
         const res = await window.electronAPI.whatsapp.sendInvoice({
           phone: phone,
           pdfBuffer: pdfRes.buffer,
-          fileName: `Invoice_${saleResult.invoice_number}.pdf`,
+          fileName: `Invoice_${invoiceNo}.pdf`,
           message: `Hello ${saleResult.customer_name},\nYour invoice from ${profile?.business_name || 'InBill'} is attached below.`
         });
 

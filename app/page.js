@@ -242,6 +242,19 @@ export default function Home() {
         />
       </main>
 
+      {activePage !== 'billing' && (
+        <button
+          type="button"
+          className="mobile-quick-bill"
+          onClick={() => setActivePage('billing')}
+          aria-label="Make bill instantly"
+        >
+          <ShoppingCart size={18} strokeWidth={2.8} />
+          <span>Make Bill</span>
+          {cart.length > 0 && <strong>{cart.length}</strong>}
+        </button>
+      )}
+
       <nav className="mobile-bottom-nav" aria-label="Primary navigation">
         {mobileNavItems.map((item) => {
           const Icon = item.icon;

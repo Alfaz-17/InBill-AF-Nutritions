@@ -68,7 +68,8 @@ export default function Reports({ profile }) {
     grandTotal: fullSale.total_amount,
     paidAmount: fullSale.paid_amount,
     dueAmount: fullSale.due_amount,
-    paymentMode: fullSale.payment_mode
+    paymentMode: fullSale.payment_mode,
+    tax_mode: fullSale.tax_mode || 'inclusive',
   });
 
   const handlePrintInvoice = async (sale) => {
@@ -98,9 +99,11 @@ export default function Reports({ profile }) {
           const saveResult = await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${fullSale.invoice_number}.pdf`);
           if (saveResult.success) {
             toast("Exact invoice PDF downloaded!", "success");
+          } else {
+            toast("PDF download cancelled", "info");
           }
         } else {
-          toast("Failed to generate PDF", "error");
+          toast(res.error || "Failed to generate PDF", "error");
         }
       }
     } catch (e) {
@@ -155,8 +158,14 @@ export default function Reports({ profile }) {
       
       const res = await window.electronAPI.pdf.generate(html);
       if (res.success) {
-        await window.electronAPI.pdf.saveAs(res.buffer, filename);
-        toast("Report Saved Successfully!", "success");
+        const saveResult = await window.electronAPI.pdf.saveAs(res.buffer, filename);
+        if (saveResult?.success) {
+          toast("Report saved successfully!", "success");
+        } else {
+          toast("Report download cancelled", "info");
+        }
+      } else {
+        toast(res.error || "Failed to generate report PDF", "error");
       }
     } catch (e) {
       console.error(e);

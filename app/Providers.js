@@ -433,6 +433,71 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
   };
 }
 
+// Global Loading Interceptor
+let activeApiRequests = 0;
+let loadingSubscribers = [];
+const subscribeToLoading = (cb) => {
+  loadingSubscribers.push(cb);
+  return () => { loadingSubscribers = loadingSubscribers.filter(fn => fn !== cb); };
+};
+const updateLoadingState = () => {
+  loadingSubscribers.forEach(cb => cb(activeApiRequests > 0));
+};
+
+const setupGlobalApiProxy = () => {
+  if (typeof window !== 'undefined' && window.electronAPI && !window.electronAPI.__isProxied) {
+    const handler = {
+      get: function(target, prop, receiver) {
+        if (typeof target[prop] === 'function') {
+          return async function(...args) {
+            activeApiRequests++;
+            updateLoadingState();
+            try {
+              return await target[prop](...args);
+            } finally {
+              activeApiRequests--;
+              updateLoadingState();
+            }
+          };
+        } else if (typeof target[prop] === 'object' && target[prop] !== null) {
+          return new Proxy(target[prop], handler);
+        }
+        return target[prop];
+      }
+    };
+    window.electronAPI = new Proxy(window.electronAPI, handler);
+    window.electronAPI.__isProxied = true;
+  }
+};
+
+function TopProgressBar() {
+  const [isLoading, setIsLoading] = useState(false);
+  
+  useEffect(() => {
+    return subscribeToLoading(setIsLoading);
+  }, []);
+
+  if (!isLoading) return null;
+
+  return (
+    <div className="fixed top-0 left-0 w-full h-1 z-[9999] bg-primary/20 overflow-hidden pointer-events-none">
+      <div className="h-full bg-primary absolute top-0 left-0 animate-[loading-bar_1.5s_infinite_ease-in-out]" 
+           style={{
+             width: '50%',
+             boxShadow: '0 0 10px var(--primary), 0 0 5px var(--primary)'
+           }} 
+      />
+      <style>{`
+        @keyframes loading-bar {
+          0% { left: -50%; width: 50%; }
+          50% { left: 25%; width: 75%; }
+          100% { left: 100%; width: 50%; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function Providers({ children }) {
   const [queryClient] = useState(() => new QueryClient({
     defaultOptions: {
@@ -444,6 +509,8 @@ export default function Providers({ children }) {
   }));
 
   useEffect(() => {
+    setupGlobalApiProxy();
+
     const handleWheel = (e) => {
       // If the currently focused element is a number input, blur it on scroll
       if (
@@ -465,6 +532,7 @@ export default function Providers({ children }) {
   return (
     <QueryClientProvider client={queryClient}>
       <ToastProvider>
+        <TopProgressBar />
         {children}
         <Toaster position="top-right" richColors closeButton />
       </ToastProvider>

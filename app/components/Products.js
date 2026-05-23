@@ -497,9 +497,9 @@ export default function Products({ profile }) {
         <DialogContent 
           onInteractOutside={(e) => e.preventDefault()}
           onEscapeKeyDown={(e) => e.preventDefault()}
-          className="max-w-[92vw] sm:max-w-4xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all"
+          className="product-editor-dialog max-w-[92vw] sm:max-w-4xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all"
         >
-          <DialogHeader className="p-10 bg-slate-900 text-white">
+          <DialogHeader className="product-editor-header p-10 bg-slate-900 text-white">
             <DialogTitle className="text-2xl font-black flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/20">
                 <Package size={24} />
@@ -511,7 +511,7 @@ export default function Products({ profile }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto p-10 space-y-10 bg-slate-50/30">
+          <div className="product-editor-body flex-1 overflow-y-auto p-10 space-y-10 bg-slate-50/30">
             {/* Essential Info */}
             <section className="space-y-6">
               <div className="flex items-center gap-3">
