@@ -73,8 +73,11 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
     setLoading(false);
   };
 
+  const [saving, setSaving] = useState(false);
+
   const handleSave = async () => {
-    if (!formData.name) return;
+    if (!formData.name || saving) return;
+    setSaving(true);
     try {
       if (editingParty) {
         await window.electronAPI.parties.update(editingParty.id, formData);
@@ -87,6 +90,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
       resetForm();
       loadParties();
     } catch (e) { toast('Failed to save: ' + e.message, 'error'); }
+    setSaving(false);
   };
 
   const resetForm = () => {
@@ -279,7 +283,8 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
 
       {/* Directory Table */}
       <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-        <div className="table-wrap border-none shadow-none rounded-none">
+        {/* Desktop View */}
+        <div className="hidden md:block table-wrap border-none shadow-none rounded-none">
           {filtered.length > 0 ? (
             <table className="w-full">
               <thead>
@@ -372,6 +377,105 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
             </div>
           )}
         </div>
+
+        {/* Mobile View */}
+        <div className="block md:hidden p-4">
+          {filtered.length > 0 ? (
+            <div className="space-y-3">
+              {filtered.map((p) => (
+                <div key={p.id} className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-base shrink-0 ${
+                        p.type === 'Customer' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+                      }`}>
+                        {p.name[0]}
+                      </div>
+                      <div>
+                        <div className="font-black text-slate-900 text-sm leading-tight">{p.name}</div>
+                        {p.phone ? (
+                          <a href={`tel:${p.phone}`} className="flex items-center gap-1 mt-1 text-[11px] font-bold text-blue-500 hover:underline">
+                            <Phone size={10} /> {p.phone}
+                          </a>
+                        ) : (
+                          <div className="text-[10px] font-bold text-slate-400 mt-1">No phone</div>
+                        )}
+                      </div>
+                    </div>
+                    <Badge className={`rounded-lg px-2 py-0.5 font-black text-[10px] shrink-0 ${
+                      p.type === 'Customer' ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-amber-50 text-amber-600 border-amber-100'
+                    }`}>
+                      {p.type.toUpperCase()}
+                    </Badge>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-slate-50 pt-2.5">
+                    <div>
+                      {p.gstin && (
+                        <div className="text-[10px] font-mono text-slate-400 bg-slate-50 px-2 py-0.5 rounded-md w-fit">
+                          {p.gstin}
+                        </div>
+                      )}
+                      {p.type === 'Customer' && p.current_balance > 0 && p.next_due_date && (
+                        <div className={`inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[9px] font-black uppercase mt-1 ${
+                          p.due_alert_count > 0 ? 'bg-amber-50 text-amber-600' : 'bg-slate-50 text-slate-400'
+                        }`}>
+                          <CalendarClock size={10} />
+                          {getDueLabel(p.next_due_date)}
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      <div className={`font-black text-sm ${
+                        p.current_balance > 0 ? 'text-emerald-600' : p.current_balance < 0 ? 'text-rose-600' : 'text-slate-400'
+                      }`}>
+                        {p.current_balance > 0 ? '+' : ''}{CURRENCY}{p.current_balance.toLocaleString('en-IN')}
+                      </div>
+                      <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">
+                        {p.current_balance > 0 ? 'Receivable' : p.current_balance < 0 ? 'Payable' : 'Settled'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-slate-50 pt-2.5 gap-2">
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleOpenPayment(p)} 
+                        className="h-9 px-3 text-[11px] rounded-xl text-emerald-600 font-black gap-1.5 hover:bg-emerald-50 border-emerald-100 flex-1 justify-center"
+                      >
+                        <CreditCard size={12} /> {p.type === 'Customer' ? 'Collect' : 'Pay'}
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => handleOpenLedger(p)} 
+                        className="h-9 px-3 text-[11px] rounded-xl text-blue-600 font-black gap-1.5 hover:bg-blue-50 border-blue-100 flex-1 justify-center"
+                      >
+                        <History size={12} /> Ledger
+                      </Button>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="h-9 w-9 rounded-xl text-slate-400 hover:text-primary hover:bg-blue-50">
+                        <Edit3 size={14} />
+                      </Button>
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)} className="h-9 w-9 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50">
+                        <Trash2 size={14} />
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-300">
+              <Users size={48} strokeWidth={1} />
+              <p className="mt-4 font-black text-sm">No directory records found</p>
+              <Button variant="link" className="text-primary font-black mt-2 text-xs" onClick={() => { setSearchTerm(''); setFilter('All'); }}>Reset All Filters</Button>
+            </div>
+          )}
+        </div>
       </Card>
 
       {/* Party Modal */}
@@ -398,11 +502,11 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                 <div className="md:col-span-2 form-group">
                   <label className="form-label">Full Name / Business Name *</label>
-                  <Input value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="form-input h-14" placeholder="e.g. John Doe / Delta Corp" />
+                  <Input disabled={saving} value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} className="form-input h-14" placeholder="e.g. John Doe / Delta Corp" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Relationship Type</label>
-                  <Select value={formData.type} onValueChange={(v) => setFormData({...formData, type: v})}>
+                  <Select disabled={saving} value={formData.type} onValueChange={(v) => setFormData({...formData, type: v})}>
                     <SelectTrigger className="form-input h-14 font-black"><SelectValue placeholder="Type" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="Customer" className="font-bold">Customer</SelectItem>
@@ -412,7 +516,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
                 </div>
                 <div className="form-group">
                   <label className="form-label">Phone Number</label>
-                  <Input value={formData.phone || ''} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="form-input h-14" placeholder="9876543210" />
+                  <Input disabled={saving} value={formData.phone || ''} onChange={(e) => setFormData({...formData, phone: e.target.value})} className="form-input h-14" placeholder="9876543210" />
                 </div>
               </div>
             </section>
@@ -425,11 +529,11 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                 <div className="form-group">
                   <label className="form-label">GSTIN / Tax ID</label>
-                  <Input value={formData.gstin || ''} onChange={(e) => setFormData({...formData, gstin: e.target.value.toUpperCase()})} className="form-input h-14 font-mono" placeholder="22AAAAA0000A1Z5" />
+                  <Input disabled={saving} value={formData.gstin || ''} onChange={(e) => setFormData({...formData, gstin: e.target.value.toUpperCase()})} className="form-input h-14 font-mono" placeholder="22AAAAA0000A1Z5" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Opening Balance ({CURRENCY})</label>
-                  <Input type="number" value={formData.opening_balance || 0} onChange={(e) => setFormData({...formData, opening_balance: parseFloat(e.target.value) || 0})} className="form-input h-14 font-black" />
+                  <Input disabled={saving} type="number" value={formData.opening_balance || 0} onChange={(e) => setFormData({...formData, opening_balance: parseFloat(e.target.value) || 0})} className="form-input h-14 font-black" />
                   <p className="text-[10px] font-black text-slate-400 mt-2 uppercase tracking-tight">
                     {formData.type === 'Supplier' 
                       ? "Amounts here will be treated as debt (Payable) automatically" 
@@ -438,16 +542,25 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
                 </div>
                 <div className="md:col-span-2 form-group">
                   <label className="form-label">Billing Address</label>
-                  <Textarea value={formData.address || ''} onChange={(e) => setFormData({...formData, address: e.target.value})} className="form-input min-h-[100px] py-4" placeholder="Full street address..." />
+                  <Textarea disabled={saving} value={formData.address || ''} onChange={(e) => setFormData({...formData, address: e.target.value})} className="form-input min-h-[100px] py-4" placeholder="Full street address..." />
                 </div>
               </div>
             </section>
           </div>
 
           <DialogFooter className="p-10 bg-white border-t flex gap-3 sm:justify-end">
-            <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Discard</Button>
-            <Button onClick={handleSave} className="btn-primary h-14 px-12 rounded-2xl gap-3">
-              <Check size={20} strokeWidth={3} /> {editingParty ? 'Update Contact' : 'Register Partner'}
+            <Button disabled={saving} variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Discard</Button>
+            <Button disabled={saving || !formData.name} onClick={handleSave} className="btn-primary h-14 px-12 rounded-2xl gap-3">
+              {saving ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Check size={20} strokeWidth={3} /> {editingParty ? 'Update Contact' : 'Register Partner'}
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -470,59 +583,128 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
 
           <div className="p-10 max-h-[60vh] overflow-y-auto bg-slate-50/30">
             {ledgerData.length > 0 ? (
-              <div className="table-wrap border-slate-200 shadow-none rounded-2xl overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-slate-50 border-b">
-                    <tr>
-                      <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Date</th>
-                      <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Reference & Type</th>
-                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Total</th>
-                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Amount Settled</th>
-                      <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Balance Impact</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y">
-                    {ledgerData.map((tx) => {
-                      const isPositive = ['Sale', 'Purchase Return'].includes(tx.type) && selectedParty.type === 'Customer';
-                      const isNegative = ['Payment', 'Sales Return'].includes(tx.type);
-                      
-                      return (
-                        <tr key={tx.id} className="bg-white hover:bg-slate-50/50 transition-colors">
-                          <td className="p-4 font-bold text-slate-600 whitespace-nowrap">
-                            {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
-                          </td>
-                          <td className="p-4">
-                            <div className="flex flex-col">
-                              <Badge className={`w-fit rounded-lg font-black text-[10px] px-2 py-0.5 ${
-                                tx.type === 'Sale' ? 'bg-blue-50 text-blue-600' : 
-                                tx.type === 'Purchase' ? 'bg-amber-50 text-amber-600' : 
-                                tx.type === 'Payment' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+              <>
+                {/* Desktop View */}
+                <div className="hidden md:block table-wrap border-slate-200 shadow-none rounded-2xl overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 border-b">
+                      <tr>
+                        <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Date</th>
+                        <th className="p-4 text-left font-black text-slate-400 text-[10px] uppercase">Reference & Type</th>
+                        <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Total</th>
+                        <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Amount Settled</th>
+                        <th className="p-4 text-right font-black text-slate-400 text-[10px] uppercase">Balance Impact</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {ledgerData.map((tx) => {
+                        const isPositive = ['Sale', 'Purchase Return'].includes(tx.type) && selectedParty.type === 'Customer';
+                        const isNegative = ['Payment', 'Sales Return'].includes(tx.type);
+                        
+                        return (
+                          <tr key={tx.id} className="bg-white hover:bg-slate-50/50 transition-colors">
+                            <td className="p-4 font-bold text-slate-600 whitespace-nowrap">
+                              {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </td>
+                            <td className="p-4">
+                              <div className="flex flex-col">
+                                <Badge className={`w-fit rounded-lg font-black text-[10px] px-2 py-0.5 ${
+                                  tx.type === 'Sale' ? 'bg-blue-50 text-blue-600' : 
+                                  tx.type === 'Purchase' ? 'bg-amber-50 text-amber-600' : 
+                                  tx.type === 'Payment' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                                }`}>
+                                  {tx.type.toUpperCase()}
+                                </Badge>
+                                {tx.note ? (
+                                  <p className="text-[10px] text-slate-400 mt-1 font-medium">{tx.note}</p>
+                                ) : tx.reference_id ? (
+                                  <p className="text-[10px] text-slate-400 mt-1 font-medium">Ref #{tx.reference_id}</p>
+                                ) : null}
+                                {tx.due_date && tx.due_amount > 0 && (
+                                  <p className="text-[10px] text-amber-600 mt-1 font-black uppercase">
+                                    {getDueLabel(tx.due_date)} ({formatDueDate(tx.due_date)})
+                                  </p>
+                                )}
+                              </div>
+                            </td>
+                            <td className="p-4 text-right font-bold text-slate-900">
+                              {tx.total_amount ? `${CURRENCY}${tx.total_amount.toLocaleString()}` : '-'}
+                            </td>
+                            <td className="p-4 text-right">
+                              <span className={`font-bold ${tx.type === 'Payment' ? 'text-emerald-600' : 'text-slate-600'}`}>
+                                {tx.paid_amount > 0 ? `${CURRENCY}${tx.paid_amount.toLocaleString()}` : '-'}
+                              </span>
+                              {tx.payment_mode && <p className="text-[9px] text-slate-400 font-black uppercase mt-0.5">{tx.payment_mode}</p>}
+                            </td>
+                            <td className="p-4 text-right">
+                              <div className={`font-black ${
+                                (['Sale', 'Purchase'].includes(tx.type)) ? 'text-rose-600' : 'text-emerald-600'
                               }`}>
-                                {tx.type.toUpperCase()}
-                              </Badge>
-                              {tx.note ? (
-                                <p className="text-[10px] text-slate-400 mt-1 font-medium">{tx.note}</p>
-                              ) : tx.reference_id ? (
-                                <p className="text-[10px] text-slate-400 mt-1 font-medium">Ref #{tx.reference_id}</p>
-                              ) : null}
-                              {tx.due_date && tx.due_amount > 0 && (
-                                <p className="text-[10px] text-amber-600 mt-1 font-black uppercase">
-                                  {getDueLabel(tx.due_date)} ({formatDueDate(tx.due_date)})
-                                </p>
-                              )}
+                                {(['Sale', 'Purchase'].includes(tx.type)) 
+                                  ? (tx.due_amount > 0 ? `+${CURRENCY}${tx.due_amount.toLocaleString()}` : 'SETTLED')
+                                  : `-${CURRENCY}${tx.paid_amount.toLocaleString()}`
+                                }
+                              </div>
+                              <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
+                                {(['Sale', 'Purchase'].includes(tx.type)) ? 'Increase Due' : 'Decrease Due'}
+                              </p>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile View */}
+                <div className="block md:hidden space-y-3">
+                  {ledgerData.map((tx) => {
+                    const isPositive = ['Sale', 'Purchase Return'].includes(tx.type) && selectedParty.type === 'Customer';
+                    const isNegative = ['Payment', 'Sales Return'].includes(tx.type);
+                    return (
+                      <div key={tx.id} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col gap-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-slate-500">
+                            {new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                          <Badge className={`rounded-lg font-black text-[9px] px-2 py-0.5 ${
+                            tx.type === 'Sale' ? 'bg-blue-50 text-blue-600' : 
+                            tx.type === 'Purchase' ? 'bg-amber-50 text-amber-600' : 
+                            tx.type === 'Payment' ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'
+                          }`}>
+                            {tx.type.toUpperCase()}
+                          </Badge>
+                        </div>
+                        
+                        {(tx.note || tx.reference_id || (tx.due_date && tx.due_amount > 0)) && (
+                          <div className="text-xs font-semibold text-slate-600 bg-slate-50/50 p-2 rounded-xl">
+                            {tx.note && <p className="text-[10px] text-slate-400 font-medium">{tx.note}</p>}
+                            {!tx.note && tx.reference_id && <p className="text-[10px] text-slate-400 font-medium">Ref #{tx.reference_id}</p>}
+                            {tx.due_date && tx.due_amount > 0 && (
+                              <p className="text-[10px] text-amber-600 mt-0.5 font-black uppercase">
+                                {getDueLabel(tx.due_date)} ({formatDueDate(tx.due_date)})
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-3 gap-2 text-center border-t border-slate-50 pt-2.5">
+                          <div>
+                            <div className="text-[9px] font-black text-slate-400 uppercase">Total</div>
+                            <div className="text-xs font-bold text-slate-900 mt-0.5">
+                              {tx.total_amount ? `${CURRENCY}${tx.total_amount.toLocaleString()}` : '-'}
                             </div>
-                          </td>
-                          <td className="p-4 text-right font-bold text-slate-900">
-                            {tx.total_amount ? `${CURRENCY}${tx.total_amount.toLocaleString()}` : '-'}
-                          </td>
-                          <td className="p-4 text-right">
-                            <span className={`font-bold ${tx.type === 'Payment' ? 'text-emerald-600' : 'text-slate-600'}`}>
+                          </div>
+                          <div>
+                            <div className="text-[9px] font-black text-slate-400 uppercase">Settled</div>
+                            <div className={`text-xs font-bold mt-0.5 ${tx.type === 'Payment' ? 'text-emerald-600' : 'text-slate-600'}`}>
                               {tx.paid_amount > 0 ? `${CURRENCY}${tx.paid_amount.toLocaleString()}` : '-'}
-                            </span>
-                            {tx.payment_mode && <p className="text-[9px] text-slate-400 font-black uppercase mt-0.5">{tx.payment_mode}</p>}
-                          </td>
-                          <td className="p-4 text-right">
-                            <div className={`font-black ${
+                            </div>
+                            {tx.payment_mode && <p className="text-[8px] text-slate-400 font-bold uppercase mt-0.5">{tx.payment_mode}</p>}
+                          </div>
+                          <div>
+                            <div className="text-[9px] font-black text-slate-400 uppercase">Impact</div>
+                            <div className={`text-xs font-black mt-0.5 ${
                               (['Sale', 'Purchase'].includes(tx.type)) ? 'text-rose-600' : 'text-emerald-600'
                             }`}>
                               {(tx.type === 'Sale' || tx.type === 'Purchase') 
@@ -530,16 +712,13 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
                                 : `-${CURRENCY}${tx.paid_amount.toLocaleString()}`
                               }
                             </div>
-                            <p className="text-[9px] font-bold text-slate-400 uppercase mt-0.5">
-                              {(['Sale', 'Purchase'].includes(tx.type)) ? 'Increase Due' : 'Decrease Due'}
-                            </p>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
             ) : (
               <div className="py-20 text-center text-slate-300 font-bold">No transaction history available</div>
             )}
@@ -574,6 +753,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
             <div className="form-group">
               <label className="form-label">Payment Amount ({CURRENCY})</label>
               <Input 
+                disabled={savingPayment}
                 type="number" 
                 className="h-16 text-2xl font-black text-center rounded-2xl border-slate-200" 
                 value={paymentData.amount} 
@@ -583,6 +763,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
             <div className="form-group">
               <label className="form-label">Payment Date</label>
               <Input 
+                disabled={savingPayment}
                 type="date" 
                 className="h-14 rounded-2xl border-slate-200" 
                 value={paymentData.date} 
@@ -591,7 +772,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
             </div>
             <div className="form-group">
               <label className="form-label">Payment Mode</label>
-              <Select value={paymentData.payment_mode} onValueChange={(v) => setPaymentData({...paymentData, payment_mode: v})}>
+              <Select disabled={savingPayment} value={paymentData.payment_mode} onValueChange={(v) => setPaymentData({...paymentData, payment_mode: v})}>
                 <SelectTrigger className="h-14 rounded-2xl border-slate-200 font-bold">
                   <SelectValue placeholder="Select Mode" />
                 </SelectTrigger>
@@ -604,6 +785,7 @@ export default function Parties({ profile, initialPartyId, onDeepLinkConsumed })
             <div className="form-group">
               <label className="form-label">Internal Note</label>
               <Input 
+                disabled={savingPayment}
                 placeholder="Reference #, Mode, etc." 
                 className="h-14 rounded-2xl border-slate-200" 
                 value={paymentData.note} 

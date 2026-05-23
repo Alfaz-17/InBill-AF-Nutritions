@@ -258,101 +258,176 @@ export default function Purchases({ profile }) {
           placeholder="Search by supplier or bill ID..." 
           className="form-input h-14 pl-12 rounded-2xl shadow-sm border-slate-200"
         />
-      </div>
-
-      {/* Purchase List */}
+      </div>      {/* Purchase List */}
       <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
         <div className="table-wrap border-none shadow-none rounded-none">
           {purchases.length > 0 ? (
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <th>Purchase Date</th>
-                  <th>Supplier / Vendor</th>
-                  <th className="text-right">Investment</th>
-                  <th className="text-right">Details</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {purchases.map((p) => (
-                  <Fragment key={p.id}>
-                    <tr onClick={() => toggleExpand(p.id)} className="group hover:bg-slate-50/50 transition-all cursor-pointer">
-                      <td>
-                        <div className="font-black text-slate-900">{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
-                        <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ref: #BILL-{p.id}</div>
-                      </td>
-                      <td>
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center font-black">
-                            {p.supplier_name?.[0] || 'V'}
-                          </div>
-                          <div className="font-bold text-slate-700">{p.supplier_name || 'Generic Vendor'}</div>
-                        </div>
-                      </td>
-                      <td className="text-right">
-                        <div className="font-black text-slate-900 text-lg">{CURRENCY}{p.total_amount.toLocaleString('en-IN')}</div>
-                      </td>
-                      <td className="text-right">
-                        <Button variant="ghost" className="h-10 px-4 rounded-xl font-black gap-2 group-hover:bg-white group-hover:shadow-sm transition-all">
-                          {expandedId === p.id ? 'Hide' : 'View'} <ChevronDown size={16} className={`transition-transform duration-300 ${expandedId === p.id ? 'rotate-180' : ''}`} />
-                        </Button>
-                      </td>
+            <>
+              {/* Desktop View */}
+              <div className="hidden md:block">
+                <table className="w-full">
+                  <thead>
+                    <tr>
+                      <th>Purchase Date</th>
+                      <th>Supplier / Vendor</th>
+                      <th className="text-right">Investment</th>
+                      <th className="text-right">Details</th>
                     </tr>
-                    {expandedId === p.id && details[p.id] && (
-                      <tr key={`${p.id}-detail`} className="bg-slate-50/30">
-                        <td colSpan={4} className="p-8">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in">
-                            <div className="space-y-4">
-                              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Bill Line Items</h4>
-                              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-                                <table className="w-full text-xs">
-                                  <thead className="bg-slate-50 border-b">
-                                    <tr>
-                                      <th className="p-3 text-left font-black">Product</th>
-                                      <th className="p-3 text-center font-black">Qty</th>
-                                      <th className="p-3 text-right font-black">Price</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="divide-y">
-                                    {(details[p.id].items || []).map((item, idx) => (
-                                      <tr key={idx}>
-                                        <td className="p-3">
-                                          <p className="font-bold text-slate-800">{item.product_name}</p>
-                                          {item.batch_number && <p className="text-[10px] text-slate-400">Batch: {item.batch_number}</p>}
-                                        </td>
-                                        <td className="p-3 text-center font-black text-slate-500">{item.quantity}</td>
-                                        <td className="p-3 text-right font-black text-slate-900">{CURRENCY}{item.price.toLocaleString()}</td>
-                                      </tr>
-                                    ))}
-                                  </tbody>
-                                </table>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {purchases.map((p) => (
+                      <Fragment key={p.id}>
+                        <tr onClick={() => toggleExpand(p.id)} className="group hover:bg-slate-50/50 transition-all cursor-pointer">
+                          <td>
+                            <div className="font-black text-slate-900">{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ref: #BILL-{p.id}</div>
+                          </td>
+                          <td>
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-slate-100 text-slate-600 rounded-xl flex items-center justify-center font-black">
+                                {p.supplier_name?.[0] || 'V'}
                               </div>
+                              <div className="font-bold text-slate-700">{p.supplier_name || 'Generic Vendor'}</div>
                             </div>
-                            <div className="space-y-4">
-                              <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Order Summary</h4>
-                              <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-3">
-                                <div className="flex justify-between text-sm">
-                                  <span className="font-bold text-slate-500">Subtotal</span>
-                                  <span className="font-black text-slate-900">{CURRENCY}{(p.total_amount - (p.other_charges || 0)).toLocaleString()}</span>
+                          </td>
+                          <td className="text-right">
+                            <div className="font-black text-slate-900 text-lg">{CURRENCY}{p.total_amount.toLocaleString('en-IN')}</div>
+                          </td>
+                          <td className="text-right">
+                            <Button variant="ghost" className="h-10 px-4 rounded-xl font-black gap-2 group-hover:bg-white group-hover:shadow-sm transition-all">
+                              {expandedId === p.id ? 'Hide' : 'View'} <ChevronDown size={16} className={`transition-transform duration-300 ${expandedId === p.id ? 'rotate-180' : ''}`} />
+                            </Button>
+                          </td>
+                        </tr>
+                        {expandedId === p.id && details[p.id] && (
+                          <tr key={`${p.id}-detail`} className="bg-slate-50/30">
+                            <td colSpan={4} className="p-8">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 animate-in">
+                                <div className="space-y-4">
+                                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Bill Line Items</h4>
+                                  <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+                                    <table className="w-full text-xs">
+                                      <thead className="bg-slate-50 border-b">
+                                        <tr>
+                                          <th className="p-3 text-left font-black">Product</th>
+                                          <th className="p-3 text-center font-black">Qty</th>
+                                          <th className="p-3 text-right font-black">Price</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y">
+                                        {(details[p.id].items || []).map((item, idx) => (
+                                          <tr key={idx}>
+                                            <td className="p-3">
+                                              <p className="font-bold text-slate-800">{item.product_name}</p>
+                                              {item.batch_number && <p className="text-[10px] text-slate-400">Batch: {item.batch_number}</p>}
+                                            </td>
+                                            <td className="p-3 text-center font-black text-slate-500">{item.quantity}</td>
+                                            <td className="p-3 text-right font-black text-slate-900">{CURRENCY}{item.price.toLocaleString()}</td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
                                 </div>
-                                <div className="flex justify-between text-sm">
-                                  <span className="font-bold text-slate-500">Other Charges</span>
-                                  <span className="font-black text-slate-900">+{CURRENCY}{(p.other_charges || 0).toLocaleString()}</span>
-                                </div>
-                                <div className="pt-3 border-t flex justify-between items-center">
-                                  <span className="font-black text-slate-900">Paid In Full</span>
-                                  <span className="text-xl font-black text-primary">{CURRENCY}{p.total_amount.toLocaleString()}</span>
+                                <div className="space-y-4">
+                                  <h4 className="text-xs font-black text-slate-400 uppercase tracking-widest">Order Summary</h4>
+                                  <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-3">
+                                    <div className="flex justify-between text-sm">
+                                      <span className="font-bold text-slate-500">Subtotal</span>
+                                      <span className="font-black text-slate-900">{CURRENCY}{(p.total_amount - (p.other_charges || 0)).toLocaleString()}</span>
+                                    </div>
+                                    <div className="flex justify-between text-sm">
+                                      <span className="font-bold text-slate-500">Other Charges</span>
+                                      <span className="font-black text-slate-900">+{CURRENCY}{(p.other_charges || 0).toLocaleString()}</span>
+                                    </div>
+                                    <div className="pt-3 border-t flex justify-between items-center">
+                                      <span className="font-black text-slate-900">Paid In Full</span>
+                                      <span className="text-xl font-black text-primary">{CURRENCY}{p.total_amount.toLocaleString()}</span>
+                                    </div>
+                                  </div>
                                 </div>
                               </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile View */}
+              <div className="block md:hidden divide-y divide-slate-100">
+                {purchases.map((p) => (
+                  <div key={p.id} className="p-4 space-y-3 hover:bg-slate-50/50 transition-colors">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 bg-slate-100 text-slate-600 rounded-lg flex items-center justify-center font-black text-xs">
+                          {p.supplier_name?.[0] || 'V'}
+                        </div>
+                        <div>
+                          <div className="font-bold text-slate-700 text-xs">{p.supplier_name || 'Generic Vendor'}</div>
+                          <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">#BILL-{p.id}</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-black text-slate-900 text-sm">{CURRENCY}{p.total_amount.toLocaleString('en-IN')}</div>
+                        <div className="text-[9px] font-bold text-slate-400">{new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex justify-between items-center bg-slate-50/50 p-2 rounded-lg border border-slate-100">
+                      <span className="text-[10px] font-bold text-slate-500">Paid amount: {CURRENCY}{p.paid_amount?.toLocaleString() || '0'}</span>
+                      <Button variant="ghost" size="sm" onClick={() => toggleExpand(p.id)} className="h-7 px-3 rounded-lg font-black text-[10px] bg-white border border-slate-100 shadow-xs flex items-center gap-1">
+                        {expandedId === p.id ? 'Hide Details' : 'View Details'}
+                        <ChevronDown size={12} className={`transition-transform duration-300 ${expandedId === p.id ? 'rotate-180' : ''}`} />
+                      </Button>
+                    </div>
+
+                    {expandedId === p.id && details[p.id] && (
+                      <div className="pt-3 border-t border-slate-100/50 space-y-4 animate-in">
+                        <div className="space-y-2">
+                          <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Bill Line Items</h4>
+                          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden divide-y">
+                            {(details[p.id].items || []).map((item, idx) => (
+                              <div key={idx} className="p-3 flex justify-between items-center text-xs">
+                                <div className="flex-1 min-w-0 pr-2">
+                                  <p className="font-bold text-slate-800 break-words">{item.product_name}</p>
+                                  {item.batch_number && <p className="text-[9px] text-slate-400">Batch: {item.batch_number}</p>}
+                                </div>
+                                <div className="text-right">
+                                  <p className="font-black text-slate-900">{CURRENCY}{item.price.toLocaleString()} x {item.quantity}</p>
+                                  <p className="text-[9px] font-bold text-slate-400">Total: {CURRENCY}{(item.price * item.quantity).toLocaleString()}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Order Summary</h4>
+                          <div className="bg-slate-50 p-4 rounded-xl border border-slate-100/50 space-y-2 text-xs">
+                            <div className="flex justify-between">
+                              <span className="font-bold text-slate-500">Subtotal</span>
+                              <span className="font-black text-slate-900">{CURRENCY}{(p.total_amount - (p.other_charges || 0)).toLocaleString()}</span>
+                            </div>
+                            {p.other_charges > 0 && (
+                              <div className="flex justify-between">
+                                <span className="font-bold text-slate-500">Other Charges</span>
+                                <span className="font-black text-slate-900">+{CURRENCY}{p.other_charges.toLocaleString()}</span>
+                              </div>
+                            )}
+                            <div className="pt-2 border-t flex justify-between items-center">
+                              <span className="font-black text-slate-900">Paid In Full</span>
+                              <span className="font-black text-primary text-sm">{CURRENCY}{p.total_amount.toLocaleString()}</span>
                             </div>
                           </div>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     )}
-                  </Fragment>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center py-32 text-slate-300">
               <TruckIcon size={64} strokeWidth={1} />
@@ -365,7 +440,11 @@ export default function Purchases({ profile }) {
 
       {/* New Purchase Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-w-[94vw] sm:max-w-6xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all">
+        <DialogContent 
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+          className="max-w-[94vw] sm:max-w-6xl h-[92vh] flex flex-col p-0 overflow-hidden border-none shadow-2xl rounded-[2.5rem] bg-white transition-all"
+        >
           <DialogHeader className="p-10 bg-slate-900 text-white">
             <DialogTitle className="text-2xl font-black flex items-center gap-4">
               <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-xl shadow-blue-600/20">
@@ -389,6 +468,7 @@ export default function Purchases({ profile }) {
                       <div className="relative">
                         <Building2 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
                         <Input 
+                          disabled={saving}
                           placeholder="Search or enter supplier name..." 
                           className="h-14 pl-12 bg-white text-slate-900 border-slate-200 font-bold focus:border-blue-500 rounded-2xl shadow-sm transition-all"
                           value={supplierSearch}
@@ -430,11 +510,13 @@ export default function Purchases({ profile }) {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Line Items</h4>
-                    <Button variant="outline" size="sm" className="h-9 px-4 rounded-xl gap-2 font-black border-slate-200" onClick={addRow}>
+                    <Button disabled={saving} variant="outline" size="sm" className="h-9 px-4 rounded-xl gap-2 font-black border-slate-200" onClick={addRow}>
                       <Plus size={14} strokeWidth={3} /> Add Row
                     </Button>
                   </div>
-                  <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+                  
+                  {/* Desktop view for line items table */}
+                  <div className="hidden md:block bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
                     <table className="w-full text-xs">
                       <thead className="bg-slate-50 border-b">
                         <tr>
@@ -450,6 +532,7 @@ export default function Purchases({ profile }) {
                           <tr key={idx} className="hover:bg-slate-50/50">
                             <td className="p-4 relative">
                                 <Input 
+                                  disabled={saving}
                                   placeholder="Enter product name..." 
                                   className="h-10 font-bold border-none bg-transparent shadow-none focus:bg-white focus:shadow-sm text-slate-900 placeholder:text-slate-400"
                                   value={item.product_name}
@@ -491,6 +574,7 @@ export default function Purchases({ profile }) {
                             </td>
                             <td className="p-4">
                               <Input 
+                                disabled={saving}
                                 type="number" 
                                 className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white text-slate-900"
                                 value={item.quantity}
@@ -500,6 +584,7 @@ export default function Purchases({ profile }) {
                             <td className="p-4">
                               <div className="relative">
                                 <Input 
+                                  disabled={saving}
                                   type="number" 
                                   className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white pr-6 text-slate-900"
                                   value={item.price}
@@ -514,6 +599,7 @@ export default function Purchases({ profile }) {
                             </td>
                             <td className="p-4">
                               <Input 
+                                disabled={saving}
                                 type="number" 
                                 className="h-10 text-center font-black border-none bg-transparent shadow-none focus:bg-white text-blue-600 font-bold"
                                 value={item.selling_price}
@@ -524,7 +610,7 @@ export default function Purchases({ profile }) {
                               <div className="flex items-center gap-2">
                                 <Dialog>
                                   <DialogTrigger asChild>
-                                    <Button variant="ghost" size="icon" className={`h-9 w-9 rounded-xl ${Object.keys(item.custom_fields || {}).length > 0 || item.batch_number ? 'text-blue-600 bg-blue-50 border border-blue-100' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}>
+                                    <Button disabled={saving} variant="ghost" size="icon" className={`h-9 w-9 rounded-xl ${Object.keys(item.custom_fields || {}).length > 0 || item.batch_number ? 'text-blue-600 bg-blue-50 border border-blue-100' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}>
                                       <Settings2 size={16} />
                                     </Button>
                                   </DialogTrigger>
@@ -539,11 +625,11 @@ export default function Purchases({ profile }) {
                                       <div className="grid grid-cols-2 gap-4">
                                         <div className="space-y-2">
                                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Batch Number</label>
-                                          <Input value={item.batch_number} onChange={(e) => updateRow(idx, 'batch_number', e.target.value)} className="h-12 font-bold rounded-xl" />
+                                          <Input disabled={saving} value={item.batch_number} onChange={(e) => updateRow(idx, 'batch_number', e.target.value)} className="h-12 font-bold rounded-xl" />
                                         </div>
                                         <div className="space-y-2">
                                           <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expiry Date</label>
-                                          <Input type="date" value={item.expiry_date} onChange={(e) => updateRow(idx, 'expiry_date', e.target.value)} className="h-12 font-bold rounded-xl" />
+                                          <Input disabled={saving} type="date" value={item.expiry_date} onChange={(e) => updateRow(idx, 'expiry_date', e.target.value)} className="h-12 font-bold rounded-xl" />
                                         </div>
                                       </div>
                                       {attributeDefs.length > 0 && (
@@ -554,6 +640,7 @@ export default function Purchases({ profile }) {
                                               <div key={def.id} className="space-y-1.5">
                                                 <label className="text-xs font-bold text-slate-600">{def.name}</label>
                                                 <Input 
+                                                  disabled={saving}
                                                   value={item.custom_fields[def.name] || ''} 
                                                   onChange={(e) => {
                                                     const newFields = { ...item.custom_fields, [def.name]: e.target.value };
@@ -569,7 +656,7 @@ export default function Purchases({ profile }) {
                                     </div>
                                   </DialogContent>
                                 </Dialog>
-                                <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-300 hover:text-rose-500 hover:bg-rose-50" onClick={() => removeRow(idx)}>
+                                <Button disabled={saving} variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-300 hover:text-rose-500 hover:bg-rose-50" onClick={() => removeRow(idx)}>
                                   <X size={18} strokeWidth={3} />
                                 </Button>
                               </div>
@@ -579,6 +666,158 @@ export default function Purchases({ profile }) {
                       </tbody>
                     </table>
                   </div>
+
+                  {/* Mobile view for line items stack */}
+                  <div className="block md:hidden space-y-4">
+                    {items.map((item, idx) => (
+                      <div key={idx} className="bg-white rounded-2xl border border-slate-100 p-4 shadow-sm relative space-y-3">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Item #{idx + 1}</span>
+                          <div className="flex items-center gap-1">
+                            <Dialog>
+                              <DialogTrigger asChild>
+                                <Button variant="ghost" size="icon" className={`h-8 w-8 rounded-lg ${Object.keys(item.custom_fields || {}).length > 0 || item.batch_number ? 'text-blue-600 bg-blue-50 border border-blue-100' : 'text-slate-400 hover:text-blue-600'}`} disabled={saving}>
+                                  <Settings2 size={14} />
+                                </Button>
+                              </DialogTrigger>
+                              <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
+                                <DialogHeader className="p-8 bg-slate-900 text-white">
+                                  <DialogTitle className="font-black text-xl flex items-center gap-3">
+                                    <Settings2 size={20} className="text-blue-400" /> Item Attributes
+                                  </DialogTitle>
+                                  <DialogDescription className="text-slate-400 font-bold">Set specific details for this stock entry</DialogDescription>
+                                </DialogHeader>
+                                <div className="p-8 space-y-6 bg-white">
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-2">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Batch Number</label>
+                                      <Input disabled={saving} value={item.batch_number} onChange={(e) => updateRow(idx, 'batch_number', e.target.value)} className="h-12 font-bold rounded-xl" />
+                                    </div>
+                                    <div className="space-y-2">
+                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Expiry Date</label>
+                                      <Input disabled={saving} type="date" value={item.expiry_date} onChange={(e) => updateRow(idx, 'expiry_date', e.target.value)} className="h-12 font-bold rounded-xl" />
+                                    </div>
+                                  </div>
+                                  {attributeDefs.length > 0 && (
+                                    <div className="space-y-4 pt-4 border-t border-slate-100">
+                                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Custom Attributes</p>
+                                      <div className="grid grid-cols-1 gap-4">
+                                        {attributeDefs.map(def => (
+                                          <div key={def.id} className="space-y-1.5">
+                                            <label className="text-xs font-bold text-slate-600">{def.name}</label>
+                                            <Input 
+                                              disabled={saving}
+                                              value={item.custom_fields[def.name] || ''} 
+                                              onChange={(e) => {
+                                                const newFields = { ...item.custom_fields, [def.name]: e.target.value };
+                                                updateRow(idx, 'custom_fields', newFields);
+                                              }}
+                                              className="h-10 font-medium rounded-lg"
+                                            />
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </DialogContent>
+                            </Dialog>
+                            {items.length > 1 && (
+                              <Button variant="ghost" size="icon" className="h-8 w-8 rounded-lg text-slate-300 hover:text-rose-500 hover:bg-rose-50" onClick={() => removeRow(idx)} disabled={saving}>
+                                <X size={16} strokeWidth={3} />
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Product search input */}
+                        <div className="relative space-y-1">
+                          <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Product Name *</label>
+                          <Input 
+                            disabled={saving}
+                            placeholder="Enter product name..." 
+                            className="h-11 font-bold border-slate-100 bg-slate-50/50 rounded-xl"
+                            value={item.product_name}
+                            onChange={(e) => {
+                              updateRow(idx, 'product_name', e.target.value);
+                              setActiveSuggestion({ row: idx, query: e.target.value });
+                            }}
+                            onFocus={() => setActiveSuggestion({ row: idx, query: item.product_name })}
+                            onBlur={() => setTimeout(() => setActiveSuggestion({ row: -1, query: '' }), 200)}
+                          />
+                          {activeSuggestion.row === idx && activeSuggestion.query.length > 0 && (
+                            <Card className="absolute top-full left-0 w-full z-[100] shadow-2xl border-slate-300 overflow-hidden bg-white mt-2 ring-2 ring-blue-100">
+                              <ScrollArea className="h-48 bg-white">
+                                {allProducts.filter(p => p.product_name.toLowerCase().includes(activeSuggestion.query.toLowerCase())).map(p => (
+                                  <div key={p.id} className="p-3 hover:bg-blue-50 cursor-pointer border-b border-slate-50 last:border-0 flex justify-between items-center transition-colors group" onMouseDown={() => selectSuggestion(idx, p)}>
+                                    <div className="flex flex-col gap-0.5">
+                                      <p className="text-xs font-black text-slate-900">{p.product_name}</p>
+                                      <div className="flex items-center gap-2">
+                                        <Badge className="bg-slate-100 text-slate-500 font-bold text-[8px] px-1 py-0 border-none uppercase">
+                                          {p.brand || 'No Brand'}
+                                        </Badge>
+                                        <span className="text-[9px] font-bold text-slate-400">Stock: {p.quantity}</span>
+                                      </div>
+                                    </div>
+                                    <div className="text-right">
+                                      <p className="text-xs font-black text-emerald-600">{CURRENCY}{p.cost_price}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                                {allProducts.filter(p => p.product_name.toLowerCase().includes(activeSuggestion.query.toLowerCase())).length === 0 && (
+                                  <div className="p-4 text-center text-slate-400 font-bold italic text-xs">
+                                    New Product
+                                  </div>
+                                )}
+                              </ScrollArea>
+                            </Card>
+                          )}
+                        </div>
+
+                        {/* Numeric parameters grid */}
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Qty</label>
+                            <Input 
+                              disabled={saving}
+                              type="number" 
+                              className="h-10 text-center font-black rounded-lg bg-slate-50/50 border-slate-100"
+                              value={item.quantity}
+                              onChange={(e) => updateRow(idx, 'quantity', e.target.value)}
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Cost Price</label>
+                            <div className="relative">
+                              <Input 
+                                disabled={saving}
+                                type="number" 
+                                className="h-10 text-center font-black rounded-lg bg-slate-50/50 border-slate-100"
+                                value={item.price}
+                                onChange={(e) => updateRow(idx, 'price', e.target.value)}
+                              />
+                              {item.last_price && (
+                                <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 text-[8px] font-bold text-slate-400 whitespace-nowrap">
+                                  Last: {item.last_price}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Selling Price</label>
+                            <Input 
+                              disabled={saving}
+                              type="number" 
+                              className="h-10 text-center font-black rounded-lg bg-slate-50/50 border-slate-100 text-blue-600"
+                              value={item.selling_price}
+                              onChange={(e) => updateRow(idx, 'selling_price', e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
                 </div>
               </div>
 
@@ -631,17 +870,18 @@ export default function Purchases({ profile }) {
                   <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Paid Amount</p>
                   <div className="flex items-center gap-3">
                     <Input 
+                      disabled={saving}
                       type="number" 
                       className="h-12 w-32 font-black text-lg border-slate-200 rounded-xl"
                       value={paidAmount}
                       onChange={(e) => setPaidAmount(parseFloat(e.target.value) || 0)}
                     />
                      <div className="flex flex-col gap-1">
-                        <Button variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase text-rose-600 bg-rose-50" onClick={() => setPaidAmount(0)}>
-                          Credit Pay
+                        <Button disabled={saving} variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase text-rose-600 bg-rose-50" onClick={() => setPaidAmount(0)}>
+                           Credit Pay
                         </Button>
-                        <Button variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase text-blue-600 bg-blue-50" onClick={() => setPaidAmount(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0))}>
-                          Full Pay
+                        <Button disabled={saving} variant="ghost" size="sm" className="h-8 text-[9px] font-black uppercase text-blue-600 bg-blue-50" onClick={() => setPaidAmount(items.reduce((sum, i) => sum + (parseFloat(i.price) * parseInt(i.quantity) || 0), 0))}>
+                           Full Pay
                         </Button>
                       </div>
                   </div>
@@ -656,9 +896,16 @@ export default function Purchases({ profile }) {
                )}
             </div>
             <div className="flex gap-3">
-              <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Cancel</Button>
+              <Button disabled={saving} variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Cancel</Button>
               <Button onClick={handleSave} disabled={saving} className="btn-primary h-14 px-12 rounded-2xl gap-3 shadow-lg shadow-blue-500/20">
-                {saving ? 'Processing...' : <><Check size={20} strokeWidth={3} /> Record Purchase</>}
+                {saving ? (
+                  <>
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Processing...
+                  </>
+                ) : (
+                  <><Check size={20} strokeWidth={3} /> Record Purchase</>
+                )}
               </Button>
             </div>
           </DialogFooter>

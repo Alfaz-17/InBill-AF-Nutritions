@@ -547,6 +547,7 @@ export default function Billing({
                         Customer Name <span className="text-red-500">*</span>
                       </label>
                       <Input 
+                        disabled={saving}
                         placeholder="Name / Business Name" 
                         value={partySearch}
                         onChange={(e) => {
@@ -579,6 +580,7 @@ export default function Billing({
                         Mobile Number
                       </label>
                       <Input 
+                        disabled={saving}
                         placeholder="Phone (WhatsApp)" 
                         value={customerPhone} 
                         onChange={(e) => setCustomerPhone(e.target.value)} 
@@ -590,6 +592,7 @@ export default function Billing({
                         Address / City
                       </label>
                       <Input 
+                        disabled={saving}
                         placeholder="Location" 
                         value={customerAddress} 
                         onChange={(e) => setCustomerAddress(e.target.value)} 
@@ -608,68 +611,135 @@ export default function Billing({
                     </div>
 
                     {cart.length > 0 ? (
-                      <div className="border rounded-lg overflow-hidden">
-                        <table className="w-full text-sm">
-                          <thead className="bg-slate-50 border-b">
-                            <tr>
-                              <th className="text-left p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Product</th>
-                              <th className="text-center p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Quantity</th>
-                              <th className="text-right p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Total</th>
-                              <th className="w-10"></th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y">
-                            {cart.map((item) => (
-                              <tr key={item.product_id} className="hover:bg-slate-50/50">
-                                <td className="p-4">
-                                  <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter leading-none mb-1">{item.brand}</p>
-                                  <p className="font-bold text-slate-900 leading-tight">{item.product_name}</p>
-                                  <div className="flex items-center gap-1 mt-1">
+                      <>
+                        {/* Desktop Cart Table */}
+                        <div className="hidden md:block border rounded-lg overflow-hidden">
+                          <table className="w-full text-sm">
+                            <thead className="bg-slate-50 border-b">
+                              <tr>
+                                <th className="text-left p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Product</th>
+                                <th className="text-center p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Quantity</th>
+                                <th className="text-right p-4 font-bold text-slate-500 uppercase text-[10px] tracking-wider">Total</th>
+                                <th className="w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y">
+                              {cart.map((item) => (
+                                <tr key={item.product_id} className="hover:bg-slate-50/50">
+                                  <td className="p-4">
+                                    <p className="text-[10px] font-bold text-blue-600 uppercase tracking-tighter leading-none mb-1">{item.brand}</p>
+                                    <p className="font-bold text-slate-900 leading-tight">{item.product_name}</p>
+                                    <div className="flex items-center gap-1 mt-1">
+                                      <span className="text-[10px] font-bold text-slate-400">{CURRENCY}</span>
+                                      <input 
+                                        disabled={saving}
+                                        type="number"
+                                        value={item.price}
+                                        onChange={(e) => updateCartPrice(item.product_id, e.target.value)}
+                                        className="w-20 text-[11px] font-black text-blue-600 bg-blue-50/50 border-none rounded px-1 outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                                      />
+                                      <span className="text-[10px] font-bold text-slate-300">/ {item.unit}</span>
+                                    </div>
+                                  </td>
+                                  <td className="p-4">
+                                    <div className="flex items-center justify-center gap-2">
+                                      <Button disabled={saving} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQty(item.product_id, -1)}><Minus size={12} /></Button>
+                                      <span className="w-8 text-center font-bold">{item.quantity}</span>
+                                      <Button disabled={saving} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQty(item.product_id, 1)}><Plus size={12} /></Button>
+                                    </div>
+                                  </td>
+                                  <td className="p-4 text-right">
+                                    <div className="flex flex-col items-end">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-xs font-black text-slate-400">{CURRENCY}</span>
+                                        <input 
+                                          disabled={saving}
+                                          type="number"
+                                          value={Math.round(item.price * item.quantity)}
+                                          onChange={(e) => updateCartLineTotal(item.product_id, e.target.value)}
+                                          className="w-24 text-right font-black text-slate-900 bg-slate-50 border-none rounded px-1 outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                                        />
+                                      </div>
+                                      {item.original_price > item.price && (
+                                        <span className="text-[10px] font-bold text-emerald-600">
+                                          -{CURRENCY}{((item.original_price - item.price) * item.quantity).toLocaleString()} OFF
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="p-4">
+                                    <Button disabled={saving} variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50" onClick={() => setCart(cart.filter(c => c.product_id !== item.product_id))}>
+                                      <Trash2 size={16} />
+                                    </Button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Mobile Cart Cards */}
+                        <div className="block md:hidden space-y-3">
+                          {cart.map((item) => (
+                            <div key={item.product_id} className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm flex flex-col gap-3">
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  {item.brand && <p className="text-[9px] font-bold text-blue-600 uppercase tracking-tighter leading-none mb-0.5">{item.brand}</p>}
+                                  <p className="font-bold text-slate-900 text-sm leading-tight">{item.product_name}</p>
+                                  {item.product_size && <span className="text-[9px] font-black text-slate-400 uppercase">{item.product_size}</span>}
+                                </div>
+                                <Button disabled={saving} variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl" onClick={() => setCart(cart.filter(c => c.product_id !== item.product_id))}>
+                                  <Trash2 size={14} />
+                                </Button>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-3 items-center border-t border-slate-50 pt-3">
+                                <div>
+                                  <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Price/{item.unit}</div>
+                                  <div className="flex items-center gap-0.5">
                                     <span className="text-[10px] font-bold text-slate-400">{CURRENCY}</span>
                                     <input 
+                                      disabled={saving}
                                       type="number"
                                       value={item.price}
                                       onChange={(e) => updateCartPrice(item.product_id, e.target.value)}
-                                      className="w-20 text-[11px] font-black text-blue-600 bg-blue-50/50 border-none rounded px-1 outline-none focus:ring-1 focus:ring-blue-500"
+                                      className="w-full text-xs font-black text-blue-600 bg-blue-50/50 border-none rounded px-1 py-1 outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
                                     />
-                                    <span className="text-[10px] font-bold text-slate-300">/ {item.unit}</span>
                                   </div>
-                                </td>
-                                <td className="p-4">
-                                  <div className="flex items-center justify-center gap-2">
-                                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQty(item.product_id, -1)}><Minus size={12} /></Button>
-                                    <span className="w-8 text-center font-bold">{item.quantity}</span>
-                                    <Button variant="outline" size="icon" className="h-7 w-7" onClick={() => updateCartQty(item.product_id, 1)}><Plus size={12} /></Button>
+                                </div>
+
+                                <div className="flex flex-col items-center">
+                                  <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Qty</div>
+                                  <div className="flex items-center gap-1.5">
+                                    <Button disabled={saving} variant="outline" size="icon" className="h-7 w-7 rounded-lg" onClick={() => updateCartQty(item.product_id, -1)}><Minus size={10} /></Button>
+                                    <span className="w-6 text-center font-black text-sm">{item.quantity}</span>
+                                    <Button disabled={saving} variant="outline" size="icon" className="h-7 w-7 rounded-lg" onClick={() => updateCartQty(item.product_id, 1)}><Plus size={10} /></Button>
                                   </div>
-                                </td>
-                                <td className="p-4 text-right">
-                                  <div className="flex flex-col items-end">
-                                    <div className="flex items-center gap-1">
-                                      <span className="text-xs font-black text-slate-400">{CURRENCY}</span>
-                                      <input 
-                                        type="number"
-                                        value={Math.round(item.price * item.quantity)}
-                                        onChange={(e) => updateCartLineTotal(item.product_id, e.target.value)}
-                                        className="w-24 text-right font-black text-slate-900 bg-slate-50 border-none rounded px-1 outline-none focus:ring-1 focus:ring-blue-500"
-                                      />
-                                    </div>
-                                    {item.original_price > item.price && (
-                                      <span className="text-[10px] font-bold text-emerald-600">
-                                        -{CURRENCY}{((item.original_price - item.price) * item.quantity).toLocaleString()} OFF
-                                      </span>
-                                    )}
+                                </div>
+
+                                <div className="text-right">
+                                  <div className="text-[9px] font-black text-slate-400 uppercase mb-1">Total</div>
+                                  <div className="flex items-center justify-end gap-0.5">
+                                    <span className="text-[10px] font-black text-slate-400">{CURRENCY}</span>
+                                    <input 
+                                      disabled={saving}
+                                      type="number"
+                                      value={Math.round(item.price * item.quantity)}
+                                      onChange={(e) => updateCartLineTotal(item.product_id, e.target.value)}
+                                      className="w-full text-right text-xs font-black text-slate-900 bg-slate-50 border-none rounded px-1 py-1 outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+                                    />
                                   </div>
-                                </td>
-                                <td className="p-4">
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-slate-400 hover:text-red-500 hover:bg-red-50" onClick={() => setCart(cart.filter(c => c.product_id !== item.product_id))}>
-                                    <Trash2 size={16} />
-                                  </Button>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                                  {item.original_price > item.price && (
+                                    <span className="text-[9px] font-bold text-emerald-600">
+                                      -{CURRENCY}{((item.original_price - item.price) * item.quantity).toLocaleString()} OFF
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
                     ) : (
                       <div className="text-center py-12 border-2 border-dashed rounded-lg bg-slate-50/50">
                         <ShoppingCart size={40} className="mx-auto text-slate-300" />
@@ -735,7 +805,7 @@ export default function Billing({
 
                     <div className="space-y-2 pt-4">
                       <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Payment Mode</label>
-                      <Select value={paymentMode} onValueChange={(v) => {
+                      <Select disabled={saving} value={paymentMode} onValueChange={(v) => {
                         setPaymentMode(v);
                         if (v === 'Credit') setPaidAmount('0');
                       }}>
@@ -756,23 +826,26 @@ export default function Billing({
                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">Amount Paid ({CURRENCY})</label>
                         <div className="flex gap-3">
                           <button 
+                            disabled={saving}
                             onClick={() => {
                               setPaidAmount('0');
                               setPaymentMode('Credit');
                             }}
-                            className="text-[10px] font-black text-rose-600 hover:underline"
+                            className="text-[10px] font-black text-rose-600 hover:underline disabled:opacity-50"
                           >
                             SET CREDIT
                           </button>
                           <button 
+                            disabled={saving}
                             onClick={() => setPaidAmount(grandTotal.toString())}
-                            className="text-[10px] font-black text-blue-600 hover:underline"
+                            className="text-[10px] font-black text-blue-600 hover:underline disabled:opacity-50"
                           >
                             SET FULL
                           </button>
                         </div>
                       </div>
                       <Input 
+                        disabled={saving}
                         type="number" 
                         placeholder={grandTotal.toString()} 
                         value={paidAmount} 
@@ -841,12 +914,19 @@ export default function Billing({
                       disabled={cart.length === 0 || saving}
                       onClick={handleSave}
                     >
-                      {saving ? 'Processing...' : <><Printer size={20} /> Complete & Print</>}
+                      {saving ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          Processing...
+                        </>
+                      ) : (
+                        <><Printer size={20} /> Complete & Print</>
+                      )}
                     </Button>
                   </CardFooter>
                 </Card>
 
-                <Button variant="ghost" className="text-red-500 font-bold hover:bg-red-50" onClick={() => setCart([])}>
+                <Button disabled={saving} variant="ghost" className="text-red-500 font-bold hover:bg-red-50" onClick={() => setCart([])}>
                   Discard All Items
                 </Button>
               </div>

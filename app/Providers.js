@@ -337,25 +337,61 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
       },
       saveAs: async (base64HTML, name) => {
         const html = decodeURIComponent(escape(atob(base64HTML)));
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(html);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(() => {
-          printWindow.print();
-        }, 1000);
-        return { success: true };
+        const loadHtml2Pdf = () => {
+          return new Promise((resolve, reject) => {
+            if (window.html2pdf) {
+              resolve(window.html2pdf);
+              return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+            script.crossOrigin = 'anonymous';
+            script.onload = () => {
+              if (window.html2pdf) {
+                resolve(window.html2pdf);
+              } else {
+                reject(new Error('html2pdf failed to load'));
+              }
+            };
+            script.onerror = (err) => {
+              reject(err);
+            };
+            document.head.appendChild(script);
+          });
+        };
+
+        try {
+          const html2pdf = await loadHtml2Pdf();
+          const opt = {
+            margin:       [10, 10, 10, 10],
+            filename:     name || 'document.pdf',
+            image:        { type: 'jpeg', quality: 0.98 },
+            html2canvas:  { 
+              scale: 2.2, 
+              useCORS: true, 
+              logging: false,
+              windowWidth: 1024
+            },
+            jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
+          };
+          await html2pdf().from(html.trim()).set(opt).save();
+          return { success: true };
+        } catch (err) {
+          console.error('Failed to generate PDF via html2pdf:', err);
+          // Fallback to print window if CDN load fails
+          const printWindow = window.open('', '_blank');
+          printWindow.document.write(html);
+          printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => {
+            printWindow.print();
+          }, 1000);
+          return { success: true };
+        }
       },
       saveDirect: async (base64HTML, name) => {
-        const html = decodeURIComponent(escape(atob(base64HTML)));
-        const blob = new Blob([html], { type: 'text/html' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = name.replace('.pdf', '.html');
-        a.click();
-        URL.revokeObjectURL(url);
-        return { success: true };
+        // Direct save on mobile/web behaves the same as saveAs (triggers download dialog)
+        return window.electronAPI.pdf.saveAs(base64HTML, name);
       },
       share: async (base64HTML) => {
         const html = decodeURIComponent(escape(atob(base64HTML)));

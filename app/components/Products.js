@@ -38,6 +38,9 @@ export default function Products({ profile }) {
   const [categories, setCategories] = useState([]);
   const [attributeDefs, setAttributeDefs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [savingAttribute, setSavingAttribute] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterCat, setFilterCat] = useState('All');
   const [showModal, setShowModal] = useState(false);
@@ -140,6 +143,7 @@ export default function Products({ profile }) {
 
   const handleSave = async () => {
     if (!form.product_name.trim()) return;
+    setSaving(true);
     try {
       const payload = {
         ...form,
@@ -162,10 +166,12 @@ export default function Products({ profile }) {
       setShowModal(false);
       loadProducts();
     } catch (e) { toast('System error: ' + e.message, 'error'); }
+    finally { setSaving(false); }
   };
 
   const commitAttributeDef = async () => {
     if (!newAttrName.trim()) return;
+    setSavingAttribute(true);
     try {
       await window.electronAPI.attributes.add({ 
         name: newAttrName.trim(), 
@@ -176,6 +182,7 @@ export default function Products({ profile }) {
       setNewAttrName('');
       toast(`System field "${newAttrName}" added`);
     } catch (e) { toast('Failed to add field', 'error'); }
+    finally { setSavingAttribute(false); }
   };
 
   const handleDeleteAttribute = async (id, name) => {
@@ -223,12 +230,14 @@ export default function Products({ profile }) {
 
   const handleAddCategory = async () => {
     if (!newCat.trim()) return;
+    setSavingCategory(true);
     try {
       await window.electronAPI.categories.add(newCat.trim());
       await loadCategories();
       setNewCat('');
       toast(`Category "${newCat}" added`);
     } catch (e) { console.error(e); }
+    finally { setSavingCategory(false); }
   };
 
   const handleDeleteCategory = async (id, name) => {
@@ -338,58 +347,109 @@ export default function Products({ profile }) {
       <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
         <div className="table-wrap border-none shadow-none rounded-none">
           {filtered.length > 0 ? (
-            <table className="w-full">
-              <thead>
-                <tr>
-                  <th>Product Inventory Details</th>
-                  <th>Category</th>
-                  <th className="text-right">Pricing</th>
-                  <th className="text-center">Stock</th>
-                  <th className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
+            <>
+              {/* Desktop Table View */}
+              <div className="hidden md:block">
+                <table className="w-full">
+                  <thead>
+                    <tr>
+                      <th>Product Inventory Details</th>
+                      <th>Category</th>
+                      <th className="text-right">Pricing</th>
+                      <th className="text-center">Stock</th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {paginated.map((p) => (
+                      <tr key={p.id} className="group hover:bg-slate-50/50 transition-colors">
+                        <td>
+                          <div className="flex items-center gap-3">
+                            <div className="font-black text-slate-900 text-base">{p.product_name}</div>
+                            {p.product_size && (
+                              <Badge variant="secondary" className="bg-slate-100 text-slate-900 font-black rounded-lg">{p.product_size}</Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1.5">
+                            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{p.brand || 'NO BRAND'}</span>
+                            {p.batch_number && <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest border-l pl-3">BATCH: {p.batch_number}</span>}
+                          </div>
+                        </td>
+                        <td>
+                          <Badge className="bg-blue-50 text-blue-600 border-blue-100 rounded-xl font-black">{p.category || 'General'}</Badge>
+                        </td>
+                        <td className="text-right">
+                          <div className="font-black text-slate-900 text-lg">{CURRENCY}{p.selling_price?.toLocaleString() || '0'}</div>
+                        </td>
+                        <td className="text-center">
+                          <Badge className={`rounded-xl px-4 py-1.5 font-black text-xs ${
+                            p.quantity <= 0 ? 'bg-rose-500' : p.quantity <= (p.min_stock_alert ?? 10) ? 'bg-amber-500' : 'bg-emerald-500'
+                          }`}>
+                            {p.quantity <= 0 ? 'OUT' : p.quantity <= (p.min_stock_alert ?? 10) ? `LOW: ${p.quantity}` : `${p.quantity} IN`}
+                          </Badge>
+                        </td>
+                        <td className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="h-10 w-10 rounded-xl text-slate-400 hover:text-primary hover:bg-blue-50">
+                              <Edit3 size={18} />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)} className="h-10 w-10 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50">
+                              <Trash2 size={18} />
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Mobile Cards View */}
+              <div className="block md:hidden divide-y divide-slate-100">
                 {paginated.map((p) => (
-                  <tr key={p.id} className="group hover:bg-slate-50/50 transition-colors">
-                    <td>
-                      <div className="flex items-center gap-3">
-                        <div className="font-black text-slate-900 text-base">{p.product_name}</div>
-                        {p.product_size && (
-                          <Badge variant="secondary" className="bg-slate-100 text-slate-900 font-black rounded-lg">{p.product_size}</Badge>
-                        )}
+                  <div key={p.id} className="p-4 flex flex-col gap-3 hover:bg-slate-50/50 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="font-black text-slate-900 text-sm leading-snug break-words">{p.product_name}</div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{p.brand || 'NO BRAND'}</span>
+                          {p.product_size && (
+                            <Badge variant="secondary" className="bg-slate-100 text-slate-900 font-extrabold text-[9px] px-1.5 py-0.5 rounded-md">{p.product_size}</Badge>
+                          )}
+                          <Badge className="bg-blue-50 text-blue-600 border-blue-100 text-[9px] font-black rounded-lg px-1.5 py-0.5">{p.category || 'General'}</Badge>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3 mt-1.5">
-                        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">{p.brand || 'NO BRAND'}</span>
-                        {p.batch_number && <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest border-l pl-3">BATCH: {p.batch_number}</span>}
-                      </div>
-                    </td>
-                    <td>
-                      <Badge className="bg-blue-50 text-blue-600 border-blue-100 rounded-xl font-black">{p.category || 'General'}</Badge>
-                    </td>
-                    <td className="text-right">
-                      <div className="font-black text-slate-900 text-lg">{CURRENCY}{p.selling_price?.toLocaleString() || '0'}</div>
-                    </td>
-                    <td className="text-center">
-                      <Badge className={`rounded-xl px-4 py-1.5 font-black text-xs ${
-                        p.quantity <= 0 ? 'bg-rose-500' : p.quantity <= (p.min_stock_alert ?? 10) ? 'bg-amber-500' : 'bg-emerald-500'
+                      <Badge className={`rounded-xl px-2.5 py-1.5 font-black text-[10px] whitespace-nowrap self-start ${
+                        p.quantity <= 0 ? 'bg-rose-500 text-white' : p.quantity <= (p.min_stock_alert ?? 10) ? 'bg-amber-500 text-white' : 'bg-emerald-500 text-white'
                       }`}>
                         {p.quantity <= 0 ? 'OUT' : p.quantity <= (p.min_stock_alert ?? 10) ? `LOW: ${p.quantity}` : `${p.quantity} IN`}
                       </Badge>
-                    </td>
-                    <td className="text-right">
-                      <div className="flex justify-end gap-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="h-10 w-10 rounded-xl text-slate-400 hover:text-primary hover:bg-blue-50">
-                          <Edit3 size={18} />
+                    </div>
+
+                    <div className="flex justify-between items-center bg-slate-50/80 p-2.5 rounded-xl border border-slate-100/50">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Selling Price</span>
+                        <span className="font-black text-slate-900 text-sm">{CURRENCY}{p.selling_price?.toLocaleString() || '0'}</span>
+                      </div>
+                      {p.batch_number && (
+                        <div className="flex flex-col">
+                          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Batch</span>
+                          <span className="font-bold text-slate-600 text-xs">{p.batch_number}</span>
+                        </div>
+                      )}
+                      <div className="flex gap-1.5">
+                        <Button variant="ghost" size="icon" onClick={() => openEdit(p)} className="h-8 w-8 rounded-lg text-slate-400 hover:text-primary hover:bg-blue-50">
+                          <Edit3 size={15} />
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)} className="h-10 w-10 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50">
-                          <Trash2 size={18} />
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(p.id)} className="h-8 w-8 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50">
+                          <Trash2 size={15} />
                         </Button>
                       </div>
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
+              </div>
+            </>
           ) : (
             <div className="flex flex-col items-center justify-center py-32 text-slate-300">
               <Package size={64} strokeWidth={1} />
@@ -461,15 +521,15 @@ export default function Products({ profile }) {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-2 form-group">
                   <label className="form-label">Full Product Name *</label>
-                  <Input value={form.product_name} onChange={(e) => setForm({ ...form, product_name: e.target.value })} className="form-input h-14" placeholder="e.g. Samsung S24 Ultra Titanium" />
+                  <Input disabled={saving} value={form.product_name} onChange={(e) => setForm({ ...form, product_name: e.target.value })} className="form-input h-14" placeholder="e.g. Samsung S24 Ultra Titanium" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Variant / Size</label>
-                  <Input value={form.product_size} onChange={(e) => setForm({ ...form, product_size: e.target.value })} className="form-input h-14" placeholder="e.g. 512GB, 2kg" />
+                  <Input disabled={saving} value={form.product_size} onChange={(e) => setForm({ ...form, product_size: e.target.value })} className="form-input h-14" placeholder="e.g. 512GB, 2kg" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Category</label>
-                  <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
+                  <Select disabled={saving} value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
                     <SelectTrigger className="form-input h-14"><SelectValue placeholder="Select Category" /></SelectTrigger>
                     <SelectContent>
                       {categories.map(c => <SelectItem key={c.id} value={c.name} className="font-bold">{c.name}</SelectItem>)}
@@ -478,11 +538,11 @@ export default function Products({ profile }) {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Brand / Maker</label>
-                  <Input value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} className="form-input h-14" placeholder="e.g. Samsung" />
+                  <Input disabled={saving} value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} className="form-input h-14" placeholder="e.g. Samsung" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Measurement Unit</label>
-                  <Select value={form.unit} onValueChange={(v) => setForm({ ...form, unit: v })}>
+                  <Select disabled={saving} value={form.unit} onValueChange={(v) => setForm({ ...form, unit: v })}>
                     <SelectTrigger className="form-input h-14"><SelectValue placeholder="Unit" /></SelectTrigger>
                     <SelectContent>
                       {UNITS.map(u => <SelectItem key={u} value={u} className="font-bold uppercase">{u}</SelectItem>)}
@@ -501,14 +561,14 @@ export default function Products({ profile }) {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
                 <div className="form-group md:col-span-2">
                   <label className="form-label">Selling Price ({CURRENCY})</label>
-                  <Input type="number" value={form.selling_price || ''} onChange={(e) => setForm({ ...form, selling_price: e.target.value })} className="form-input h-14 text-2xl font-black text-blue-600" />
+                  <Input disabled={saving} type="number" value={form.selling_price || ''} onChange={(e) => setForm({ ...form, selling_price: e.target.value })} className="form-input h-14 text-2xl font-black text-blue-600" />
                 </div>
                 <div className="form-group md:col-span-2">
                   <label className="form-label flex justify-between">
                     Cost Price ({CURRENCY})
                     {editId && <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full uppercase animate-pulse">Manual Update</span>}
                   </label>
-                  <Input type="number" value={form.cost_price || ''} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} className="form-input h-14 font-black text-emerald-600" />
+                  <Input disabled={saving} type="number" value={form.cost_price || ''} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} className="form-input h-14 font-black text-emerald-600" />
                   {editId && (
                     <p className="text-[10px] font-bold text-slate-400 mt-2 italic">
                       Note: Changing cost here updates ALL existing stock. For new price batches, use the <b>Stock Inflow</b> module.
@@ -517,7 +577,7 @@ export default function Products({ profile }) {
                 </div>
                 <div className="form-group md:col-span-2">
                   <label className="form-label">{TAX_LABEL} Percentage (%)</label>
-                  <Select value={form.gst_rate.toString()} onValueChange={(v) => {
+                  <Select disabled={saving} value={form.gst_rate.toString()} onValueChange={(v) => {
                     const val = parseFloat(v);
                     setForm({ ...form, gst_rate: val, cgst: val / 2, sgst: val / 2 });
                   }}>
@@ -529,15 +589,15 @@ export default function Products({ profile }) {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Barcode / SKU</label>
-                  <Input value={form.barcode || ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} className="form-input h-14 font-mono" placeholder="Scan or type..." />
+                  <Input disabled={saving} value={form.barcode || ''} onChange={(e) => setForm({ ...form, barcode: e.target.value })} className="form-input h-14 font-mono" placeholder="Scan or type..." />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Current Stock</label>
-                  <Input type="number" value={form.quantity || ''} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="form-input h-14 font-black text-rose-600" />
+                  <Input disabled={saving} type="number" value={form.quantity || ''} onChange={(e) => setForm({ ...form, quantity: e.target.value })} className="form-input h-14 font-black text-rose-600" />
                 </div>
                 <div className="form-group">
                   <label className="form-label">Alert Stock Qty</label>
-                  <Input type="number" value={form.min_stock_alert} onChange={(e) => setForm({ ...form, min_stock_alert: e.target.value })} className="form-input h-14 font-black text-amber-600" />
+                  <Input disabled={saving} type="number" value={form.min_stock_alert} onChange={(e) => setForm({ ...form, min_stock_alert: e.target.value })} className="form-input h-14 font-black text-amber-600" />
                   <p className="text-[9px] font-bold text-slate-400 mt-2 italic">Triggers low-stock warning</p>
                 </div>
               </div>
@@ -561,10 +621,16 @@ export default function Products({ profile }) {
                       value={newAttrName} 
                       onChange={(e) => setNewAttrName(e.target.value)}
                       className="h-12 rounded-xl border-slate-100 bg-slate-50/50"
+                      disabled={saving || savingAttribute}
                     />
                   </div>
-                  <Button onClick={commitAttributeDef} className="h-12 px-6 rounded-xl bg-purple-600 font-black gap-2 text-white">
-                    <Plus size={16} /> Add Field
+                  <Button onClick={commitAttributeDef} disabled={saving || savingAttribute || !newAttrName.trim()} className="h-12 px-6 rounded-xl bg-purple-600 font-black gap-2 text-white">
+                    {savingAttribute ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Plus size={16} />
+                    )}
+                    Add Field
                   </Button>
                 </div>
 
@@ -587,6 +653,7 @@ export default function Products({ profile }) {
                               e.stopPropagation();
                               handleDeleteAttribute(def.id, def.name);
                             }}
+                            disabled={saving}
                           >
                             <Trash2 size={14} />
                           </Button>
@@ -599,6 +666,7 @@ export default function Products({ profile }) {
                           })} 
                           className="form-input h-12 bg-slate-50/30 border-slate-100 focus:bg-white transition-all font-bold"
                           placeholder={`Enter ${def.name}...`}
+                          disabled={saving}
                         />
                       </div>
                     ))}
@@ -614,9 +682,14 @@ export default function Products({ profile }) {
           </div>
 
           <DialogFooter className="p-10 bg-white border-t flex gap-3 sm:justify-end">
-            <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Discard</Button>
-            <Button onClick={handleSave} className="btn-primary h-14 px-10 rounded-2xl gap-3">
-              <Check size={20} strokeWidth={3} /> {editId ? 'Update Inventory' : 'Register Product'}
+            <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)} disabled={saving}>Discard</Button>
+            <Button onClick={handleSave} className="btn-primary h-14 px-10 rounded-2xl gap-3" disabled={saving || !form.product_name.trim()}>
+              {saving ? (
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Check size={20} strokeWidth={3} />
+              )}
+              {saving ? 'Saving...' : editId ? 'Update Inventory' : 'Register Product'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -636,8 +709,15 @@ export default function Products({ profile }) {
                 value={newCat} 
                 onChange={(e) => setNewCat(e.target.value)}
                 className="h-12 font-bold rounded-xl"
+                disabled={savingCategory}
               />
-              <Button onClick={handleAddCategory} className="h-12 rounded-xl bg-blue-600">Add</Button>
+              <Button onClick={handleAddCategory} disabled={savingCategory || !newCat.trim()} className="h-12 rounded-xl bg-blue-600 min-w-[70px]">
+                {savingCategory ? (
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mx-auto" />
+                ) : (
+                  'Add'
+                )}
+              </Button>
             </div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {categories.map(c => (
@@ -645,6 +725,7 @@ export default function Products({ profile }) {
                   <span className="font-bold text-slate-700">{c.name}</span>
                   <Button 
                     variant="ghost" 
+                    disabled={savingCategory}
                     size="icon" 
                     className="h-9 w-9 rounded-xl text-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
                     onClick={(e) => {

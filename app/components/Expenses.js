@@ -25,6 +25,7 @@ export default function Expenses({ profile }) {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({ category: 'Other', description: '', amount: '' });
+  const [saving, setSaving] = useState(false);
 
   const CURRENCY = profile?.currency_symbol || '₹';
 
@@ -56,7 +57,8 @@ export default function Expenses({ profile }) {
   };
 
   const handleSave = async () => {
-    if (!form.amount || parseFloat(form.amount) <= 0) return;
+    if (!form.amount || parseFloat(form.amount) <= 0 || saving) return;
+    setSaving(true);
     try {
       await window.electronAPI.expenses.add({
         ...form,
@@ -67,6 +69,7 @@ export default function Expenses({ profile }) {
       setForm({ category: 'Other', description: '', amount: '' });
       loadExpenses();
     } catch (e) { toast(e.message, 'error'); }
+    setSaving(false);
   };
 
   const handleDelete = async (id) => {
@@ -137,7 +140,8 @@ export default function Expenses({ profile }) {
 
       {/* Expense List */}
       <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
-        <div className="table-wrap border-none shadow-none rounded-none">
+        {/* Desktop View */}
+        <div className="hidden md:block table-wrap border-none shadow-none rounded-none">
           {expenses.length > 0 ? (
             <table className="w-full">
               <thead>
@@ -182,6 +186,47 @@ export default function Expenses({ profile }) {
             </div>
           )}
         </div>
+
+        {/* Mobile View */}
+        <div className="block md:hidden p-4">
+          {expenses.length > 0 ? (
+            <div className="space-y-3">
+              {expenses.map((e) => (
+                <div key={e.id} className="bg-white rounded-3xl p-4 border border-slate-100 shadow-sm flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <Badge className="bg-rose-50 text-rose-600 border-rose-100 rounded-lg font-black text-[10px]">
+                      {e.category.toUpperCase()}
+                    </Badge>
+                    <span className="text-xs font-bold text-slate-500">
+                      {new Date(e.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="font-bold text-slate-700 text-sm">{e.description || 'General Expense'}</div>
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Ref: #EXP-{e.id}</div>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-slate-50 pt-2.5">
+                    <div>
+                      <div className="text-[9px] font-black text-slate-400 uppercase">Outflow Amount</div>
+                      <div className="font-black text-slate-900 text-base">{CURRENCY}{e.amount.toLocaleString()}</div>
+                    </div>
+                    <Button variant="ghost" size="icon" onClick={() => handleDelete(e.id)} className="h-9 w-9 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50">
+                      <Trash2 size={16} />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16 text-slate-300">
+              <PieChart size={48} strokeWidth={1} />
+              <p className="mt-4 font-black text-sm">No expense records found</p>
+              <Button variant="link" className="text-primary font-black mt-2 text-xs" onClick={() => setShowModal(true)}>Record First Expense</Button>
+            </div>
+          )}
+        </div>
       </Card>
 
       {/* Expense Modal */}
@@ -203,7 +248,7 @@ export default function Expenses({ profile }) {
             <div className="space-y-6">
                <div className="form-group">
                  <label className="form-label">Expense Category</label>
-                 <Select value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
+                 <Select disabled={saving} value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
                     <SelectTrigger className="form-input h-14 font-black"><SelectValue placeholder="Classification" /></SelectTrigger>
                     <SelectContent>
                       {categories.map(c => <SelectItem key={c.id} value={c.name} className="font-bold">{c.name}</SelectItem>)}
@@ -216,21 +261,30 @@ export default function Expenses({ profile }) {
                  <label className="form-label">Amount Outflow ({CURRENCY})</label>
                  <div className="relative">
                     <IndianRupee size={20} className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-500" />
-                    <Input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="form-input h-14 pl-12 text-2xl font-black text-rose-600" placeholder="0.00" />
+                    <Input disabled={saving} type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="form-input h-14 pl-12 text-2xl font-black text-rose-600" placeholder="0.00" />
                  </div>
                </div>
 
                <div className="form-group">
                  <label className="form-label">Transaction Narrative / Note</label>
-                 <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="form-input min-h-[120px] py-4" placeholder="e.g. Electricity bill payment, Office stationery..." />
+                 <Textarea disabled={saving} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="form-input min-h-[120px] py-4" placeholder="e.g. Electricity bill payment, Office stationery..." />
                </div>
             </div>
           </div>
 
           <DialogFooter className="p-10 bg-white border-t flex gap-3 sm:justify-end">
-            <Button variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Discard</Button>
-            <Button onClick={handleSave} className="btn-primary h-14 px-12 rounded-2xl gap-3 shadow-lg shadow-rose-500/20">
-              <Check size={20} strokeWidth={3} /> Record Outflow
+            <Button disabled={saving} variant="outline" className="h-14 px-10 rounded-2xl font-black border-slate-200" onClick={() => setShowModal(false)}>Discard</Button>
+            <Button disabled={saving || !form.amount} onClick={handleSave} className="btn-primary h-14 px-12 rounded-2xl gap-3 shadow-lg shadow-rose-500/20">
+              {saving ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Recording...
+                </>
+              ) : (
+                <>
+                  <Check size={20} strokeWidth={3} /> Record Outflow
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
