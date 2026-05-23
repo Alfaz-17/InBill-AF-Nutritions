@@ -105,7 +105,7 @@ export default function Reports({ profile }) {
           if (saveResult.success) {
             toast("Exact invoice PDF downloaded!", "success");
           } else if (saveResult.fallback === 'print') {
-            toast(saveResult.error || "PDF download could not start. Print view opened instead.", "warning");
+            toast(saveResult.error || "PDF download could not start. Please try again.", "warning");
           } else if (saveResult.error) {
             toast(saveResult.error, "warning");
           } else {
@@ -176,7 +176,7 @@ export default function Reports({ profile }) {
         if (saveResult?.success) {
           toast("Report saved successfully!", "success");
         } else if (saveResult?.fallback === 'print') {
-          toast(saveResult.error || "Report PDF download could not start. Print view opened instead.", "warning");
+          toast(saveResult.error || "Report PDF download could not start. Please try again.", "warning");
         } else if (saveResult?.error) {
           toast(saveResult.error, "warning");
         } else {
@@ -497,7 +497,7 @@ export default function Reports({ profile }) {
                                     }
                                     const total = (s.total_amount || 0) - (s.returned_total || 0);
                                       const invoiceUrl = `${window.location.origin}/api/invoice/${encodeURIComponent(s.invoice_number)}`;
-                                      const msg = `Hello ${s.customer_name || 'Customer'},\n\nYour invoice *#${s.invoice_number || ''}* for *${CURRENCY}${total.toLocaleString()}* from *${profile?.business_name || 'InBill'}* is ready.\n\n📄 View & Download Invoice:\n${invoiceUrl}\n\nThank you for your business! 🙏`;
+                                      const msg = `Hello ${s.customer_name || 'Customer'},\n\nYour invoice *#${s.invoice_number || ''}* for *${CURRENCY}${total.toLocaleString()}* from *${profile?.business_name || 'InBill'}* is ready.\n\n📄 Direct PDF Download:\n${invoiceUrl}\n\nThank you for your business! 🙏`;
                                       const phone = s.customer_phone || '';
                                       if (!phone) {
                                         toast("No phone number found for this customer", "info");
@@ -586,7 +586,7 @@ export default function Reports({ profile }) {
                                       return;
                                     }
                                     const invoiceUrl = `${window.location.origin}/api/invoice/${encodeURIComponent(s.invoice_number)}`;
-                                    const msg = `Hello ${s.customer_name || 'Customer'},\n\nYour invoice *#${s.invoice_number || ''}* for *${CURRENCY}${total.toLocaleString()}* from *${profile?.business_name || 'InBill'}* is ready.\n\n📄 View & Download Invoice:\n${invoiceUrl}\n\nThank you for your business! 🙏`;
+                                    const msg = `Hello ${s.customer_name || 'Customer'},\n\nYour invoice *#${s.invoice_number || ''}* for *${CURRENCY}${total.toLocaleString()}* from *${profile?.business_name || 'InBill'}* is ready.\n\n📄 Direct PDF Download:\n${invoiceUrl}\n\nThank you for your business! 🙏`;
                                     const phone = s.customer_phone || '';
                                     if (!phone) {
                                       toast("No phone number found for this customer", "info");

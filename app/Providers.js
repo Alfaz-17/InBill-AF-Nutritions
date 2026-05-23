@@ -439,24 +439,9 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
             };
           }
 
-          // Fallback to print window if the browser blocks the download library.
-          const printWindow = window.open('', '_blank');
-          if (!printWindow) {
-            return {
-              success: false,
-              error: 'Could not open the print window. Please allow popups and try again.',
-            };
-          }
-          printWindow.document.write(html);
-          printWindow.document.close();
-          printWindow.focus();
-          setTimeout(() => {
-            printWindow.print();
-          }, 1000);
           return {
             success: false,
-            error: 'PDF download could not start. Opened print view as a fallback.',
-            fallback: 'print',
+            error: 'PDF download could not start automatically. Please try again.',
           };
         }
       },

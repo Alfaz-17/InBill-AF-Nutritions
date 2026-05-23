@@ -68,45 +68,60 @@ export async function GET(req, { params }) {
       '</head>',
       `
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Invoice #${escapeHtml(sale.invoice_number)} - ${escapeHtml(profile.business_name || 'InBill')}</title>
+  <title>Downloading Invoice #${escapeHtml(sale.invoice_number)}</title>
   <style>
-    body { background: #e2e8f0; padding-bottom: 40px; }
-    .page { box-shadow: 0 10px 40px rgba(0,0,0,0.1); margin-top: 20px; border-radius: 8px; overflow: hidden; }
-    #no-print-toolbar {
-      position: sticky;
-      top: 0;
+    body { background: #f8fafc; min-height: 100vh; }
+    .page { margin: 0 auto; }
+    #download-status {
+      position: fixed;
+      inset: 0;
       z-index: 1000;
-      background: rgba(15, 23, 42, 0.95);
-      backdrop-filter: blur(12px);
-      padding: 12px 20px;
       display: flex;
+      flex-direction: column;
       align-items: center;
-      justify-content: space-between;
-      color: white;
+      justify-content: center;
+      gap: 14px;
+      padding: 24px;
+      text-align: center;
+      background: #f8fafc;
+      color: #0f172a;
       font-family: 'Inter', sans-serif;
     }
-    .toolbar-brand { display: flex; align-items: center; gap: 8px; }
-    .toolbar-brand span { font-weight: 800; font-size: 14px; }
-    .toolbar-actions { display: flex; gap: 8px; }
-    .btn {
-      padding: 8px 16px; border-radius: 8px; font-weight: 700; font-size: 12px;
-      cursor: pointer; border: none; transition: all 0.2s;
+    #download-status h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
     }
-    .btn-download { background: #4f46e5; color: white; }
-    .btn-download:hover { background: #4338ca; }
-    .btn-print { background: rgba(255,255,255,0.1); color: white; }
-    .btn-print:hover { background: rgba(255,255,255,0.2); }
-    @media (max-width: 640px) {
-      body { padding-bottom: 20px; }
-      .page { margin-top: 0; border-radius: 0; box-shadow: none; }
-      #no-print-toolbar { align-items: flex-start; gap: 10px; padding: 10px; flex-direction: column; }
-      .toolbar-actions { width: 100%; display: grid; grid-template-columns: 1fr 1fr; }
-      .btn { width: 100%; padding: 10px 12px; }
+    #download-status p {
+      margin: 0;
+      max-width: 360px;
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.5;
     }
+    #download-status button {
+      min-height: 44px;
+      padding: 0 18px;
+      border: 0;
+      border-radius: 12px;
+      background: #0f766e;
+      color: #ffffff;
+      font-weight: 900;
+      cursor: pointer;
+    }
+    .spinner {
+      width: 42px;
+      height: 42px;
+      border-radius: 999px;
+      border: 4px solid #ccfbf1;
+      border-top-color: #0f766e;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     @media print {
-      #no-print-toolbar { display: none !important; }
-      body { background: white; padding-bottom: 0; }
-      .page { box-shadow: none; margin-top: 0; border-radius: 0; }
+      #download-status { display: none !important; }
     }
   </style>
 </head>`
@@ -115,15 +130,10 @@ export async function GET(req, { params }) {
     invoiceHTML = invoiceHTML.replace(
       '<body>',
       `<body>
-  <div id="no-print-toolbar">
-    <div class="toolbar-brand">
-      <span>${escapeHtml(profile.business_name || 'InBill')}</span>
-      <span style="font-weight: 400; color: #94a3b8; font-size: 12px;">Invoice #${escapeHtml(sale.invoice_number)}</span>
-    </div>
-    <div class="toolbar-actions">
-      <button class="btn btn-print" onclick="window.print()">Print</button>
-      <button class="btn btn-download" id="downloadBtn" onclick="downloadPDF()">Download PDF</button>
-    </div>
+  <div id="download-status">
+    <div class="spinner" aria-hidden="true"></div>
+    <h1>Downloading invoice PDF</h1>
+    <p>Invoice #${escapeHtml(sale.invoice_number)} will download automatically. You can close this tab after the download starts.</p>
   </div>`
     );
 
@@ -165,21 +175,25 @@ export async function GET(req, { params }) {
       });
     }
 
-    async function downloadPDF() {
-      var btn = document.getElementById('downloadBtn');
-      if (!btn || btn.disabled) return;
-      btn.textContent = 'Generating...';
-      btn.disabled = true;
+    function setStatus(title, message, retry) {
+      var status = document.getElementById('download-status');
+      if (!status) return;
+      status.innerHTML =
+        (retry ? '' : '<div class="spinner" aria-hidden="true"></div>') +
+        '<h1>' + title + '</h1>' +
+        '<p>' + message + '</p>' +
+        (retry ? '<button type="button" onclick="downloadPDF()">Try download again</button>' : '');
+    }
 
+    async function downloadPDF() {
       var el = document.querySelector('.page');
       if (!el) {
-        btn.textContent = 'Download PDF';
-        btn.disabled = false;
-        window.print();
+        setStatus('Invoice not ready', 'Please refresh this link and try again.', true);
         return;
       }
 
       try {
+        setStatus('Preparing invoice PDF', 'Please wait while your download starts automatically.', false);
         var html2pdf = await loadHtml2Pdf();
         await new Promise(function(resolve) { setTimeout(resolve, 500); });
         var opt = {
@@ -197,14 +211,16 @@ export async function GET(req, { params }) {
         };
 
         await html2pdf().from(el).set(opt).save();
+        setStatus('PDF download started', 'Check your downloads folder for ' + invoicePdfFileName + '.', true);
       } catch (error) {
         console.error('Invoice PDF download failed:', error);
-        window.print();
-      } finally {
-        btn.textContent = 'Download PDF';
-        btn.disabled = false;
+        setStatus('PDF download needs a retry', 'The browser could not start the download automatically. Tap below to try again.', true);
       }
     }
+
+    window.addEventListener('load', function() {
+      setTimeout(downloadPDF, 700);
+    });
   </script>
 </body>`
     );

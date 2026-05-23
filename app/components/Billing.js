@@ -376,7 +376,7 @@ export default function Billing({
         if (saveResult?.success) {
           toast.success("PDF saved successfully");
         } else if (saveResult?.fallback === 'print') {
-          toast.warning(saveResult.error || "PDF download could not start. Print view opened instead.");
+          toast.warning(saveResult.error || "PDF download could not start. Please try again.");
         } else if (saveResult?.error) {
           toast.warning(saveResult.error);
         } else {
@@ -475,7 +475,7 @@ export default function Billing({
     const msg = `Hello ${saleResult.customer_name || 'Customer'},\n\n` +
       `Your invoice *#${invoiceNo}* from *${profile?.business_name || 'InBill'}* is ready.\n\n` +
       `💰 *Total: ${CURRENCY}${saleResult.grandTotal?.toLocaleString()}*\n\n` +
-      `📄 View & Download Invoice:\n${invoiceUrl}\n\n` +
+      `📄 Direct PDF Download:\n${invoiceUrl}\n\n` +
       `Thank you for your business! 🙏`;
 
     const wpUrl = `https://wa.me/${phone.length === 10 ? '91' + phone : phone}?text=${encodeURIComponent(msg)}`;
