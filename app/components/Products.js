@@ -114,6 +114,18 @@ export default function Products({ profile }) {
     return acc;
   }, {}), [products]);
 
+  const visibleCategories = useMemo(() => {
+    const seen = new Set();
+    const saved = categories.map((cat) => ({ id: cat.id, name: cat.name, saved: true }));
+    const fromProducts = Object.keys(categoryCounts).map((name) => ({ id: `product-${name}`, name, saved: false }));
+    return [...saved, ...fromProducts].filter((cat) => {
+      const key = cat.name.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [categories, categoryCounts]);
+
   // Pagination Logic
   const totalPages = Math.ceil(filtered.length / itemsPerPage);
   const paginated = useMemo(() => (
@@ -247,6 +259,10 @@ export default function Products({ profile }) {
 
   const handleAddCategory = async () => {
     if (!newCat.trim()) return;
+    if (visibleCategories.some((cat) => cat.name.toLowerCase() === newCat.trim().toLowerCase())) {
+      toast('Category already exists', 'info');
+      return;
+    }
     setSavingCategory(true);
     try {
       await window.electronAPI.categories.add(newCat.trim());
@@ -282,7 +298,7 @@ export default function Products({ profile }) {
   }
 
   return (
-    <div className="flex flex-col gap-8 md:p-2 lg:p-4 animate-in">
+    <div className="inventory-page flex flex-col gap-8 md:p-2 lg:p-4 animate-in">
       <header className="page-header">
         <div>
           <h2>Inventory Master</h2>
@@ -342,7 +358,7 @@ export default function Products({ profile }) {
           >
             All ({products.length})
           </Button>
-          {categories.map(cat => (
+          {visibleCategories.map(cat => (
             <Button 
               key={cat.id}
               variant={filterCat === cat.name ? 'default' : 'outline'}
@@ -359,7 +375,7 @@ export default function Products({ profile }) {
       </div>
 
       {/* Product Table */}
-      <Card className="rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
+      <Card className="inventory-list-card rounded-[2.5rem] border-slate-100 shadow-xl shadow-slate-200/40 overflow-hidden">
         <div className="table-wrap border-none shadow-none rounded-none">
           {filtered.length > 0 ? (
             <>
@@ -420,9 +436,9 @@ export default function Products({ profile }) {
               </div>
 
               {/* Mobile Cards View */}
-              <div className="block md:hidden divide-y divide-slate-100">
+              <div className="product-list-mobile block md:hidden">
                 {paginated.map((p) => (
-                  <div key={p.id} className="p-4 flex flex-col gap-3 hover:bg-slate-50/50 transition-colors">
+                  <div key={p.id} className="product-mobile-card flex flex-col gap-3 hover:bg-slate-50/50 transition-colors">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="font-black text-slate-900 text-sm leading-snug break-words">{p.product_name}</div>
@@ -441,7 +457,7 @@ export default function Products({ profile }) {
                       </Badge>
                     </div>
 
-                    <div className="flex justify-between items-center bg-slate-50/80 p-2.5 rounded-xl border border-slate-100/50">
+                    <div className="product-mobile-card-footer flex justify-between items-center bg-slate-50/80 p-2.5 rounded-xl border border-slate-100/50">
                       <div className="flex flex-col">
                         <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Selling Price</span>
                         <span className="font-black text-slate-900 text-sm">{CURRENCY}{p.selling_price?.toLocaleString() || '0'}</span>
@@ -547,7 +563,7 @@ export default function Products({ profile }) {
                   <Select disabled={saving} value={form.category} onValueChange={(v) => setForm({ ...form, category: v })}>
                     <SelectTrigger className="form-input h-14"><SelectValue placeholder="Select Category" /></SelectTrigger>
                     <SelectContent>
-                      {categories.map(c => <SelectItem key={c.id} value={c.name} className="font-bold">{c.name}</SelectItem>)}
+                      {visibleCategories.map(c => <SelectItem key={c.id} value={c.name} className="font-bold">{c.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -735,25 +751,31 @@ export default function Products({ profile }) {
               </Button>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[55vh] overflow-y-auto pr-1">
-              {categories.length > 0 ? categories.map(c => (
+              {visibleCategories.length > 0 ? visibleCategories.map(c => (
                 <div key={c.id} className="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-2xl group border border-slate-100">
                   <div className="min-w-0">
                     <span className="block truncate font-black text-slate-700">{c.name}</span>
-                    <span className="text-[10px] font-bold text-slate-400">{categoryCounts[c.name] || 0} products</span>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      {categoryCounts[c.name] || 0} products{!c.saved ? ' - from items' : ''}
+                    </span>
                   </div>
-                  <Button 
-                    variant="ghost" 
-                    disabled={savingCategory}
-                    size="icon" 
-                    className="h-9 w-9 rounded-xl text-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      handleDeleteCategory(c.id, c.name);
-                    }}
-                  >
-                    <Trash2 size={16} />
-                  </Button>
+                  {c.saved ? (
+                    <Button 
+                      variant="ghost" 
+                      disabled={savingCategory}
+                      size="icon" 
+                      className="h-9 w-9 rounded-xl text-rose-300 hover:text-rose-600 hover:bg-rose-50 transition-all"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleDeleteCategory(c.id, c.name);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </Button>
+                  ) : (
+                    <Badge className="bg-amber-50 text-amber-700 border-amber-100 rounded-lg text-[9px] font-black">In Use</Badge>
+                  )}
                 </div>
               )) : (
                 <div className="sm:col-span-2 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm font-bold text-slate-400">
