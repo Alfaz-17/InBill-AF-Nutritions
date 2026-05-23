@@ -362,15 +362,24 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
 
         try {
           const html2pdf = await loadHtml2Pdf();
+
+          // Preload the Google Font used in templates before capture
+          const fontLink = document.createElement('link');
+          fontLink.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap';
+          fontLink.rel = 'stylesheet';
+          document.head.appendChild(fontLink);
+          await new Promise(r => setTimeout(r, 600));
+
           const opt = {
-            margin:       [10, 10, 10, 10],
+            margin:       0, // Template HTML already has 15mm padding built-in
             filename:     name || 'document.pdf',
             image:        { type: 'jpeg', quality: 0.98 },
             html2canvas:  { 
               scale: 2.2, 
               useCORS: true, 
               logging: false,
-              windowWidth: 1024
+              width: 794,        // 210mm in pixels — exact A4 width
+              windowWidth: 794   // Lock rendering viewport to match template
             },
             jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' }
           };

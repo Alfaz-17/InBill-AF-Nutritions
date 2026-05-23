@@ -400,33 +400,18 @@ export default function Billing({
       return;
     }
 
-    setPdfGenerating(true);
-    try {
-      const html = generateInvoiceHTML(saleResult, profile);
-      const res = await window.electronAPI.pdf.generate(html);
-      
-      if (res.success) {
-        const fileName = `Invoice_${saleResult.invoice_number || saleResult.invoiceNumber}.pdf`;
-        const saveRes = await window.electronAPI.pdf.saveDirect(res.buffer, fileName);
-        
-        if (saveRes.success) {
-          toast.success("Invoice ready! Just press Ctrl+V in WhatsApp.");
-          
-          // Open WhatsApp Chat
-          const wpUrl = `https://wa.me/${phone.length === 10 ? '91' + phone : phone}`;
-          window.open(wpUrl, '_blank');
-          
-          // Instruction Toast
-          setTimeout(() => {
-            toast("The file is copied. Simply PASTE (Ctrl+V) it into the chat.", "info");
-          }, 2000);
-        }
-      }
-    } catch (e) {
-      console.error(e);
-      toast.error("Manual share failed");
-    }
-    setPdfGenerating(false);
+    const invoiceNo = saleResult.invoice_number || saleResult.invoiceNumber;
+    const invoiceUrl = `${window.location.origin}/api/invoice/${encodeURIComponent(invoiceNo)}`;
+
+    const msg = `Hello ${saleResult.customer_name || 'Customer'},\n\n` +
+      `Your invoice *#${invoiceNo}* from *${profile?.business_name || 'InBill'}* is ready.\n\n` +
+      `💰 *Total: ${CURRENCY}${saleResult.grandTotal?.toLocaleString()}*\n\n` +
+      `📄 View & Download Invoice:\n${invoiceUrl}\n\n` +
+      `Thank you for your business! 🙏`;
+
+    const wpUrl = `https://wa.me/${phone.length === 10 ? '91' + phone : phone}?text=${encodeURIComponent(msg)}`;
+    window.open(wpUrl, '_blank');
+    toast.success("Opening WhatsApp with invoice link...");
   };
 
   return (
@@ -1016,11 +1001,10 @@ export default function Billing({
                 return (
                   <Button 
                     variant="outline"
-                    className="h-12 gap-2 rounded-xl border-blue-100 bg-blue-50/50 font-black text-blue-700 hover:bg-blue-50 hover:border-blue-200" 
+                    className="h-12 gap-2 rounded-xl border-emerald-100 bg-emerald-50/50 font-black text-emerald-700 hover:bg-emerald-50 hover:border-emerald-200" 
                     onClick={handleManualPDFShare}
-                    disabled={pdfGenerating}
                   >
-                    <FileText size={18} className="text-blue-500" /> Save & Share PDF (Manual)
+                    <MessageCircle size={18} className="text-emerald-500" /> Share Invoice on WhatsApp
                   </Button>
                 );
               })()}
