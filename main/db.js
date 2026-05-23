@@ -151,7 +151,10 @@ if (isWebEnv) {
     constructor(url) {
       this.url = null;
       this.pgClient = null;
-      this.connect(url || process.env.DATABASE_URL);
+      const actualUrl = (url && (url.startsWith('postgresql://') || url.startsWith('postgres://'))) 
+        ? url 
+        : process.env.DATABASE_URL;
+      this.connect(actualUrl);
       if (!this.url) {
         console.warn("DATABASE_URL is not set but application is running in Web Mode.");
       }
