@@ -108,18 +108,6 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
       'Content-Type': 'application/json',
     };
 
-    try {
-      const encNeon = localStorage.getItem('inbill_enc_neon_url');
-      if (encNeon) {
-        const decNeon = await decryptVal(encNeon);
-        if (decNeon && (decNeon.startsWith('postgresql://') || decNeon.startsWith('postgres://'))) {
-          headers['x-neon-url'] = decNeon;
-        } else if (decNeon) {
-          console.warn("⚠️ Malformed/invalid connection URL detected. Clearing from localStorage to self-heal:", decNeon);
-          localStorage.removeItem('inbill_enc_neon_url');
-        }
-      }
-    } catch (e) {}
 
     try {
       const encGemini = localStorage.getItem('inbill_enc_gemini_key');

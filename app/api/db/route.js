@@ -231,26 +231,7 @@ export async function POST(req) {
       mobileAccessOps
     } = getDB();
     
-    // Extract dynamic web-client browser credentials
-    const neonUrlHeader = req.headers.get('x-neon-url');
     const geminiKeyHeader = req.headers.get('x-gemini-key');
-    
-    if (neonUrlHeader && typeof db.connect === 'function') {
-      db.connect(neonUrlHeader);
-    }
-    
-    if (neonUrlHeader) {
-      const currentProfile = await db.prepare('SELECT neon_db_url, use_cloud FROM business_profile WHERE id = 1').get();
-      if (!currentProfile) {
-        await db.prepare('INSERT INTO business_profile (id, neon_db_url, use_cloud) VALUES (1, ?, 1)').run(neonUrlHeader);
-        console.log("🔄 Seeded first business profile with custom Neon URL.");
-        try { await syncToCloud(); } catch (e) { console.error("Auto-sync error on seed:", e); }
-      } else if (currentProfile.neon_db_url !== neonUrlHeader || currentProfile.use_cloud !== 1) {
-        await db.prepare('UPDATE business_profile SET neon_db_url = ?, use_cloud = 1 WHERE id = 1').run(neonUrlHeader);
-        console.log("🔄 Dynamically updated session Neon Postgres connection URL.");
-        try { await syncToCloud(); } catch (e) { console.error("Auto-sync error on update:", e); }
-      }
-    }
 
     if (geminiKeyHeader) {
       const currentProfile = await db.prepare('SELECT gemini_api_key FROM business_profile WHERE id = 1').get();
@@ -488,19 +469,7 @@ export async function POST(req) {
         result = { success: true };
         break;
       case 'settings:getNeonConfig':
-        const neonRow = await db.prepare('SELECT neon_db_url, use_cloud FROM business_profile WHERE id = 1').get();
-        result = { url: neonRow?.neon_db_url || '', useCloud: neonRow?.use_cloud === 1 };
-        break;
-      case 'settings:setNeonConfig':
-        let cleanUrl = (args[0]?.url || '').trim();
-        if (cleanUrl.startsWith('psql ')) {
-          cleanUrl = cleanUrl.replace(/^psql\s+['"]?|['"]?$/g, '');
-        } else {
-          cleanUrl = cleanUrl.replace(/^['"]|['"]$/g, '');
-        }
-        cleanUrl = cleanUrl.split('?')[0];
-        await db.prepare('UPDATE business_profile SET neon_db_url = ?, use_cloud = ? WHERE id = 1').run(cleanUrl, args[0]?.useCloud ? 1 : 0);
-        result = { success: true };
+        result = { url: process.env.DATABASE_URL || '', useCloud: !!process.env.DATABASE_URL };
         break;
       case 'settings:resetData':
         await resetDB();

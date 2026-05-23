@@ -28,7 +28,6 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
   const [error, setError] = useState('');
   
   const [neonConfig, setNeonConfig] = useState({ url: '', useCloud: false });
-  const [syncing, setSyncing] = useState(false);
   const [softwarePassword, setSoftwarePassword] = useState('');
   const [hasSoftwarePassword, setHasSoftwarePassword] = useState(false);
 
@@ -87,10 +86,6 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
   };
 
   const handleGenerateMobileAccess = async () => {
-    if (!neonConfig.url || !neonConfig.useCloud) {
-      toast('Please enable Neon Cloud Sync first (Data & Security tab)', 'error');
-      return;
-    }
     setMobileLoading(true);
     try {
       const config = await window.electronAPI.mobile.generate();
@@ -209,35 +204,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
     setSaving(false);
   };
 
-  const handleSaveNeonConfig = async () => {
-    setSaving(true);
-    try {
-      const res = await window.electronAPI.settings.setNeonConfig(neonConfig);
-      if (res.success) {
-        toast('Cloud configuration saved', 'success');
-      } else {
-        toast(res.error || 'Failed to save', 'error');
-      }
-    } catch (e) { toast(e.message, 'error'); }
-    setSaving(false);
-  };
 
-  const handleSyncToCloud = async () => {
-    if (!neonConfig.url) {
-      toast('Please enter a Neon Connection URL first', 'error');
-      return;
-    }
-    setSyncing(true);
-    try {
-      const res = await window.electronAPI.settings.syncToCloud();
-      if (res.success) {
-        toast('Local data synced to Neon Cloud!', 'success');
-      } else {
-        toast(res.error || 'Sync failed', 'error');
-      }
-    } catch (e) { toast(e.message, 'error'); }
-    setSyncing(false);
-  };
 
 
 
@@ -719,46 +686,7 @@ export default function SettingsPage({ profile, onProfileUpdate }) {
                     }
                   }}>🔥 Hard Reset System (Wipe All)</Button>
                 </div>
-                <div className="pt-6 mt-6 border-t border-slate-100 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="text-lg font-black text-slate-900">Neon Cloud Sync</h4>
-                      <p className="text-xs font-bold text-slate-500">Enable cloud-based setup and backups</p>
-                    </div>
-                    <Switch 
-                      checked={neonConfig.useCloud} 
-                      onCheckedChange={(v) => setNeonConfig({ ...neonConfig, useCloud: v })} 
-                    />
-                  </div>
 
-                  <div className="space-y-4">
-                    <div className="form-group">
-                      <label className="form-label">Neon Connection URL</label>
-                      <Input 
-                        type="password"
-                        value={neonConfig.url} 
-                        onChange={(e) => setNeonConfig({ ...neonConfig, url: e.target.value })} 
-                        placeholder="postgresql://user:pass@host/db"
-                        className="form-input h-12"
-                      />
-                    </div>
-                    <div className="flex gap-2">
-                      <Button onClick={handleSaveNeonConfig} disabled={saving} className="flex-1 h-12 rounded-xl font-bold">
-                        Save Config
-                      </Button>
-                      <Button onClick={handleSyncToCloud} disabled={syncing} className="flex-1 h-12 rounded-xl font-bold bg-indigo-600 hover:bg-indigo-700 text-white gap-2">
-                        {syncing ? <RefreshCw className="animate-spin" size={16} /> : <Download size={16} />}
-                        Sync to Cloud
-                      </Button>
-                    </div>
-                  </div>
-                  <p className="text-[10px] text-slate-500 font-bold bg-indigo-50 p-4 rounded-2xl border border-indigo-100 leading-relaxed">
-                    <b>Why Neon Cloud?</b> Enabling Cloud Sync allows you to access your business data from multiple devices simultaneously and provides an automatic off-site backup. 
-                    <br/><br/>
-                    <b>Setup:</b> Copy your connection string from the Neon Console (PostgreSQL format). 
-                    The app will automatically mirror your local products, sales, and ledgers to the cloud.
-                  </p>
-                </div>
               </CardContent>
             </Card>
 
