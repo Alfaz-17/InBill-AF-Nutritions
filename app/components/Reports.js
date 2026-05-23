@@ -89,6 +89,11 @@ export default function Reports({ profile }) {
 
   const handleDownloadPDF = async (sale) => {
     if (typeof window === 'undefined' || !window.electronAPI || pdfGenerating) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast("No internet connection. Reconnect and try downloading the PDF again.", "warning");
+      return;
+    }
+
     setPdfGenerating(true);
     try {
       const fullSale = await window.electronAPI.sales.getByInvoice(sale.invoice_number);
@@ -99,6 +104,10 @@ export default function Reports({ profile }) {
           const saveResult = await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${fullSale.invoice_number}.pdf`);
           if (saveResult.success) {
             toast("Exact invoice PDF downloaded!", "success");
+          } else if (saveResult.fallback === 'print') {
+            toast(saveResult.error || "PDF download could not start. Print view opened instead.", "warning");
+          } else if (saveResult.error) {
+            toast(saveResult.error, "warning");
           } else {
             toast("PDF download cancelled", "info");
           }
@@ -141,6 +150,11 @@ export default function Reports({ profile }) {
 
   const handleDownloadReportPDF = async () => {
     if (!data || pdfGenerating) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast("No internet connection. Reconnect and try downloading the report again.", "warning");
+      return;
+    }
+
     setPdfGenerating(true);
     try {
       let html;
@@ -161,6 +175,10 @@ export default function Reports({ profile }) {
         const saveResult = await window.electronAPI.pdf.saveAs(res.buffer, filename);
         if (saveResult?.success) {
           toast("Report saved successfully!", "success");
+        } else if (saveResult?.fallback === 'print') {
+          toast(saveResult.error || "Report PDF download could not start. Print view opened instead.", "warning");
+        } else if (saveResult?.error) {
+          toast(saveResult.error, "warning");
         } else {
           toast("Report download cancelled", "info");
         }
@@ -472,8 +490,12 @@ export default function Reports({ profile }) {
                                     variant="ghost" 
                                     size="sm" 
                                     onClick={async () => {
-                                      if (!s) return;
-                                      const total = (s.total_amount || 0) - (s.returned_total || 0);
+                                    if (!s) return;
+                                    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                                      toast("No internet connection. WhatsApp sharing needs internet.", "warning");
+                                      return;
+                                    }
+                                    const total = (s.total_amount || 0) - (s.returned_total || 0);
                                       const invoiceUrl = `${window.location.origin}/api/invoice/${encodeURIComponent(s.invoice_number)}`;
                                       const msg = `Hello ${s.customer_name || 'Customer'},\n\nYour invoice *#${s.invoice_number || ''}* for *${CURRENCY}${total.toLocaleString()}* from *${profile?.business_name || 'InBill'}* is ready.\n\n📄 View & Download Invoice:\n${invoiceUrl}\n\nThank you for your business! 🙏`;
                                       const phone = s.customer_phone || '';
@@ -559,6 +581,10 @@ export default function Reports({ profile }) {
                                   size="sm" 
                                   onClick={async () => {
                                     if (!s) return;
+                                    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+                                      toast("No internet connection. WhatsApp sharing needs internet.", "warning");
+                                      return;
+                                    }
                                     const invoiceUrl = `${window.location.origin}/api/invoice/${encodeURIComponent(s.invoice_number)}`;
                                     const msg = `Hello ${s.customer_name || 'Customer'},\n\nYour invoice *#${s.invoice_number || ''}* for *${CURRENCY}${total.toLocaleString()}* from *${profile?.business_name || 'InBill'}* is ready.\n\n📄 View & Download Invoice:\n${invoiceUrl}\n\nThank you for your business! 🙏`;
                                     const phone = s.customer_phone || '';

@@ -4,6 +4,29 @@ import { useState, useEffect } from 'react';
 import { Toaster } from "@/components/ui/sonner";
 import ToastProvider from './components/ToastProvider';
 
+const OFFLINE_MESSAGE = 'You are offline. InBill is still working with local data; cloud sync, AI and WhatsApp will resume when internet is back.';
+
+const isLikelyNetworkError = (error) => {
+  const message = String(error?.message || error || '').toLowerCase();
+  return (
+    error?.name === 'TypeError' ||
+    message.includes('failed to fetch') ||
+    message.includes('network') ||
+    message.includes('internet') ||
+    message.includes('offline') ||
+    message.includes('econnrefused') ||
+    message.includes('enotfound') ||
+    message.includes('etimedout') ||
+    message.includes('fetch failed')
+  );
+};
+
+const friendlyError = (message = OFFLINE_MESSAGE) => {
+  const err = new Error(message);
+  err.code = 'INBILL_OFFLINE';
+  return err;
+};
+
 // Browser-compatible window.electronAPI Polyfill
 if (typeof window !== 'undefined' && !window.electronAPI) {
   // Client-Side Crypto Helper using Web Crypto API (AES-GCM)
@@ -103,16 +126,24 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
       }
     } catch (e) {}
 
-    const res = await fetch('/api/db', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ channel, args }),
-    });
+    let res;
+    try {
+      res = await fetch('/api/db', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ channel, args }),
+      });
+    } catch (e) {
+      if (isLikelyNetworkError(e)) {
+        throw friendlyError();
+      }
+      throw e;
+    }
     let responseText = '';
     try {
       responseText = await res.text();
     } catch (e) {
-      throw new Error('Failed to read response text');
+      throw friendlyError('The app could not read the server response. Please try again.');
     }
 
     let responseData;
@@ -123,6 +154,9 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
     }
 
     if (!res.ok) {
+      if (responseData?.isOffline || isLikelyNetworkError(responseData?.error || responseData?.message)) {
+        throw friendlyError(responseData?.error || OFFLINE_MESSAGE);
+      }
       throw new Error(responseData?.error || responseData?.message || 'Database operation failed');
     }
     return responseData.result;
@@ -336,6 +370,14 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
         return { success: true, buffer: base64HTML };
       },
       saveAs: async (base64HTML, name) => {
+        const isOffline = typeof navigator !== 'undefined' && navigator.onLine === false;
+        if (isOffline) {
+          return {
+            success: false,
+            error: 'No internet connection. PDF download needs internet in web mode.',
+          };
+        }
+
         const html = decodeURIComponent(escape(atob(base64HTML)));
         const loadHtml2Pdf = () => {
           return new Promise((resolve, reject) => {
@@ -387,15 +429,32 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
           return { success: true };
         } catch (err) {
           console.error('Failed to generate PDF via html2pdf:', err);
-          // Fallback to print window if CDN load fails
+          if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+            return {
+              success: false,
+              error: 'No internet connection. Please reconnect and try downloading the PDF again.',
+            };
+          }
+
+          // Fallback to print window if the browser blocks the download library.
           const printWindow = window.open('', '_blank');
+          if (!printWindow) {
+            return {
+              success: false,
+              error: 'Could not open the print window. Please allow popups and try again.',
+            };
+          }
           printWindow.document.write(html);
           printWindow.document.close();
           printWindow.focus();
           setTimeout(() => {
             printWindow.print();
           }, 1000);
-          return { success: true };
+          return {
+            success: false,
+            error: 'PDF download could not start. Opened print view as a fallback.',
+            fallback: 'print',
+          };
         }
       },
       saveDirect: async (base64HTML, name) => {
@@ -403,8 +462,21 @@ if (typeof window !== 'undefined' && !window.electronAPI) {
         return window.electronAPI.pdf.saveAs(base64HTML, name);
       },
       share: async (base64HTML) => {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+          return {
+            success: false,
+            error: 'No internet connection. Sharing needs internet.',
+          };
+        }
+
         const html = decodeURIComponent(escape(atob(base64HTML)));
         const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+          return {
+            success: false,
+            error: 'Could not open share/print window. Please allow popups and try again.',
+          };
+        }
         printWindow.document.write(html);
         printWindow.document.close();
         printWindow.focus();
@@ -539,4 +611,3 @@ export default function Providers({ children }) {
     </QueryClientProvider>
   );
 }
-

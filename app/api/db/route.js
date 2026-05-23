@@ -3,6 +3,24 @@ import { NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 
 let dbInstance = null;
+const OFFLINE_MESSAGE = 'You are offline. InBill is still working with local data; cloud sync, AI and WhatsApp will resume when internet is back.';
+
+function isLikelyNetworkError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  return (
+    code.includes('econn') ||
+    code.includes('enotfound') ||
+    code.includes('etimedout') ||
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('internet') ||
+    message.includes('offline') ||
+    message.includes('timeout') ||
+    message.includes('getaddrinfo') ||
+    message.includes('connection')
+  );
+}
 
 function getDB() {
   if (!dbInstance) {
@@ -37,7 +55,8 @@ async function handleParseInvoice({ base64, mimeType }) {
   const apiKey = await getGeminiApiKey();
   if (!apiKey) return { success: false, error: "GEMINI_API_KEY not configured." };
 
-  const ai = new GoogleGenAI({ apiKey });
+  try {
+    const ai = new GoogleGenAI({ apiKey });
   
   const prompt = `
     You are an expert invoice parser. Extract EVERY piece of structured data from this invoice image.
@@ -86,23 +105,24 @@ async function handleParseInvoice({ base64, mimeType }) {
     }
   `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
-        inlineData: {
-          data: base64,
-          mimeType: mimeType
-        }
-      },
-      { text: prompt }
-    ],
-    config: { responseMimeType: "application/json" }
-  });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          inlineData: {
+            data: base64,
+            mimeType: mimeType
+          }
+        },
+        { text: prompt }
+      ],
+      config: { responseMimeType: "application/json" }
+    });
 
-  const parsedData = JSON.parse(response.text || "{}");
+    const parsedData = JSON.parse(response.text || "{}");
   
   const lineItems = (parsedData.items || []).map(item => ({
+    description: item.description || item.product_name || "Unknown Product",
     product_name: item.description || item.product_name || "Unknown Product",
     category: item.category || "General",
     product_size: item.product_size || "",
@@ -124,17 +144,23 @@ async function handleParseInvoice({ base64, mimeType }) {
     Object.keys(item.custom_fields).forEach(k => detectedFields.add(k));
   });
 
-  return {
-    success: true,
-    vendor: parsedData.vendor || "",
-    invoice_number: parsedData.invoice_number || "",
-    date: parsedData.date || "",
-    invoice_total: parseFloat(parsedData.invoice_total) || lineItems.reduce((s, i) => s + i.amount, 0),
-    other_charges: parseFloat(parsedData.other_charges) || 0,
-    items: lineItems,
-    detected_new_fields: [...detectedFields],
-    detected_categories: [...detectedCategories],
-  };
+    return {
+      success: true,
+      vendor: parsedData.vendor || "",
+      invoice_number: parsedData.invoice_number || "",
+      date: parsedData.date || "",
+      invoice_total: parseFloat(parsedData.invoice_total) || lineItems.reduce((s, i) => s + i.amount, 0),
+      other_charges: parseFloat(parsedData.other_charges) || 0,
+      items: lineItems,
+      detected_new_fields: [...detectedFields],
+      detected_categories: [...detectedCategories],
+    };
+  } catch (error) {
+    if (isLikelyNetworkError(error)) {
+      return { success: false, isOffline: true, error: OFFLINE_MESSAGE };
+    }
+    throw error;
+  }
 }
 
 // AI Insights Handler
@@ -142,7 +168,8 @@ async function handleGetInsights(snapshot) {
   const apiKey = await getGeminiApiKey();
   if (!apiKey) return { success: false, error: "GEMINI_API_KEY not configured." };
 
-  const ai = new GoogleGenAI({ apiKey });
+  try {
+    const ai = new GoogleGenAI({ apiKey });
   
   const prompt = `
     You are a world-class Business Intelligence Consultant for a small retail/trading business.
@@ -162,14 +189,20 @@ async function handleGetInsights(snapshot) {
     ["Insight 1", "Insight 2", "Insight 3", "Insight 4"]
   `;
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [{ text: prompt }],
-    config: { responseMimeType: "application/json" },
-  });
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [{ text: prompt }],
+      config: { responseMimeType: "application/json" },
+    });
 
-  const resultText = response.text || "[]";
-  return { success: true, insights: JSON.parse(resultText) };
+    const resultText = response.text || "[]";
+    return { success: true, insights: JSON.parse(resultText) };
+  } catch (error) {
+    if (isLikelyNetworkError(error)) {
+      return { success: false, isOffline: true, error: OFFLINE_MESSAGE };
+    }
+    throw error;
+  }
 }
 
 export async function POST(req) {
@@ -492,6 +525,9 @@ export async function POST(req) {
     return NextResponse.json({ result });
   } catch (error) {
     console.error('API Database handler error:', error);
+    if (isLikelyNetworkError(error)) {
+      return NextResponse.json({ error: OFFLINE_MESSAGE, isOffline: true }, { status: 503 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

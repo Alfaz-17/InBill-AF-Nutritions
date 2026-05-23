@@ -124,18 +124,7 @@ export default function AIUpload({ onBack, profile }) {
         payload = { base64: b64, mimeType: file.type };
       }
 
-      // Call Electron IPC - logic now runs in the Main Process
-      let result;
-      if (typeof window !== 'undefined' && window.electronAPI) {
-        result = await window.electronAPI.ai.parseInvoice(payload);
-      } else {
-        const res = await fetch('/api/parse-invoice', { 
-          method: 'POST', 
-          headers: {'Content-Type': 'application/json'}, 
-          body: JSON.stringify(payload) 
-        });
-        result = await res.json();
-      }
+      const result = await window.electronAPI.ai.parseInvoice(payload);
 
       if (result.success) {
         if (!result.items || result.items.length === 0) {
@@ -160,7 +149,7 @@ export default function AIUpload({ onBack, profile }) {
         setError(result.error || 'Failed to parse invoice');
       }
     } catch (e) {
-      setError('System error: ' + e.message);
+      setError(e?.message || 'Invoice parsing failed. Please try again.');
     }
 
     setParsing(false);

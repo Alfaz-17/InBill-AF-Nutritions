@@ -322,6 +322,11 @@ export default function Billing({
 
   const handleDownloadPDF = async () => {
     if (!saleResult || pdfGenerating) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast.warning("No internet connection. Reconnect and try downloading the PDF again.");
+      return;
+    }
+
     setPdfGenerating(true);
     try {
       const html = generateInvoiceHTML(saleResult, profile);
@@ -330,6 +335,10 @@ export default function Billing({
         const saveResult = await window.electronAPI.pdf.saveAs(res.buffer, `Invoice_${saleResult.invoice_number || saleResult.invoiceNumber}.pdf`);
         if (saveResult?.success) {
           toast.success("PDF saved successfully");
+        } else if (saveResult?.fallback === 'print') {
+          toast.warning(saveResult.error || "PDF download could not start. Print view opened instead.");
+        } else if (saveResult?.error) {
+          toast.warning(saveResult.error);
         } else {
           toast.info("PDF download cancelled");
         }
@@ -358,6 +367,10 @@ export default function Billing({
 
   const handleWhatsAppInvoice = async () => {
     if (!saleResult || whatsappSending) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast.warning("No internet connection. WhatsApp sharing needs internet.");
+      return;
+    }
     
     const phone = saleResult.customer_phone || '';
     if (!phone) {
@@ -405,6 +418,10 @@ export default function Billing({
 
   const handleManualPDFShare = async () => {
     if (!saleResult || pdfGenerating) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      toast.warning("No internet connection. WhatsApp sharing needs internet.");
+      return;
+    }
     
     const phone = (saleResult.customer_phone || '').replace(/\D/g, '');
     if (!phone) {

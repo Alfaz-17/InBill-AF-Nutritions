@@ -11,6 +11,24 @@ try {
 
 const isDev = app ? !app.isPackaged : true;
 const isWebEnv = process.env.IS_WEB === 'true' || !!process.env.DATABASE_URL || !!process.env.VERCEL;
+const OFFLINE_MESSAGE = 'You are offline. InBill is still working with local data; cloud sync, AI and WhatsApp will resume when internet is back.';
+
+function isLikelyNetworkError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  return (
+    code.includes('econn') ||
+    code.includes('enotfound') ||
+    code.includes('etimedout') ||
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('internet') ||
+    message.includes('offline') ||
+    message.includes('timeout') ||
+    message.includes('getaddrinfo') ||
+    message.includes('connection')
+  );
+}
 
 let Database;
 if (isWebEnv) {
@@ -3033,7 +3051,8 @@ const syncToCloud = async () => {
     }
   } catch (err) {
     console.error("❌ Cloud Sync Error (Handled):", err.message);
-    return { success: false, error: err.message };
+    const isOffline = isLikelyNetworkError(err);
+    return { success: false, isOffline, error: isOffline ? OFFLINE_MESSAGE : err.message };
   } finally {
     isSyncing = false;
     if (syncQueued) {

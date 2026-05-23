@@ -6,6 +6,29 @@ const fs = require('fs');
 const isDev = !app.isPackaged;
 const { db, initDB, resetDB, productOps, saleOps, purchaseOps, statsOps, reportOps, expenseOps, partyOps, returnOps, businessProfileOps, categoryOps, expenseCategoryOps, attributeOps, storageOps, syncToCloud, mobileAccessOps, authOps } = require('./db');
 
+const OFFLINE_MESSAGE = 'You are offline. InBill is still working with local data; cloud sync, AI and WhatsApp will resume when internet is back.';
+
+function isLikelyNetworkError(error) {
+  const message = String(error?.message || error || '').toLowerCase();
+  const code = String(error?.code || '').toLowerCase();
+  return (
+    code.includes('econn') ||
+    code.includes('enotfound') ||
+    code.includes('etimedout') ||
+    message.includes('fetch failed') ||
+    message.includes('network') ||
+    message.includes('internet') ||
+    message.includes('offline') ||
+    message.includes('timeout') ||
+    message.includes('getaddrinfo') ||
+    message.includes('connection')
+  );
+}
+
+function userFriendlyExternalError(error) {
+  return isLikelyNetworkError(error) ? OFFLINE_MESSAGE : (error?.message || 'Something went wrong. Please try again.');
+}
+
 // Disable GPU acceleration to prevent "Access Denied" errors on synced drives like OneDrive
 app.disableHardwareAcceleration();
 
@@ -468,7 +491,7 @@ ipcMain.handle('ai:parseInvoice', async (_, { base64, mimeType }) => {
     };
   } catch (err) {
     console.error("AI Parse error:", err);
-    return { success: false, error: err.message };
+    return { success: false, isOffline: isLikelyNetworkError(err), error: userFriendlyExternalError(err) };
   }
 });
 
@@ -507,7 +530,7 @@ ipcMain.handle('ai:getInsights', async (_, snapshot) => {
     return { success: true, insights: JSON.parse(resultText) };
   } catch (err) {
     console.error("AI Insights error:", err);
-    return { success: false, error: err.message };
+    return { success: false, isOffline: isLikelyNetworkError(err), error: userFriendlyExternalError(err) };
   }
 });
 
@@ -922,7 +945,7 @@ ipcMain.handle('whatsapp:sendInvoice', async (_, { phone, pdfBuffer, fileName, m
     }
   } catch (err) {
     console.error('WhatsApp Invoice Error:', err);
-    return { success: false, error: err.message };
+    return { success: false, isOffline: isLikelyNetworkError(err), error: userFriendlyExternalError(err) };
   }
 });
 
@@ -973,6 +996,6 @@ ipcMain.handle('whatsapp:sendMessage', async (_, { phone, message }) => {
     }
   } catch (err) {
     console.error('WhatsApp Handler Error:', err);
-    return { success: false, error: err.message };
+    return { success: false, isOffline: isLikelyNetworkError(err), error: userFriendlyExternalError(err) };
   }
 });

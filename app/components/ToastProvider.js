@@ -1,8 +1,9 @@
 'use client';
-import { createContext, useContext, useState, useCallback, useRef, useMemo } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { Check, X, AlertTriangle, Info, ShieldAlert, Trash2 } from 'lucide-react';
 
 const ToastContext = createContext(null);
+const OFFLINE_MESSAGE = 'You are offline. InBill is still working with local data; cloud sync, AI and WhatsApp will resume when internet is back.';
 
 export function useToast() {
   const ctx = useContext(ToastContext);
@@ -81,6 +82,26 @@ export default function ToastProvider({ children }) {
     t.warning = (msg, dur) => baseToast(msg, 'warning', dur);
     t.info = (msg, dur) => baseToast(msg, 'info', dur);
     return t;
+  }, [baseToast]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleOffline = () => {
+      baseToast(OFFLINE_MESSAGE, 'warning', 6000);
+    };
+
+    const handleOnline = () => {
+      baseToast('Internet connection restored.', 'success', 3000);
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [baseToast]);
 
   const dismissToast = useCallback((id) => {
